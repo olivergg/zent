@@ -16,8 +16,7 @@
       (daemon/register! path {:port 1234 :token "t"})
       (is (= {:port 1234 :token "t" :pid (.pid (ProcessHandle/current))}
              (select-keys (daemon/live path) [:port :token :pid])))
-      (is (re-find #"^-rw-------" (:out (sh/sh "ls" "-l" path))))
-      (is (= (System/getProperty "user.dir") (:engine-dir (daemon/live path)))))
+      (is (re-find #"^-rw-------" (:out (sh/sh "ls" "-l" path)))))
 
     (testing "given a card whose process identity no longer matches (crashed,
               pid recycled), then it reads as no daemon and is removed"
@@ -26,9 +25,9 @@
       (is (not (.exists (io/file path)))))
     (finally (daemon/clear! path))))
 
-(deftest engine-gone-test
-  (testing "a serve whose engine dir was removed (package upgrade) is flagged;
-            an existing dir, or a card from before :engine-dir, is not"
-    (is (daemon/engine-gone? {:engine-dir "/no/such/zent/install"}))
-    (is (not (daemon/engine-gone? {:engine-dir (System/getProperty "user.dir")})))
-    (is (not (daemon/engine-gone? {})))))
+(deftest outdated-test
+  (testing "a serve on another version than this CLI is flagged; unknown on either side is not"
+    (is (daemon/outdated? {:version "HEAD-aaa"} "HEAD-bbb"))
+    (is (not (daemon/outdated? {:version "HEAD-aaa"} "HEAD-aaa")))
+    (is (not (daemon/outdated? {} "HEAD-bbb")))
+    (is (not (daemon/outdated? {:version "HEAD-aaa"} nil)))))

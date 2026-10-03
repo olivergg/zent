@@ -20,10 +20,11 @@
     zent preset rm <name>         registering it with a running daemon
     zent logs [-f] <component>    a component's output (see zent.logs)
     zent attach                   follow a detached daemon's output
+    zent version                  this zent's version (brew: HEAD-<sha>; a clone: git describe)
     zent mcp                      MCP server on stdio (zent.mcp)
     zent down                     no daemon: tear down what the session lists
 
-  `logs -f` and `attach` are plain `tail -F`, run by the launcher script.
+  `logs -f`, `attach` and `version` are handled by the launcher script (bin/zent).
 
   `ctx` below: {:catalog c :name kw :bin launcher-path}.
   :catalog may be a fn, called on each use so an edited catalog is picked up; :name
@@ -74,14 +75,16 @@
 
 (defn- live [] (daemon/live daemon/default-path))
 
+(defn- version [] (System/getenv "ZENT_VERSION"))
+
 (defn- warn-if-stale!
-  "`d`, after a warning when it runs a since-removed zent install."
+  "`d`, after a warning when it runs another zent version than this one."
   [d]
-  (when (daemon/engine-gone? d)
+  (when (daemon/outdated? d (version))
     (binding [*out* *err*]
-      (println (format (str "warning: zent serve (pid %d) runs a zent install since removed (upgraded?) - "
-                            "`zent shutdown && zent serve --detach` moves it to this one, keeping what runs")
-                       (:pid d)))))
+      (println (format (str "warning: zent serve (pid %d) runs zent %s, this is %s - "
+                            "`zent shutdown && zent serve --detach` moves it here, keeping what runs")
+                       (:pid d) (:version d) (version)))))
   d)
 
 (defn- refuse-if-running! []
@@ -97,7 +100,7 @@
     (bridge/serve! (catalog ctx) :initial-preset preset
                    :catalog-fn #(catalog ctx)
                    :on-ready (fn []
-                               (daemon/register! daemon/default-path {:port port :token token})
+                               (daemon/register! daemon/default-path {:port port :token token :version (version)})
                                (when ui? (open-browser! ui-url)))))
   ;; only reached on :shutdown - the server's own thread would keep us alive
   (System/exit 0))
@@ -162,7 +165,7 @@
 
 (defn status! []
   (if-let [{:keys [pid started-at] :as d} (some-> (live) warn-if-stale!)]
-    (do (println (format "zent serve pid %d, up %d min - %s" pid
+    (do (println (format "zent serve pid %d (zent %s), up %d min - %s" pid (:version d "unknown")
                          (quot (- (System/currentTimeMillis) started-at) 60000) ui-url))
         (print-view (client/request d :get "/api/view")))
     (let [recorded (:handles (session/read-session session/default-path))]
@@ -315,7 +318,7 @@
       (if (and verb (contains? (:presets (catalog ctx)) (keyword verb)))
         (apply! ctx (keyword verb))
         (fail! (str (when verb (str "unknown verb or preset: " verb "\n"))
-                    "usage: zent serve|watch|apply|status|stop|reload|reload-code|shutdown|presets|preview|check|preset|logs|attach|mcp|down - see zent.cli"))))))
+                    "usage: zent serve|watch|apply|status|stop|reload|reload-code|shutdown|presets|preview|check|preset|logs|attach|mcp|down|version - see zent.cli"))))))
 
 (defn main
   "Runs the `zent` command line `args` against `ctx`."

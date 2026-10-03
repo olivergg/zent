@@ -26,6 +26,7 @@ Then, from anywhere inside a catalog repo (below):
 zent check                     # every preset validates
 zent presets                   # what you can run
 zent apply <preset>            # start it, wait until it settled
+zent version                   # the installed zent (brew: HEAD-<sha>)
 ```
 
 MCP (Claude Code): `claude mcp add zent -e ZENT_CATALOG=<catalog repo> -- zent mcp`.

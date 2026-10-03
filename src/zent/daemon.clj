@@ -29,16 +29,15 @@
         (do (clear! path) nil)))))
 
 (defn register!
-  "Records the current process as the daemon, with `info` ({:port :token})."
+  "Records the current process as the daemon, with `info` ({:port :token :version})."
   [path info]
   (let [pid (.pid (ProcessHandle/current))]
     (session/private-file! path (pr-str (assoc info :pid pid :identity (session/pid-identity pid)
-                                       :started-at (System/currentTimeMillis)
-                                       ;; bin/zent runs us from the engine root
-                                       :engine-dir (System/getProperty "user.dir"))))))
+                                       :started-at (System/currentTimeMillis))))))
 
-(defn engine-gone?
-  "Whether `card`'s serve runs from an engine dir since removed - a package
-  upgrade deletes the old one under it, and its UI and reload-code then fail."
-  [{:keys [engine-dir]}]
-  (boolean (and engine-dir (not (.isDirectory (io/file engine-dir))))))
+(defn outdated?
+  "Whether `card`'s serve runs another zent version than `current` - after a
+  `brew upgrade`, which also deletes the old one under it (its UI then fails),
+  or a clone moved on. Unknown either side is no news."
+  [card current]
+  (boolean (and (:version card) current (not= (:version card) current))))

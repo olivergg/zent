@@ -5,15 +5,29 @@
 # git finds .git; $ZENT_CATALOG starts the search elsewhere (an MCP server's
 # cwd is whatever its client picked). Always Jolt (no JVM).
 #
-# `attach` and `logs -f` are plain `tail -F` here rather than a Jolt loop:
-# no runtime startup, and ctrl-c just ends the tail.
+# `version` is answered here, and `attach` and `logs -f` are plain `tail -F`
+# rather than a Jolt loop: no runtime startup, and ctrl-c just ends the tail.
 #
 # `exec` (not a subshell call) so ctrl-c reaches the real process directly,
 # same PID, rather than being swallowed by a wrapper in between.
 set -euo pipefail
 
+# the engine root: this script's real location (through brew's or a PATH
+# symlink), one level up - its deps.edn is what jolt resolves
+self="${BASH_SOURCE[0]}"
+while [[ -L "$self" ]]; do
+  link="$(readlink "$self")"
+  [[ "$link" == /* ]] && self="$link" || self="$(dirname "$self")/$link"
+done
+root="$(cd "$(dirname "$self")/.." && pwd)"
+
+# brew writes VERSION at install (no .git there); a clone asks git
+ZENT_VERSION="$(cat "$root/VERSION" 2>/dev/null || git -C "$root" describe --always --dirty 2>/dev/null || echo unknown)"
+export ZENT_VERSION
+
 cache="$HOME/.cache/zent"
 case "${1:-}" in
+  version|--version) echo "zent $ZENT_VERSION"; exit ;;
   attach) exec tail -n 200 -F "$cache/serve.log" ;;
   logs) [[ "${2:-}" == "-f" && -n "${3:-}" ]] && exec tail -n 200 -F "$cache/logs/$3.log" ;;
 esac
@@ -32,13 +46,6 @@ export ZENT_CATALOG="$dir"
 ZENT_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 export ZENT_BIN
 
-# the engine root: this script's real location (through brew's or a PATH
-# symlink), one level up - its deps.edn is what jolt resolves
-self="${BASH_SOURCE[0]}"
-while [[ -L "$self" ]]; do
-  link="$(readlink "$self")"
-  [[ "$link" == /* ]] && self="$link" || self="$(dirname "$self")/$link"
-done
-cd "$(dirname "$self")/.."
+cd "$root"
 
 exec jolt run -m zent.main "$@"
