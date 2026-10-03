@@ -208,12 +208,27 @@
                             name context (vec allow-k8s-contexts))
                     {:component name :context context :allowed allow-k8s-contexts}))))
 
+(def Defaults
+  "A catalog's :defaults, merged under every component: any key some kind
+  declares (its first declaration's type), plus the catalog-wide ones.
+  Closed, like the registry: a typo'd default would silently apply to none."
+  (into [:map {:closed true}
+         [:repo-url-template {:optional true} :string]
+         [:allow-secret-contexts {:optional true} [:vector k8s-name]]]
+        (map (fn [[k a b]] (if (map? a) [k (assoc a :optional true) b] [k {:optional true} a])))
+        (->> (concat shared-entries (apply concat (vals builtin-kinds)))
+             (group-by first)
+             vals
+             (map first))))
+
 (def Catalog
   "A catalog's own shape, checked first so a malformed one is one clear
   error. Component cfgs only need :kind here - per-kind validation happens
   in resolve-preset, after defaults and overlay are merged."
-  [:map
-   [:defaults {:optional true} [:map-of :keyword :any]]
+  [:map {:closed true}
+   ;; required, but by zent.catalog/load-dir, which can name the file
+   [:name {:optional true} :keyword]
+   [:defaults {:optional true} Defaults]
    [:components [:map-of :keyword [:map [:kind :keyword]]]]
    [:presets [:map-of :keyword [:map-of :keyword [:map-of :keyword :any]]]]
    [:max-parallel {:optional true} pos-int?]])

@@ -91,3 +91,15 @@
             component runs from nowhere in particular"
     (let [entry {:kind :process :cmd "kubectl --context c port-forward deployment/x 1:2"}]
       (is (= {:a entry} (schema/validate-registry! {:a entry}))))))
+
+(deftest validate-catalog-closed-test
+  (let [errors #(try (schema/validate-catalog! (merge {:components {} :presets {}} %)) nil
+                     (catch clojure.lang.ExceptionInfo e (:errors (ex-data e))))]
+    (testing "any key a kind declares, or a catalog-wide one, is a valid default"
+      (is (nil? (errors {:name :acme
+                         :defaults {:org "acme" :jdk-home "/jdk" :repo-url-template "https://x/{repo}"
+                                    :allow-secret-contexts ["dev"] :allow-k8s-contexts ["dev"]}}))))
+    (testing "a typo'd or mistyped default, or an unknown top-level key, is refused"
+      (is (= {:defaults {:jdk-hom ["disallowed key"] :allow-secret-contexts ["invalid type"]}}
+             (errors {:defaults {:jdk-hom "/jdk" :allow-secret-contexts "dev"}})))
+      (is (= {:defaults. ["disallowed key"]} (errors {:defaults. {}}))))))
