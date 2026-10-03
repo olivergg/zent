@@ -29,7 +29,9 @@ zent apply <preset>            # start it, wait until it settled
 zent version                   # the installed zent (brew: HEAD-<sha>)
 ```
 
-MCP (Claude Code): `claude mcp add zent -e ZENT_CATALOG=<catalog repo> -- zent mcp`.
+MCP: any client runs `zent mcp` (stdio) from inside the catalog repo - e.g. a committed
+`.mcp.json` `{"mcpServers": {"zent": {"command": "zent", "args": ["mcp"]}}}` for Claude
+Code. A client starting it elsewhere sets `ZENT_CATALOG` to the repo's path.
 
 To work on the engine itself, run a clone instead: `ln -s $PWD/bin/zent ~/.local/bin/zent`,
 on a PATH entry ahead of Homebrew's.
