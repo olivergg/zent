@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# `zent <verb>` - installed by brew (Formula/zent.rb), or symlinked onto PATH
+# from a clone. Runs the engine this script belongs to against the catalog repo
+# enclosing the current directory: the first parent holding a catalog.edn, as
+# git finds .git; $ZENT_CATALOG starts the search elsewhere (an MCP server's
+# cwd is whatever its client picked). Always Jolt (no JVM).
+#
+# `attach` and `logs -f` are plain `tail -F` here rather than a Jolt loop:
+# no runtime startup, and ctrl-c just ends the tail.
+#
+# `exec` (not a subshell call) so ctrl-c reaches the real process directly,
+# same PID, rather than being swallowed by a wrapper in between.
+set -euo pipefail
+
+cache="$HOME/.cache/zent"
+case "${1:-}" in
+  attach) exec tail -n 200 -F "$cache/serve.log" ;;
+  logs) [[ "${2:-}" == "-f" && -n "${3:-}" ]] && exec tail -n 200 -F "$cache/logs/$3.log" ;;
+esac
+
+dir="$(cd "${ZENT_CATALOG:-$PWD}" && pwd)"
+until [[ -f "$dir/catalog.edn" ]]; do
+  if [[ "$dir" == / ]]; then
+    echo "zent: no catalog.edn in ${ZENT_CATALOG:-$PWD} or any parent - cd into a catalog repo, or set ZENT_CATALOG" >&2
+    exit 1
+  fi
+  dir="$(dirname "$dir")"
+done
+export ZENT_CATALOG="$dir"
+
+# what `serve --detach` respawns (zent.main), as invoked - a PATH symlink stays one
+ZENT_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+export ZENT_BIN
+
+# the engine root: this script's real location (through brew's or a PATH
+# symlink), one level up - its deps.edn is what jolt resolves
+self="${BASH_SOURCE[0]}"
+while [[ -L "$self" ]]; do
+  link="$(readlink "$self")"
+  [[ "$link" == /* ]] && self="$link" || self="$(dirname "$self")/$link"
+done
+cd "$(dirname "$self")/.."
+
+exec jolt run -m zent.main "$@"

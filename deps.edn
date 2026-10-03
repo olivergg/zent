@@ -1,0 +1,16 @@
+{:paths ["src" "test" "resources"]
+ ;; All Jolt-native (see zent.ui.server's docstring): the daemon always
+ ;; serves its HTTP API, and every other CLI verb is a client of it.
+ ;; jolt-lang/time only supplies the DateTimeFormatter data.json needs.
+ :deps {metosin/malli {:mvn/version "0.20.2"}
+        jolt-lang/ring-chez-adapter
+        {:git/url "https://github.com/jolt-lang/ring-chez-adapter"
+         :git/sha "836da956284d4507391d9f53f7ebfcb605e95e85"} ; v0.7.9
+        ;; past v0.0.9: drops the CompletableFuture claim jolt 0.8.16 warns about
+        jolt-lang/http-client
+        {:git/url "https://github.com/jolt-lang/http-client"
+         :git/sha "d99af98cc97dcb2e4afc3eee142166585a26b859"}
+        org.clojure/data.json {:mvn/version "2.5.1"}
+        jolt-lang/time
+        {:git/url "https://github.com/jolt-lang/time"
+         :git/sha "8030de28d6cda6096896c3e653babdbc8105499c"}}}

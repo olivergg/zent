@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webui
+  labels:
+    app: webui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webui
+  template:
+    metadata:
+      labels:
+        app: webui
+    spec:
+      tolerations:
+        - key: node.type
+          operator: Equal
+          value: back-spot
+          effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.type
+                    operator: In
+                    values:
+                      - back-spot
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - image: team/webui
+          imagePullPolicy: Always
+          name: webui
+          ports:
+          - containerPort: 5173
+            name: http
+          resources:
+            requests:
+              memory: "1Gi"
+              ephemeral-storage: "2Gi"
+            limits:
+              memory: "1Gi"
+              ephemeral-storage: "2Gi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webui
+spec:
+  ports:
+    - port: 5173
+      protocol: TCP
+      targetPort: http
+  selector:
+    app: webui
+

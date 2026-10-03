@@ -1,0 +1,1849 @@
+<!doctype html>
+<!-- zent dashboard.
+     The design thesis: a zent is the thread drawn through the warp on a loom,
+     so the stack is drawn as fabric being woven. Warp = one vertical line per
+     dependency level; components sit on it; the zent thread advances through
+     them in topological order as they come up, and stops where a deploy broke.
+     Nothing animates at rest - this is meant to sit on a second monitor.
+     No remote fonts or CDN: it runs offline, straight out of `bin/zent ... --ui`. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- baked in at request time by zent.ui.server, read back by the
+     htmx:configRequest listener below - see zent.ui.render's docstring
+     for why writes stay a server round trip instead of a client fetch. -->
+<meta name="csrf-token" content="{{CSRF_TOKEN}}">
+<title>zent</title>
+<style>
+  :root {
+    /* dye-room palette: undyed linen ground, indigo as the woven colour */
+    --linen:     #e9e7e1;
+    --card:      #f3f1eb;
+    --indigo:    #25316b;
+    --ink:       #171b2e;
+    --madder:    #a6382c;
+    --weld:      #c1892b;
+    --grey:      #a5a199;
+    /* verdigris: the one non-indigo "good" colour - reserved for a
+       component actually up and running, so it reads distinctly from
+       merely-woven/external (indigo) at a glance, closer to how most
+       dashboards use green for healthy. */
+    --verdigris: #2f7a4d;
+
+    --display: "Futura", "Avenir Next Condensed", "Century Gothic", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+    --rail: 330px;
+    --head: 54px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--linen);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------------------------------------------------------------- header */
+
+  .masthead {
+    height: var(--head);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 22px;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  .wordmark {
+    font-family: var(--display);
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    margin: 0;
+  }
+
+  /* what runs and its one big control, as one piece: the preset is a label
+     (state + name), not a button; Stop/Start acts on that very preset. The
+     "am I running, and can I stop/start it from here" answer - everything
+     else (the rail's per-row play/stop) is deliberately quiet by comparison. */
+  .run { display: inline-flex; align-items: stretch; border: 1px solid var(--ink); }
+  .run[data-state="idle"] { border-color: var(--grey); }
+  .run-label { display: flex; flex-direction: column; justify-content: center; padding: 3px 12px; line-height: 1.2; }
+  .run-label small {
+    font-family: var(--display); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--grey); display: flex; align-items: center; gap: 5px;
+  }
+  .run[data-state="live"] .run-label small::before,
+  .run[data-state="preview"] .run-label small::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--verdigris);
+  }
+  .run[data-state="preview"] .run-label small::before { background: none; border: 1px solid var(--verdigris); }
+  .preset { font-family: var(--display); letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; }
+  .run[data-state="idle"] .preset { display: none; }
+
+  .run-toggle {
+    font-family: var(--display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0 16px;
+    border: none;
+    border-left: 1px solid var(--ink);
+    cursor: pointer;
+    color: #fff;
+  }
+  .run-toggle.stop { background: var(--madder); }
+  .run-toggle.stop:hover { background: #8a2e24; }
+  .run-toggle.play { background: var(--verdigris); }
+  .run-toggle.play:hover { background: #256640; }
+  .run-toggle:disabled { opacity: 0.5; cursor: default; }
+
+  /* a command sent but not yet handled by the daemon (markBusy): the
+     button's glyph gives way to a spinner until the run reflects it */
+  [hx-post][data-busy="true"] { position: relative; color: transparent !important; pointer-events: none; opacity: 1 !important; }
+  [hx-post][data-busy="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid var(--indigo);
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 700ms linear infinite;
+  }
+  .run-toggle[data-busy="true"]::after { border-color: #fff; border-right-color: transparent; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .link {
+    margin-left: auto;
+    font-family: var(--display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 10.5px;
+    color: var(--grey);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .link::before {
+    content: "";
+    width: 6px; height: 6px;
+    background: var(--grey);
+  }
+
+  .link[data-live="true"] { color: var(--indigo); }
+  .link[data-live="true"]::before { background: var(--indigo); }
+
+  /* a window with its right-hand panel: filled while the side panel shows */
+  .rail-toggle {
+    background: none;
+    border: 1px solid transparent;
+    color: var(--ink);
+    line-height: 0;
+    padding: 4px 5px;
+    cursor: pointer;
+  }
+  .rail-toggle:hover { border-color: var(--ink); }
+  .rail-toggle .pane { fill: currentColor; }
+  .rail-toggle[aria-pressed="false"] .pane { fill: none; }
+  body[data-tab="logs"] .rail-toggle { display: none; }
+
+  /* ------------------------------------------------------------------ shell */
+
+  .shell {
+    display: grid;
+    grid-template-columns: 1fr 5px var(--rail);
+    height: calc(100% - var(--head));
+  }
+
+  .shell[data-rail-collapsed="true"] { grid-template-columns: 1fr 0 0; }
+  .shell[data-rail-collapsed="true"] .grip,
+  .shell[data-rail-collapsed="true"] .rail { display: none; }
+
+  /* the grip sits in its own grid column rather than being positioned over
+     the rail's border, so nothing inside either pane can be under it */
+  .grip {
+    cursor: col-resize;
+    background: var(--linen);
+    border-left: 1px solid var(--ink);
+  }
+  .grip:hover, .grip[data-dragging="true"] { background: var(--indigo); border-left-color: var(--indigo); }
+  body[data-resizing="true"] { cursor: col-resize; user-select: none; }
+
+  /* ------------------------------------------------------------------ loom */
+
+  .loom {
+    position: relative;
+    overflow: auto;
+    padding: 34px 40px 40px;
+    display: flex;
+    /* column: the preview banner (when shown) stacks above .levels rather
+       than beside it - .warp is position:absolute so it never joins this
+       flow either way, so this only ever affects the banner/.levels pair. */
+    flex-direction: column;
+  }
+
+  /* the warp: hairlines the fabric is woven across */
+  .warp { position: absolute; inset: 0; pointer-events: none; }
+
+  /* `zoom` rather than `transform: scale()` on purpose: it affects layout,
+     so .loom's own scrollbars keep reaching the whole fabric instead of
+     needing the scroll area resized by hand. Measured rects stay in screen
+     space either way, so drawWarp needs no scale arithmetic. */
+  .loom[data-panning="true"] { cursor: grabbing; }
+  .loom[data-panning="true"] .node { pointer-events: none; }
+
+  /* previewing a preset that isn't running: the whole fabric reads as a
+     sketch, not a report - dashed cards, no health colour (nothing IS
+     healthy yet, this is a plan) - so it can never be mistaken for the
+     live view at a glance. */
+  .loom[data-preview="true"] .node {
+    border-style: dashed;
+    background: transparent;
+  }
+  .loom[data-preview="true"] .node .actions { display: none; }
+  /* a strip keeps its tint: transparent, it reads as one more dashed box
+     rather than part of the card above */
+  .loom[data-preview="true"] .node.satellite { background: #eceef5; }
+
+  /* the `display: flex` below only applies while the banner isn't hidden -
+     the native [hidden] attribute is display:none by default, but an
+     author rule setting `display` on the same element overrides that, so
+     without this guard the (empty, until a preview starts) banner rendered
+     as a visible box even when hidden was set. */
+  .preview-banner[hidden] { display: none; }
+  .preview-banner {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: -34px -40px 20px;
+    padding: 10px 40px;
+    background: var(--ink);
+    color: var(--linen);
+    font-family: var(--display);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  .preview-banner button {
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    background: none;
+    border: 1px solid var(--linen);
+    color: var(--linen);
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .preview-banner .plan { flex: 1; opacity: 0.75; text-transform: none; letter-spacing: 0.02em; }
+  .preview-banner .plan span[title] { border-bottom: 1px dotted; cursor: help; }
+  .preview-banner button:hover { background: var(--linen); color: var(--ink); }
+  .preview-banner .play { border-color: var(--verdigris); background: var(--verdigris); }
+
+  .levels {
+    position: relative;
+    display: flex;
+    gap: 48px;
+    align-items: flex-start;      /* rows line up across levels, so it reads as a weave */
+    /* auto margins centre a small fabric without clipping a large one the way
+       justify-content: center would once it overflows */
+    margin: auto;
+  }
+
+  .level { display: flex; flex-direction: column; gap: 16px; width: 230px; flex: none; }
+
+  /* a card and the :attached-to one-shots it carries, as strips under it -
+     jobs run against the component, not services of their own */
+  .stack { display: flex; flex-direction: column; }
+  /* hangs from the card: flush under it, inset, no top border of its own */
+  .node.satellite {
+    z-index: 1;
+    width: calc(100% - 20px);
+    margin-left: 10px;
+    border-top: none;
+    padding: 4px 26px 4px 8px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 6px;
+    font-size: 10.5px;
+    background: #eceef5;
+    border-color: #b9bdd3;
+  }
+  /* a script name breaks between scripts, never mid-name */
+  .node.satellite .name { font-size: 11px; letter-spacing: 0.02em; text-transform: none; flex: 1; overflow-wrap: normal; }
+  .node.satellite .desc { flex-basis: 100%; padding-left: 14px; color: var(--grey); font-size: 10px; }
+  .node.satellite .actions { top: 1px; }
+  .node.satellite .fray { flex-basis: 100%; margin-top: 2px; }
+
+  /* ----------------------------------------------------------------- nodes */
+
+  .node {
+    position: relative;
+    z-index: 2;
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    padding: 10px 12px 11px;
+    background: var(--card);
+    border: 1px solid var(--grey);
+    border-left-width: 3px;
+    cursor: pointer;
+    transition: border-color 240ms ease, background 240ms ease, transform 160ms ease;
+  }
+
+  /* a card and its strips move as one piece */
+  .stack:hover > .node { transform: translateX(2px); }
+  .node:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+  .node .permanent {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 4px;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--indigo);
+    border: 1px solid var(--indigo);
+    vertical-align: middle;
+  }
+
+  .node .name {
+    font-family: var(--display);
+    font-size: 13.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    /* a long name wraps rather than widening the column: the whole graph has
+       to stay visible without scrolling, since "what broke" is the point */
+    overflow-wrap: anywhere;
+  }
+
+  .node .meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--grey);
+    font-size: 10.5px;
+    margin-top: 3px;
+  }
+
+  .node .state { color: var(--ink); }
+  .node .kind { display: inline-flex; align-items: baseline; gap: 4px; }
+  .node .glyph { font-style: normal; font-size: 11px; color: var(--ink); }
+
+  /* status: up and external are both verdigris (both mean "confirmed
+     healthy") - the dashed border is what still marks external as "zent
+     didn't start this", not a different colour */
+  .node[data-status="up"],
+  .node[data-status="external"] { border-color: var(--verdigris); background: #e8f2ec; }
+  .node[data-status="up"] .state,
+  .node[data-status="external"] .state { color: var(--verdigris); }
+  .node[data-status="external"] { border-left-style: dashed; }
+  /* done: a one-shot that ran to completion, like a finished k8s Job */
+  .node[data-status="done"] { border-color: var(--indigo); background: #e9ebf4; }
+  .node[data-status="done"] .state { color: var(--indigo); }
+  /* stopping: a stop is tearing it down - greyed, the pick running backwards */
+  .node[data-status="stopping"] { border-color: var(--grey); opacity: 0.75; }
+  .node[data-status="stopping"] .state { color: var(--grey); font-style: italic; }
+  .node[data-status="starting"] { border-color: var(--weld); }
+  .node[data-status="starting"] .state { color: var(--weld); }
+  .node[data-status="failed"]   { border-color: var(--madder); background: #f6eae8; }
+  .node[data-status="failed"] .state { color: var(--madder); }
+  .node[data-status="off"],
+  .node[data-status="stopped"]  { opacity: 0.5; font-style: italic; }
+  /* idle: kept warm, still running, but no current preset needs it */
+  .node[data-status="idle"] { opacity: 0.6; border-color: var(--grey); border-left-style: dotted; }
+  /* off has nothing to restart (its mode is off, not merely torn down) -
+     stopped keeps its reload button (faded like the rest of the card until
+     hovered, same as any other node) so a manual stop is reversible. */
+  .node[data-status="off"] .actions { display: none; }
+  .node[data-selected="true"]   { box-shadow: 3px 3px 0 var(--ink); }
+
+  /* queued: not yet touched, distinct from off - a soft glow rather than a
+     colour, so "about to happen" reads as different from "static/ignored"
+     without borrowing weld/madder/indigo's own meanings. */
+  .node[data-status="queued"] { animation: glow 1.8s ease-in-out infinite; }
+  @keyframes glow {
+    0%, 100% { background: var(--card); }
+    50%      { background: #ffffff; }
+  }
+
+  .node .repo {
+    display: block;
+    margin-top: 3px;
+    color: var(--grey);
+    font-size: 10px;
+    overflow-wrap: anywhere;
+  }
+  .node .repo::before { content: "repo: "; }
+  .node .repo-link { color: var(--grey); text-decoration: none; border-bottom: 1px dotted var(--grey); }
+  .node .repo-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+
+  /* one box per container inside the component's own box: a compose
+     component IS several containers, and a single "up" for all of them
+     can't say which one is unhealthy. One per line rather than side by
+     side, so the name and its ports always fit. */
+  .node .services {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 5px;
+  }
+  .node .svc {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 2px 6px;
+    font-size: 10px;
+    color: var(--grey);
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid var(--grey);
+    border-left-width: 2px;
+  }
+  .node .svc-name { overflow-wrap: anywhere; }
+  .node .svc::before {
+    content: "";
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--grey);
+    flex: none;
+    align-self: center;
+  }
+  .node .svc[data-health="ok"]   { border-left-color: var(--verdigris); }
+  .node .svc[data-health="ok"]::before   { background: var(--verdigris); }
+  .node .svc[data-health="wait"] { border-left-color: var(--weld); }
+  .node .svc[data-health="wait"]::before { background: var(--weld); }
+  .node .svc[data-health="bad"]  { border-left-color: var(--madder); color: var(--madder); }
+  .node .svc[data-health="bad"]::before  { background: var(--madder); }
+
+  /* the port is the handle you actually reach the thing by, so it reads as
+     a value, not as more grey prose */
+  .node .ports {
+    margin-left: auto;
+    font-family: var(--mono);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .node .ports.own { display: block; margin: 4px 0 0; font-size: 10px; }
+
+  /* the branch reads as a label (it's the one thing here you might be
+     surprised by), the path stays quiet background detail */
+  .node .branch {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 0 5px;
+    font-size: 9.5px;
+    color: var(--indigo);
+    border: 1px solid var(--indigo);
+    border-radius: 2px;
+    /* branch names are long and unbreakable (feature/DARK-1234_foo_bar);
+       without this the badge runs straight out of the card */
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+  }
+  .node .workdir {
+    display: block;
+    margin-top: 2px;
+    color: var(--grey);
+    font-size: 9.5px;
+    overflow-wrap: anywhere;
+  }
+  .node .workdir .wt {
+    font-style: normal;
+    color: var(--weld);
+    border-bottom: 1px dotted var(--weld);
+  }
+  .node .workdir-open {
+    font: inherit;
+    padding: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    overflow-wrap: anywhere;
+    border-bottom: 1px dotted var(--grey);
+  }
+  .node .workdir-open:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+  .node .workdir-open[data-failed="true"] { color: var(--madder); border-bottom-color: var(--madder); }
+
+  .node .endpoint {
+    /* block so each link gets its own line, fit-content so the hit area is
+       the text itself and not the whole width of the card */
+    display: block;
+    width: fit-content;
+    margin-top: 4px;
+    font-size: 10.5px;
+    font-family: var(--mono);
+    color: var(--verdigris);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  .node .endpoint:hover { text-decoration: underline; }
+
+  /* the one moving thing: a pick crossing a component while it starts */
+  .node[data-status="stopping"]::after,
+  .node[data-status="starting"]::after {
+    content: "";
+    position: absolute;
+    left: 0; bottom: -1px;
+    height: 2px; width: 34%;
+    background: var(--weld);
+    animation: pick 1150ms ease-in-out infinite;
+  }
+
+  .node[data-status="stopping"]::after { background: var(--grey); animation-direction: reverse; }
+
+  @keyframes pick {
+    0%   { transform: translateX(0); }
+    50%  { transform: translateX(196%); }
+    100% { transform: translateX(0); }
+  }
+
+  .node .fray {
+    display: block;
+    margin-top: 6px;
+    color: var(--madder);
+    font-size: 10.5px;
+    overflow-wrap: anywhere;
+  }
+
+  /* action buttons: quiet until hovered, so the card still reads first as a
+     status card and only second as a set of controls. */
+  .node .actions {
+    position: absolute;
+    top: 3px; right: 5px;
+    display: flex;
+    gap: 2px;
+  }
+  /* .node and .preset-row both host these (reload/stop, play/stop) - shared
+     look, context-specific rest opacity/padding/disabled dimming below */
+  .act { background: none; border: none; color: var(--grey);
+         font-size: 11px; line-height: 1; cursor: pointer; }
+  .act:hover { color: var(--indigo); }
+  .act.stop:hover { color: var(--madder); }
+  .act[data-failed="true"] { color: var(--madder); opacity: 1; }
+
+  .node .act { padding: 2px 4px; opacity: 0.45; }
+  .node:hover .act { opacity: 1; }
+  .node .act:disabled { opacity: 0.25; cursor: default; color: var(--grey); }
+
+  .empty-loom {
+    position: relative;
+    z-index: 2;
+    max-width: 30rem;
+  }
+
+  .empty-loom h2 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+  }
+
+  .empty-loom p { margin: 0 0 14px; color: #5d5f6e; }
+  .empty-loom code { background: var(--card); border: 1px solid var(--grey); padding: 1px 5px; }
+
+  .picker { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .preset-row {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--grey);
+    padding: 6px 8px;
+  }
+  .preset-row[data-active="true"] { border-color: var(--verdigris); }
+  .preset-name { flex: 1; font-size: 12px; cursor: pointer; }
+  .preset-name:hover { color: var(--indigo); }
+  .preset-row[data-previewing="true"] .preset-name { color: var(--indigo); font-weight: 500; }
+  .preset-row .act { padding: 2px 5px; }
+  .preset-row .act:disabled { opacity: 0.35; cursor: default; }
+  .preset-row[data-active="true"] .play { color: var(--verdigris); opacity: 0.4; }
+
+  /* ------------------------------------------------------------------ rail */
+
+  .rail {
+    padding: 22px 20px;
+    overflow: auto;
+  }
+
+  #rail-run { display: flex; flex-direction: column; gap: 22px; }
+
+  .rail h2 {
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--grey);
+    margin: 0 0 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--grey);
+  }
+
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; font-size: 10.5px; }
+  .legend span { display: flex; align-items: center; gap: 7px; color: #5d5f6e; }
+  .legend i { width: 3px; height: 13px; background: var(--grey); }
+  .legend .up i { background: var(--verdigris); }
+  .legend .done i { background: var(--indigo); }
+  .legend .idle i { background: transparent; border-left: 3px dotted var(--grey); width: 3px; }
+  .legend .starting i { background: var(--weld); }
+  .legend .stopping i { background: var(--grey); }
+  .legend .failed i { background: var(--madder); }
+  /* external is also healthy (verdigris) - the dash is what still marks
+     "not started by us", not a different colour */
+  .legend .external i {
+    background: transparent;
+    border-left: 3px dashed var(--verdigris);
+    width: 3px;
+  }
+
+  .show-stopped {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 8px; font-size: 10.5px; color: #5d5f6e; cursor: pointer;
+  }
+  .show-stopped input { margin: 0; cursor: pointer; }
+
+  .tally { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  .tally span { color: #5d5f6e; }
+  .tally b {
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 500;
+    margin-right: 4px;
+    color: var(--ink);
+  }
+  .tally .t-up b { color: var(--verdigris); }
+  .tally .t-done b { color: var(--indigo); }
+  .tally .t-starting b { color: var(--weld); }
+  .tally .t-failed b { color: var(--madder); }
+
+  .blocked { margin: 10px 0 0; color: var(--madder); }
+
+  .facts { display: grid; grid-template-columns: 74px 1fr; gap: 4px 10px; margin: 0; }
+  .facts dt { color: var(--grey); }
+  .facts dd { margin: 0; overflow-wrap: anywhere; }
+
+  .quiet { color: var(--grey); }
+
+  /* ---------------------------------------------------------------- logs */
+
+  /* tabs: the graph and the logs share the page, one shown at a time */
+  .tabs { display: flex; gap: 2px; }
+  .tabs a {
+    color: var(--ink); text-decoration: none; padding: 4px 12px;
+    border: 1px solid transparent; border-radius: 3px;
+  }
+  .tabs a[aria-current="page"] { border-color: var(--ink); background: var(--card); }
+  body[data-tab="logs"] .shell { display: none; }
+  body:not([data-tab="logs"]) .logs-view { display: none; }
+
+  /* a terminal: dark, whatever the dashboard's own palette */
+  .term {
+    --term-bg: #0d1017; --term-fg: #c9d1d9; --term-dim: #6e7681; --term-rule: #30363d;
+    background: var(--term-bg); color: var(--term-fg);
+    font-family: var(--mono); font-size: 12px; line-height: 1.45;
+    overflow: auto; position: relative;
+  }
+  .term .ln { display: flex; }
+  .term .ln.ctx { border-top: 1px solid var(--term-rule); }
+  .term .g {
+    flex: 0 0 18ch; padding: 0 1ch; color: var(--c); text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border-right: 2px solid var(--c); user-select: none;
+  }
+  /* dimmed, not hidden: scrolled into a long block, the name must still say whose it is */
+  .term .ln.cont .g { opacity: .35; }
+  .term .ts { flex: 0 0 auto; padding-left: 1ch; color: var(--term-dim); user-select: none; display: none; }
+  .term[data-times="true"] .ts { display: inline; }
+  .term .tx { flex: 1; padding: 0 1ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .term .sep .tx, .term .reload .tx { color: var(--term-dim); }
+  .term .quiet { color: var(--term-dim); padding: 6px 1ch; }
+  .term .cursor { color: var(--term-dim); padding: 0 1ch; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .open-logs { font: inherit; font-size: 11px; background: none; border: 1px solid var(--grey); cursor: pointer; margin-top: 14px; }
+
+  .logs-view {
+    height: calc(100vh - var(--head)); display: flex; flex-direction: column;
+    background: #0d1017;
+  }
+  /* the pills take the room left and wrap among themselves; the actions stay together */
+  #log-pills { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .logs-bar {
+    display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+    background: #161b22; color: #c9d1d9; border-bottom: 1px solid #30363d;
+  }
+  .pill {
+    font: inherit; font-size: 11.5px; color: #c9d1d9; background: transparent; cursor: pointer;
+    border: 1px solid #30363d; border-radius: 999px; padding: 2px 10px 2px 8px;
+  }
+  .pill::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                  margin-right: 6px; border: 1px solid var(--c); }
+  .pill[aria-pressed="true"] { border-color: var(--c); }
+  .pill[aria-pressed="true"]::before { background: var(--c); }
+  .log-term {
+    font: inherit; font-size: 11.5px; width: 28ch; color: #c9d1d9; background: #0d1017;
+    border: 1px solid #30363d; border-radius: 3px; padding: 2px 6px;
+  }
+  .log-term[aria-invalid="true"] { border-color: #f85149; }
+  .levels-filter { display: inline-flex; }
+  .levels-filter button, .log-act {
+    font: inherit; font-size: 11.5px; color: #8b949e; background: transparent; cursor: pointer;
+    border: 1px solid #30363d; padding: 2px 8px;
+  }
+  .levels-filter button + button { border-left: 0; }
+  .levels-filter button[aria-pressed="true"] { color: #c9d1d9; background: #21262d; }
+  .levels-filter b { font-weight: normal; color: #6e7681; }
+  .log-act { border-radius: 3px; }
+  /* a warning's or error's line, flagged - also when not filtering */
+  .term .ln.warn .tx { box-shadow: inset 3px 0 #d29922; }
+  .term .ln.error .tx { box-shadow: inset 3px 0 #f85149; }
+  .term .ln.warn.by-level .tx { color: #e3b341; }
+  .term .ln.error.by-level .tx { color: #ff7b72; }
+  .term .ln[hidden] { display: none; }
+  .logs-bar label { font-size: 11.5px; color: #8b949e; }
+  .logs-view .term { flex: 1; padding: 6px 0; }
+  .new-lines {
+    position: absolute; right: 18px; bottom: 14px; font: inherit; cursor: pointer;
+    color: #0d1017; background: #c9d1d9; border: 0; border-radius: 999px; padding: 4px 12px;
+  }
+  .logs-main { flex: 1; position: relative; display: flex; min-height: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; height: auto; }
+    .grip { display: none; }
+    .rail { border-top: 1px solid var(--ink); }
+  }
+</style>
+</head>
+<body>
+  <header class="masthead">
+    <h1 class="wordmark">zent</h1>
+    <nav class="tabs" id="tabs">
+      <a href="#graph" data-tab="graph">Graph</a>
+      <a href="#logs" data-tab="logs">Logs</a>
+    </nav>
+    <div class="run" id="run" data-state="idle">
+      <span class="run-label"><small id="run-caption">no run</small><span class="preset" id="preset"></span></span>
+      <button type="button" class="run-toggle" id="run-toggle" hidden></button>
+    </div>
+    <span class="link" id="link">connecting</span>
+    <button type="button" class="rail-toggle" id="rail-toggle" aria-pressed="true"
+            aria-label="Side panel" title="Hide the side panel">
+      <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true">
+        <rect x="0.75" y="0.75" width="18.5" height="14.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <rect class="pane" x="12" y="0.75" width="7.25" height="14.5" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+    </button>
+  </header>
+
+  <main class="shell" id="shell">
+    <section class="loom" id="loom" aria-label="component graph">
+      <div class="preview-banner" id="preview-banner" hidden></div>
+      <svg class="warp" id="warp" aria-hidden="true"></svg>
+      <div class="levels" id="levels"></div>
+    </section>
+
+    <div class="grip" id="grip" role="separator" aria-orientation="vertical"
+         title="Drag to resize &middot; double-click to reset"></div>
+
+    <aside class="rail">
+      <div id="rail-run">
+        <div>
+          <h2>presets</h2>
+          <ul class="picker" id="preset-picker"></ul>
+        </div>
+        <div>
+          <h2>run</h2>
+          <div id="summary" class="quiet">Nothing running.</div>
+        </div>
+        <div>
+          <h2>status</h2>
+          <div class="legend">
+            <span class="up"><i></i>up</span>
+            <span class="done"><i></i>done</span>
+            <span class="starting"><i></i>starting</span>
+            <span class="stopping"><i></i>stopping</span>
+            <span class="failed"><i></i>failed</span>
+            <span><i></i>pending</span>
+            <span class="external"><i></i>external</span>
+            <span class="idle"><i></i>idle (kept warm)</span>
+            <span><i></i>off</span>
+          </div>
+          <label class="show-stopped">
+            <input type="checkbox" id="show-stopped">
+            Show stopped
+          </label>
+        </div>
+        <div>
+          <h2>component</h2>
+          <div id="detail" class="quiet">Select a component to see its status.</div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <section class="logs-view" id="logs-view" aria-label="logs">
+    <div class="logs-bar">
+      <span id="log-pills"></span>
+      <input type="search" id="log-term" class="log-term" placeholder="filter: text or /regexp/" spellcheck="false">
+      <span class="levels-filter" role="radiogroup" aria-label="level">
+        <button type="button" data-level="" aria-pressed="true">all</button>
+        <button type="button" data-level="warn" aria-pressed="false">warnings <b id="n-warn">0</b></button>
+        <button type="button" data-level="error" aria-pressed="false">errors <b id="n-error">0</b></button>
+      </span>
+      <label><input type="checkbox" id="log-times"> times</label>
+      <button type="button" class="log-act" id="log-copy" title="Copy the lines shown, without colour codes">copy</button>
+      <button type="button" class="log-act" id="log-clear" title="Clear this view - new lines keep coming">clear</button>
+    </div>
+    <div class="logs-main">
+      <div class="term" id="logs-term"></div>
+      <button type="button" class="new-lines" id="new-lines" hidden></button>
+    </div>
+  </section>
+
+<!-- vendored, not CDN-loaded (BSD-0, no build step) - see zent.ui.render's
+     docstring. Only used for hx-post/hx-disabled-elt on action buttons and
+     manually-processed server-rendered fragments; the live push itself
+     stays a plain WebSocket (see connect() below) - the DAG layout needs
+     :status/:deps as structured data, which htmx's own websocket
+     extension (HTML-only) can't carry. -->
+<script src="/htmx.min.js"></script>
+<!-- vendored like htmx (MIT, ansi_up 5.2.1): the logs' terminal colours -->
+<script src="/ansi_up.js"></script>
+<script>
+"use strict";
+
+let view = { components: {}, graph: [], preset: null };
+let selected = null;
+// "load a preset without starting it" - GET /api/preview/:preset (pure,
+// zent.compose/resolve-preset - nothing deployed). Kept separate from
+// `view` rather than replacing it, so a live push in the background keeps
+// `view` current while previewing, and exiting preview shows up-to-date
+// state instead of whatever was live when preview started.
+let previewing = null;
+let previewData = null;
+function activeData() { return previewing ? previewData : view; }
+// A stopped/off component clutters the
+// loom (it's not part of the current run, just left tracked/torn-down), so
+// it's hidden by default; persisted like the rail width/zoom below.
+let showStopped = localStorage.getItem("zent.showStopped") === "true";
+
+// the wrapper's own data-status (CSS/layout only now - the label text
+// itself is server-rendered, see zent.ui.render's state-label).
+const STATE_CLASS = {
+  pending: "queued", deploying: "starting", up: "up", done: "done", idle: "idle", stopping: "stopping",
+  failed: "failed", external: "external", off: "off", down: "stopped"
+};
+const WOVEN = new Set(["up", "done", "external"]);
+
+/* Layered DAG: a component sits one level right of its deepest dependency.
+   That level IS the warp position, so the layout carries the dependency
+   structure rather than decorating it. Row order within a level starts
+   alphabetical, then a few barycenter sweeps (median-heuristic crossing
+   reduction, the standard trick behind Sugiyama-style layered graph
+   drawing) nudge each row toward the average row of the nodes it's
+   threaded to - a fan-out/fan-in (e.g. a seed script feeding three different
+   downstream apps) stops crossing the threads of unrelated components. */
+function levelsOf(components) {
+  const depth = {}, visiting = new Set();
+  const of = (name) => {
+    if (depth[name] !== undefined) return depth[name];
+    if (visiting.has(name)) return 0;          // a cycle is the engine's error to report
+    visiting.add(name);
+    const deps = (components[name]?.deps || []).filter((d) => components[d]);
+    depth[name] = deps.length ? Math.max(...deps.map(of)) + 1 : 0;
+    visiting.delete(name);
+    return depth[name];
+  };
+  Object.keys(components).forEach(of);
+  const levels = [];
+  for (const [name, d] of Object.entries(depth)) (levels[d] ||= []).push(name);
+  levels.forEach((names) => names.sort());
+
+  const predsOf = (name) => (components[name]?.deps || []).filter((d) => components[d]);
+  const succsOf = {};
+  for (const name of Object.keys(components)) {
+    for (const p of predsOf(name)) (succsOf[p] ||= []).push(name);
+  }
+  const rowIndex = () => {
+    const idx = {};
+    levels.forEach((lvl) => lvl.forEach((n, i) => { idx[n] = i; }));
+    return idx;
+  };
+  const sweep = (forward) => {
+    const idx = rowIndex();
+    const order = forward ? levels.map((_, i) => i) : levels.map((_, i) => i).reverse();
+    const neighborsOf = forward ? predsOf : (n) => succsOf[n] || [];
+    for (const d of order) {
+      const keyed = levels[d].map((n) => {
+        const rows = neighborsOf(n).map((m) => idx[m]).filter((v) => v !== undefined);
+        return [n, rows.length ? rows.reduce((a, b) => a + b, 0) / rows.length : idx[n]];
+      });
+      keyed.sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
+      levels[d] = keyed.map(([n]) => n);
+      levels[d].forEach((n, i) => { idx[n] = i; });
+    }
+  };
+  for (let pass = 0; pass < 4; pass++) { sweep(true); sweep(false); }
+
+  return levels;
+}
+
+/* renderSummary/renderPresets/renderDetail's string-building moved server-
+   side (zent.ui.render) - the websocket push already carries the rendered
+   fragments (view.summaryHtml/presetsHtml), and the detail panel is a
+   fetch on selection (loadDetail below), since it depends on `selected`,
+   which the server has no reason to track. */
+let lastDetailKey = null;
+
+function render() {
+  renderRun();
+  renderRunToggle();
+
+  if (view.summaryHtml) document.getElementById("summary").outerHTML = view.summaryHtml;
+  if (view.presetsHtml) {
+    document.getElementById("preset-picker").outerHTML = view.presetsHtml;
+    markPreviewing(previewing);
+    htmx.process(document.getElementById("preset-picker"));
+  }
+  // only on change: a refetch replaces the panel
+  const detailKey = selected && selected + JSON.stringify(view.components[selected] ?? null);
+  if (selected && detailKey !== lastDetailKey) loadDetail(selected);
+  lastDetailKey = detailKey;
+  renderLogs();
+  markBusy();
+}
+
+/* Fetches and shows a preset's would-be components/graph without starting
+   anything (zent.ui.render/component-card with :preview? true drops the
+   reload/stop buttons server-side - nothing here is deployed). Toggles off
+   on a second click of the same name, same as a normal expand/collapse. */
+async function previewPreset(name) {
+  if (previewing === name) return exitPreview();
+  try {
+    const res = await fetch("/api/preview/" + encodeURIComponent(name));
+    if (!res.ok) return;
+    previewData = await res.json();
+    previewing = name;
+    renderRun();
+    renderRunToggle();
+    markPreviewing(name);
+  } catch {
+    /* the click just does nothing - no partial/broken preview state to undo */
+  }
+}
+
+function exitPreview() {
+  previewing = null;
+  previewData = null;
+  renderRun();
+  renderRunToggle();
+  markPreviewing(null);
+}
+
+// flags the picker's row of the preset being previewed (null: none)
+function markPreviewing(name) {
+  document.querySelectorAll("#preset-picker .preset-row")
+    .forEach((row) => { row.dataset.previewing = String(row.querySelector(".preset-name")?.dataset.preset === name); });
+}
+
+/* what applying the previewed preset would do from what runs now (the
+   engine's plan-summary); a redeploy's reason is its tooltip */
+function planLine(plan) {
+  if (!plan) return "";
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const part = (verb, names) => names.length ? verb + " " + names.map(esc).join(", ") : null;
+  const redeploys = Object.entries(plan.redeploy || {})
+    .map(([n, why]) => '<span title="' + esc(why) + '">' + esc(n) + "</span>");
+  const parts = [part("stops", plan.stop), part("keeps warm", plan["keep-warm"]),
+                 redeploys.length ? "redeploys " + redeploys.join(", ") : null,
+                 part("starts", plan.start)].filter(Boolean);
+  return '<span class="plan">' + (parts.length ? parts.join(" · ") : "nothing to change") + "</span>";
+}
+
+function renderPreviewBanner() {
+  const box = document.getElementById("preview-banner");
+  if (!previewing) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML =
+    "<span>Previewing " + previewing + "</span>" + planLine(previewData.plan) +
+    '<button type="button" class="play" hx-post="/api/apply/' + previewing + '" ' +
+    'hx-swap="none" hx-disabled-elt="this">Start</button>' +
+    '<button type="button" class="back">Back to live view</button>';
+  box.querySelector(".back").onclick = exitPreview;
+  // deferred: htmx handles this same click after us, and drops it if the
+  // button is no longer in the document
+  box.querySelector(".play").onclick = () => setTimeout(exitPreview);
+  htmx.process(box);
+}
+
+/* The one big, hard-to-miss control next to the masthead's preset badge -
+   Stop for whatever's actually live, or Start for a preset currently being
+   previewed (mirrors the preview banner's own Start button, so it's usable
+   without scrolling back to the loom). */
+function renderRunToggle() {
+  // outerHTML, not attribute mutation - #run-toggle otherwise persists
+  // across every push, and re-htmx.process()ing the same node repeatedly
+  // isn't a pattern used anywhere else here; replacing it (same as
+  // #summary/#preset-picker/#detail) keeps every processed node fresh.
+  // the label beside it says which preset - the button only says what it does
+  const state = previewing ? "preview" : view.preset ? "live" : "idle";
+  document.getElementById("run").dataset.state = state;
+  document.getElementById("run-caption").textContent = { preview: "preview", live: "running", idle: "no run" }[state];
+  document.getElementById("preset").textContent = previewing || view.preset || "";
+  const old = document.getElementById("run-toggle");
+  if (previewing) {
+    old.outerHTML = '<button type="button" class="run-toggle play" id="run-toggle" ' +
+      'hx-post="/api/apply/' + previewing + '" hx-swap="none" hx-disabled-elt="this">' +
+      '▶ Start</button>';
+    document.getElementById("run-toggle").addEventListener("click", () => setTimeout(exitPreview));
+  } else if (view.preset) {
+    old.outerHTML = '<button type="button" class="run-toggle stop" id="run-toggle" ' +
+      'hx-post="/api/stop-all" hx-swap="none" hx-disabled-elt="this">&#9632; Stop</button>';
+  } else {
+    old.outerHTML = '<button type="button" class="run-toggle" id="run-toggle" hidden></button>';
+  }
+  htmx.process(document.getElementById("run-toggle"));
+  markBusy();
+}
+
+function renderRun() {
+  const host = document.getElementById("levels");
+  const loom = document.getElementById("loom");
+  loom.dataset.preview = String(!!previewing);
+  renderPreviewBanner();
+
+  const data = activeData();
+  host.innerHTML = "";
+  // a preview shows every one of the preset's own components, never
+  // filtered by showStopped - nothing in it is "stopped", it just hasn't
+  // run yet, so that toggle has no meaning here.
+  const allNames = Object.keys(data.components);
+  const visible = (showStopped || previewing)
+    ? data.components
+    : Object.fromEntries(Object.entries(data.components)
+        .filter(([, c]) => c.status !== "down" && c.status !== "off"));
+  const hiddenCount = allNames.length - Object.keys(visible).length;
+
+  // :attached-to one-shots ride under their host's card when it's shown, so
+  // they leave the layout; a dependency on one counts as one on its host
+  const strips = {};
+  for (const name of Object.keys(visible)) {
+    const host = hostOf(name, visible);
+    if (host) (strips[host] ||= []).push(name);
+  }
+  const layout = Object.fromEntries(Object.entries(visible)
+    .filter(([name]) => !hostOf(name, visible))
+    .map(([name, c]) => [name, { ...c, deps: (c.deps || []).map((d) => hostOf(d, visible) || d)
+                                                           .filter((d) => d !== name) }]));
+  const levels = levelsOf(layout);
+
+  if (!levels.length) {
+    host.innerHTML = hiddenCount
+      ? '<div class="empty-loom"><h2>Nothing shown</h2>' +
+        "<p>" + hiddenCount + " stopped component(s) hidden - " +
+        '<button type="button" class="show-stopped-link">show them</button>.</p></div>'
+      : '<div class="empty-loom"><h2>The loom is empty</h2>' +
+        "<p>Pick a preset from the panel on the right, or bring one up from a terminal with " +
+        "<code>zent &lt;preset&gt;</code> / <code>zent watch &lt;preset&gt;</code>. " +
+        "Components appear here in dependency order as they start.</p></div>";
+    const showLink = host.querySelector(".show-stopped-link");
+    if (showLink) showLink.onclick = () => setShowStopped(true);
+    drawWarp();
+    return;
+  }
+
+  levels.forEach((names) => {
+    const col = document.createElement("div");
+    col.className = "level";
+
+    for (const name of names) {
+      const stack = document.createElement("div");
+      stack.className = "stack";
+      stack.appendChild(nodeEl(name, data.components[name], false));
+      for (const s of (strips[name] || []).sort()) stack.appendChild(nodeEl(s, data.components[s], true));
+      col.appendChild(stack);
+    }
+    host.appendChild(col);
+  });
+
+  // activates the hx-post/hx-disabled-elt attributes component-card just
+  // rendered - htmx only auto-wires content it swapped in itself, not
+  // innerHTML set by other code (see htmx's docs on manually processing
+  // new content).
+  htmx.process(host);
+  drawWarp();
+}
+
+/* The one-shot `name` is drawn under, or null: its :attached-to, when that
+   component is itself among `components`. */
+function hostOf(name, components) {
+  const host = components[name]?.["attached-to"];
+  return host && host !== name && components[host] ? host : null;
+}
+
+function nodeEl(name, c, satellite) {
+  const status = STATE_CLASS[c.status] || "queued";
+  const el = document.createElement("div");
+  el.className = satellite ? "node satellite" : "node";
+  el.setAttribute("role", "button");
+  el.tabIndex = 0;
+  el.dataset.status = status;
+  el.dataset.name = name;
+  el.dataset.selected = String(selected === name);
+  // the card's own inner markup - name/kind/state/repo/services/ports/
+  // source/links/error/reload-stop buttons - is server-rendered
+  // (zent.ui.render/component-card, see its docstring on the split);
+  // this wrapper only owns what's genuinely client/layout-side: the
+  // status/selection dataset attributes and the click/keydown handling.
+  el.innerHTML = c.card;
+  // Anything interactive inside the card handles its own click - a real
+  // link has to stay a real link (cmd-click, middle-click, "open in new
+  // tab", the status bar showing the target on hover), which it can't
+  // if the card swallows the event. closest() rather than per-element
+  // stopPropagation: it can't be forgotten when new controls are added.
+  // a second click on the selected card deselects it
+  const select = () => setSelected(selected === name ? null : name);
+  el.onclick = (e) => { if (!e.target.closest("a, button")) select(); };
+  el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(); } };
+  el.onmouseenter = el.onmouseleave = () => drawWarp();
+  const cdBtn = el.querySelector(".workdir-open");
+  if (cdBtn && c.source) cdBtn.onclick = () => copyCd(c.source.dir, cdBtn);
+  return el;
+}
+
+/* The warp lines, the dependency threads, and the zent: one pass of drawing,
+   because all three are positioned from the same measured node boxes. */
+function drawWarp() {
+  const data = activeData();
+  const loom = document.getElementById("loom");
+  const svg = document.getElementById("warp");
+  const box = loom.getBoundingClientRect();
+  const w = loom.scrollWidth, h = Math.max(loom.scrollHeight, box.height);
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+
+  const at = {};
+  loom.querySelectorAll(".node").forEach((n) => {
+    const r = n.getBoundingClientRect();
+    at[n.dataset.name] = {
+      l: r.left - box.left + loom.scrollLeft,
+      r: r.right - box.left + loom.scrollLeft,
+      cx: r.left + r.width / 2 - box.left + loom.scrollLeft,
+      y: r.top - box.top + loom.scrollTop + r.height / 2,
+      bottom: r.bottom - box.top + loom.scrollTop
+    };
+  });
+
+  const parts = [];
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // arrowheads - one per thread state, so direction reads even before colour
+  // does. Defined once per draw (cheap, and drawWarp already rebuilds the
+  // whole <svg> every render).
+  parts.push(
+    '<defs>' +
+    '<marker id="arrow-taut" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#25316b"/></marker>' +
+    '<marker id="arrow-slack" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#c9c6bd"/></marker>' +
+    '<marker id="arrow-related" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#8d8880"/></marker>' +
+    '<marker id="arrow-in" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#25316b"/></marker>' +
+    '<marker id="arrow-out" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#c1892b"/></marker>' +
+    '</defs>'
+  );
+
+  // warp: one vertical hairline per level, behind everything
+  loom.querySelectorAll(".level").forEach((col) => {
+    const r = col.getBoundingClientRect();
+    const x = Math.round(r.left + r.width / 2 - box.left + loom.scrollLeft);
+    parts.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="#d6d3ca" stroke-width="1"/>`);
+  });
+
+  /* The zent itself: dependency threads crossing the warp. A thread is slack
+     grey until both ends are up, then it pulls taut in indigo - so the fabric
+     closes as the stack comes up, and health reads as how much of the graph
+     is woven rather than as a row of status dots. An arrowhead makes the
+     direction ("this depends on that") readable without hovering, and a taut
+     thread of the hovered or selected card carries a moving dash - current
+     flowing through a closed circuit. */
+  // a strip already sits on its host: its own dependency threads are hidden,
+  // only the ones of components depending on it are drawn - unless it's
+  // selected, and even then not the one to its host, which it already hangs from
+  const strips = new Set([...loom.querySelectorAll(".node.satellite")].map((n) => n.dataset.name));
+  // a selected card's threads stand out - what it waits for in indigo, what
+  // waits for it in weld - and every other thread fades back
+  const focus = at[selected] ? selected : null;
+  // the flowing dash is kept to the selected or hovered card's threads: a
+  // whole fabric animating keeps the GPU busy for nothing
+  const hovered = loom.querySelector(".node:hover")?.dataset.name;
+  for (const [to, from] of data.graph || []) {
+    const a = at[from], b = at[to];
+    if (!a || !b || (strips.has(to) && (to !== focus || data.components[to]["attached-to"] === from))) continue;
+    const taut = WOVEN.has(data.components[from]?.status) && WOVEN.has(data.components[to]?.status);
+    const role = !focus ? null : to === focus ? "in" : from === focus ? "out" : "faded";
+    const mid = a.r + (b.l - a.r) / 2;
+    const flow = taut && !reduceMotion && [focus, hovered].some((n) => n && (n === to || n === from))
+      ? '<animate attributeName="stroke-dashoffset" values="12;0" dur="700ms" repeatCount="indefinite"/>'
+      : "";
+    const lit = role === "in" || role === "out";
+    const stroke = role === "in" ? "#25316b" : role === "out" ? "#c1892b" : taut ? "#25316b" : "#c9c6bd";
+    const marker = lit ? "arrow-" + role : taut ? "arrow-taut" : "arrow-slack";
+    parts.push(
+      `<path class="thread" d="M${a.r} ${a.y} C${mid} ${a.y} ${mid} ${b.y} ${b.l} ${b.y}" ` +
+      `fill="none" stroke="${stroke}" stroke-width="${lit ? 2.6 : taut ? 1.6 : 1}" ` +
+      `stroke-dasharray="${taut || lit ? "5 7" : "3 5"}" opacity="${role === "faded" ? 0.2 : 1}" ` +
+      `marker-end="url(#${marker})">${flow}</path>`
+    );
+  }
+
+  /* :related edges (zent.schema) - a declared
+     coupling zent never orchestrates (e.g. an :external Tomcat expected to
+     be launched by hand with a flag pointing at another component). Always
+     the weak/dashed style, never taut/animated - unlike a real dependency
+     thread, nothing here is ever "confirmed wired" by zent's own doing.
+
+     Routed via each node's LEFT edge, bowing further left, never the right
+     edge a real dependency thread already uses - :related has no bearing on
+     levelsOf (only :deps does), so the two ends can land in the same
+     column, a reversed one, or anywhere really. Tried the right edge first
+     (crossed a real thread using the same gap) and the bottom edge next
+     (invisible whenever both ends share a column - the path ran straight
+     behind the very card sitting between them, same x on both ends); the
+     left side has neither problem since nothing else is routed there. */
+  for (const [to, from] of data.informational || []) {
+    const a = at[from], b = at[to];
+    if (!a || !b) continue;
+    const bow = Math.min(a.l, b.l) - 26;
+    parts.push(
+      `<path class="thread" d="M${a.l} ${a.y} C${bow} ${a.y} ${bow} ${b.y} ${b.l} ${b.y}" ` +
+      `fill="none" stroke="#8d8880" stroke-width="1.4" stroke-dasharray="4 4" ` +
+      `opacity="${focus && to !== focus && from !== focus ? 0.2 : 1}" ` +
+      `marker-end="url(#arrow-related)"/>`
+    );
+  }
+
+  // where the weave broke: the thread frays at the failed component
+  for (const [name, c] of Object.entries(data.components)) {
+    if (c.status !== "failed" || !at[name]) continue;
+    const p = at[name];
+    parts.push(
+      `<g stroke="#a6382c" stroke-width="1.3" fill="none" class="fray-mark">` +
+      `<path d="M${p.r} ${p.y} l13 -9"/><path d="M${p.r} ${p.y} l15 1"/>` +
+      `<path d="M${p.r} ${p.y} l12 10"/></g>`
+    );
+  }
+
+  svg.innerHTML = parts.join("");
+}
+
+/* Server-rendered (zent.ui.render/detail-panel, GET /api/detail/:name) -
+   fetched on selection rather than pushed with every snapshot, since it
+   depends on `selected`, which is client-only state the server never
+   tracks. Called again on every push too (render()), so a component torn
+   down while selected doesn't leave stale facts on screen. */
+/* Deselecting (same card again, Escape, a click on the empty fabric) puts the
+   detail panel back to its placeholder - render() only refreshes a selection. */
+const detailPlaceholder = document.getElementById("detail").outerHTML;
+
+function setSelected(name) {
+  selected = name;
+  if (!name) document.getElementById("detail").outerHTML = detailPlaceholder;
+  render();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && selected) setSelected(null);
+});
+
+async function loadDetail(name) {
+  try {
+    const res = await fetch("/api/detail/" + name);
+    if (selected !== name) return;                  // selection moved mid-fetch
+    document.getElementById("detail").outerHTML = await res.text();
+  } catch {
+    /* transient - the next push retries */
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/* Logs. Files on disk (zent.logs), streamed as Server-Sent Events by
+   zent.ui.logstream: one stream while the Logs tab is open, only the new
+   lines of the components it shows.                                        */
+/* ------------------------------------------------------------------------ */
+
+// a component's colour comes from its name, so it's the same in every preset;
+// tones readable on the dark terminal and told apart without full colour vision
+const LOG_COLORS = ["#e69f00", "#56b4e9", "#3fbf8f", "#f0e442", "#6b9bff",
+                    "#ff7b54", "#d986c0", "#a5a5ff", "#7fd1c3", "#e8a0a0"];
+function colorOf(name) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return LOG_COLORS[h % LOG_COLORS.length];
+}
+
+const LOG_MAX_CHARS = 2_000_000, LOG_TRIM_TO = 1_000_000;
+
+const ansi = new AnsiUp();
+
+// a line's level, by pattern - logs carry no structured one. A stack trace's
+// frames don't count: one exception would otherwise be thirty errors.
+const LEVEL_RE = { error: /\b(ERROR|FATAL|SEVERE)\b|^\S*(Exception|Error)\b/, warn: /\b(WARN|WARNING)\b/ };
+function levelOf(text) {
+  return LEVEL_RE.error.test(text) ? "error" : LEVEL_RE.warn.test(text) ? "warn" : "";
+}
+// shown before each warning/error when filtering by level: what led to it
+const LEVEL_CONTEXT = 5;
+
+class LogPane {
+  // `newLines`: the "N new lines" button
+  constructor(term, newLines) {
+    this.term = term;
+    this.newLines = newLines;
+    this.names = [];
+    this.offsets = {};            // name -> byte offset already shown
+    this.es = null;
+    this.chars = 0;
+    this.unseen = 0;
+    this.stick = true;
+    this.filter = { re: null, level: "" };
+    this.context = {};            // name -> the hidden lines just before, for a level filter
+    this.counts = { warn: 0, error: 0 };
+    this.onCounts = null;
+    this.cursor = document.createElement("div");
+    this.cursor.className = "cursor";
+    this.cursor.textContent = "█";
+    this.term.appendChild(this.cursor);
+    this.term.addEventListener("scroll", () => {
+      this.stick = this.term.scrollTop + this.term.clientHeight >= this.term.scrollHeight - 24;
+      if (this.stick) this.setUnseen(0);
+    });
+    newLines.onclick = () => { this.term.scrollTop = this.term.scrollHeight; };
+  }
+
+  watch(names) {
+    if (this.es && names.join() === this.names.join()) return;
+    const kept = new Set(names);
+    // a component dropped from the view leaves it, and comes back with its backlog
+    for (const n of this.names) if (!kept.has(n)) delete this.offsets[n];
+    this.term.querySelectorAll(".ln").forEach((ln) => { if (!kept.has(ln.dataset.c)) this.remove(ln); });
+    this.names = names;
+    this.close();
+    if (names.length) this.open();
+    this.placeholder();
+  }
+
+  open() {
+    const q = new URLSearchParams({ c: this.names.join(",") });
+    const from = this.names.filter((n) => this.offsets[n] !== undefined).map((n) => n + ":" + this.offsets[n]);
+    if (from.length) q.set("from", from.join(","));
+    const es = new EventSource("/api/logs/stream?" + q);
+    es.onmessage = (ev) => this.add(JSON.parse(ev.data));
+    // reopened by hand, not by EventSource's own retry: that one would ask
+    // for the same URL, backlog included, and show it twice
+    es.onerror = () => {
+      es.close();
+      if (this.es === es) { this.es = null; setTimeout(() => { if (!this.es && this.names.length) this.open(); }, 1000); }
+    };
+    this.es = es;
+  }
+
+  close() {
+    if (this.es) this.es.close();
+    this.es = null;
+  }
+
+  add({ c, l, o, t, b, r }) {
+    if (!this.names.includes(c)) return;
+    if (r) this.line(c, "--- new run ---", t, "sep");
+    for (const text of l) this.line(c, text, t, text.startsWith("--- reload") ? "reload" : "");
+    if (o !== undefined) this.offsets[c] = o;
+    this.trim();
+    this.placeholder();
+    if (this.stick) this.term.scrollTop = this.term.scrollHeight;
+    else if (!b) this.setUnseen(this.unseen + l.length);
+  }
+
+  line(c, text, t, cls) {
+    const prev = this.cursor.previousElementSibling;
+    const same = prev?.dataset?.c === c;
+    const ln = document.createElement("div");
+    // the name stands out where the component changes, dimmed while it goes on
+    ln.className = "ln" + (cls ? " " + cls : "") + (prev?.dataset?.c && !same ? " ctx" : "") + (same ? " cont" : "");
+    ln.dataset.c = c;
+    ln.style.setProperty("--c", colorOf(c));
+    const g = document.createElement("span"); g.className = "g"; g.textContent = c;
+    const ts = document.createElement("span"); ts.className = "ts";
+    ts.textContent = t ? new Date(t).toTimeString().slice(0, 8) : "        ";
+    const tx = document.createElement("span"); tx.className = "tx";
+    // ansi_up escapes the text before turning colour codes into spans, so a
+    // log line can't inject markup; filters and copy then read the plain text
+    const coloured = text.includes("\x1b[");
+    if (coloured) tx.innerHTML = ansi.ansi_to_html(text); else tx.textContent = text;
+    ln.append(g, ts, tx);
+    const plain = tx.textContent;
+    const lvl = cls ? "" : levelOf(plain);
+    if (lvl) {
+      ln.classList.add(lvl);
+      ln.dataset.lvl = lvl;
+      // a line with no colours of its own gets its level's
+      if (!coloured) ln.classList.add("by-level");
+      this.counts[lvl]++;
+      this.onCounts?.(this.counts);
+    }
+    this.apply(ln);
+    this.term.insertBefore(ln, this.cursor);
+    this.chars += plain.length;
+  }
+
+  remove(ln) {
+    this.chars -= ln.querySelector(".tx")?.textContent.length || 0;
+    if (ln.dataset.lvl) { this.counts[ln.dataset.lvl]--; this.onCounts?.(this.counts); }
+    ln.remove();
+  }
+
+  // shown or not, for the current filter: the text must match, and with a
+  // level, only that level's lines - each with the lines just before it
+  apply(ln) {
+    const { re, level } = this.filter;
+    const textOk = !re || re.test(ln.lastChild.textContent);
+    if (!level) { ln.hidden = !textOk; return; }
+    const ctx = (this.context[ln.dataset.c] ||= []);
+    const hit = textOk && ln.dataset.lvl === level;
+    if (hit) { ctx.forEach((p) => { p.hidden = false; }); ctx.length = 0; }
+    else { ctx.push(ln); if (ctx.length > LEVEL_CONTEXT) ctx.shift(); }
+    ln.hidden = !hit;
+  }
+
+  setFilter(filter) {
+    this.filter = filter;
+    this.context = {};
+    this.term.querySelectorAll(".ln").forEach((ln) => this.apply(ln));
+    this.term.scrollTop = this.term.scrollHeight;
+  }
+
+  // what's shown, as text - prefixed by component when there's more than one
+  visibleText() {
+    const lines = [...this.term.querySelectorAll(".ln:not([hidden])")];
+    const many = new Set(lines.map((ln) => ln.dataset.c)).size > 1;
+    return lines.map((ln) => (many ? ln.dataset.c + " | " : "") + ln.lastChild.textContent);
+  }
+
+  clear() {
+    this.term.querySelectorAll(".ln").forEach((ln) => this.remove(ln));
+    this.context = {};
+    this.setUnseen(0);
+    this.placeholder();
+  }
+
+  // past LOG_MAX_CHARS the oldest lines go, down to LOG_TRIM_TO in one cut -
+  // rare big cuts, not a reflow on every line
+  trim() {
+    if (this.chars <= LOG_MAX_CHARS) return;
+    for (let ln = this.term.querySelector(".ln"); ln && this.chars > LOG_TRIM_TO; ln = this.term.querySelector(".ln")) this.remove(ln);
+  }
+
+  placeholder() {
+    let q = this.term.querySelector(".quiet");
+    const empty = !this.term.querySelector(".ln");
+    if (empty && !q) {
+      q = document.createElement("div");
+      q.className = "quiet";
+      this.term.insertBefore(q, this.cursor);
+    }
+    if (q) q.textContent = this.names.length ? "No output yet." : "No component shown - pick one above.";
+    if (!empty && q) q.remove();
+  }
+
+  setUnseen(n) {
+    this.unseen = n;
+    this.newLines.hidden = n === 0;
+    this.newLines.textContent = n + " new line" + (n === 1 ? "" : "s") + " ↓";
+  }
+}
+
+const logsPane = new LogPane(document.getElementById("logs-term"), document.getElementById("new-lines"));
+
+/* Which components the Logs tab shows: per preset, in localStorage - a view
+   preference, not orchestration state. Every component, until changed. */
+function logKey() { return "zent.logs." + (view.preset || "none"); }
+
+function logSelection() {
+  const all = Object.keys(view.components).sort();
+  try {
+    const saved = JSON.parse(localStorage.getItem(logKey()));
+    if (Array.isArray(saved)) return saved.filter((n) => view.components[n]).sort();
+  } catch { /* unreadable: start over from every component */ }
+  return all;
+}
+
+function setLogSelection(names) {
+  localStorage.setItem(logKey(), JSON.stringify([...new Set(names)].sort()));
+  render();
+}
+
+// a legend, as in Grafana: a click shows only `name` - clicked again, every
+// component; ctrl/cmd-click adds it to what's shown, or takes it out
+function pickLog(name, e) {
+  const sel = logSelection();
+  if (e?.ctrlKey || e?.metaKey) {
+    return setLogSelection(sel.includes(name) ? sel.filter((n) => n !== name) : [...sel, name]);
+  }
+  setLogSelection(sel.length === 1 && sel[0] === name ? Object.keys(view.components) : [name]);
+}
+
+function renderLogs() {
+  const sel = logSelection();
+  const pills = document.getElementById("log-pills");
+  pills.innerHTML = "";
+  for (const name of Object.keys(view.components).sort()) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pill";
+    b.style.setProperty("--c", colorOf(name));
+    b.setAttribute("aria-pressed", String(sel.includes(name)));
+    b.title = "click: only this one (again: all) · ctrl/⌘-click: add or remove";
+    b.textContent = name;
+    b.onclick = (e) => pickLog(name, e);
+    pills.appendChild(b);
+  }
+  if (document.body.dataset.tab === "logs") logsPane.watch(sel);
+  else logsPane.close();
+}
+
+/* The Logs tab's filter lives in the URL (#logs?term=...&level=warn), so a
+   filtered view can be bookmarked or reopened. "/.../" is a regexp, anything
+   else plain text; both case-insensitive. */
+function logParams() { return new URLSearchParams(location.hash.split("?")[1] || ""); }
+
+function readLogFilter() {
+  const p = logParams();
+  const raw = p.get("term") || "";
+  const input = document.getElementById("log-term");
+  if (document.activeElement !== input) input.value = raw;
+  let re = null;
+  input.removeAttribute("aria-invalid");
+  input.title = "";
+  if (raw) {
+    const m = raw.match(/^\/(.+)\/$/);
+    try { re = new RegExp(m ? m[1] : raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"); }
+    catch (e) { input.setAttribute("aria-invalid", "true"); input.title = e.message; }
+  }
+  const level = ["warn", "error"].includes(p.get("level")) ? p.get("level") : "";
+  document.querySelectorAll(".levels-filter button")
+    .forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.level === level)));
+  logsPane.setFilter({ re, level });
+}
+
+function writeLogFilter(changes) {
+  const p = logParams();
+  for (const [k, v] of Object.entries(changes)) { if (v) p.set(k, v); else p.delete(k); }
+  const q = p.toString();
+  // replaceState: no hashchange, no history entry per keystroke
+  history.replaceState(null, "", "#logs" + (q ? "?" + q : ""));
+  readLogFilter();
+}
+
+function showTab() {
+  const tab = location.hash.startsWith("#logs") ? "logs" : "graph";
+  document.body.dataset.tab = tab;
+  document.querySelectorAll("#tabs a").forEach((a) => {
+    if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
+  renderLogs();
+  if (tab === "logs") readLogFilter();
+  else drawWarp();                                // the loom was hidden: positions are stale
+}
+
+/* The token is baked into the page at load (zent.ui.server, a <meta> tag -
+   no separate fetch needed) and attached to every htmx-issued write here,
+   in one place instead of a per-call header. authorized-write? server-side
+   is the actual CSRF defense; this is just how the token gets there. */
+document.body.addEventListener("htmx:configRequest", (e) => {
+  e.detail.headers["X-Zent-Token"] = document.querySelector('meta[name="csrf-token"]')?.content || "";
+});
+
+/* Writes are queued: a POST answers {id} at once, the daemon handles the
+   command later, and view.done lists that id once it has - in no set order: a
+   quick stop can finish before a long apply queued before it. Until then
+   every button posting the same path shows a spinner - tracked here by path,
+   since each push re-renders the buttons themselves. Infinity while the POST
+   is still in flight (no id yet). */
+const pending = new Map();
+
+function markBusy() {
+  const done = new Set(view.done || []);
+  for (const [path, id] of pending) if (done.has(id)) pending.delete(path);
+  document.querySelectorAll("[hx-post]").forEach((b) => {
+    b.dataset.busy = String(pending.has(b.getAttribute("hx-post")));
+  });
+}
+
+document.body.addEventListener("htmx:beforeRequest", (e) => {
+  const path = e.detail.elt?.getAttribute?.("hx-post");
+  if (path) { pending.set(path, Infinity); markBusy(); }
+});
+
+document.body.addEventListener("htmx:afterRequest", (e) => {
+  const path = e.detail.elt?.getAttribute?.("hx-post");
+  if (!path) return;
+  let id;
+  try { id = JSON.parse(e.detail.xhr.responseText).id; } catch { /* not a queued write */ }
+  if (e.detail.successful && Number.isInteger(id)) pending.set(path, id);
+  else pending.delete(path);
+  markBusy();
+});
+
+/* A failed write flashes its button red - every write is a plain hx-post
+   (component-card/preset-picker, zent.ui.render), so this is the one place. */
+document.body.addEventListener("htmx:responseError", (e) => {
+  const btn = e.detail.elt;
+  if (!(btn instanceof HTMLElement) || !btn.classList.contains("act")) return;
+  btn.dataset.failed = "true";
+  btn.title = "HTTP " + e.detail.xhr.status;
+  setTimeout(() => { btn.dataset.failed = "false"; }, 3000);
+});
+
+/* Copies the absolute path, not the ~-shortened one on screen: it's what
+   you want to paste into anything, shell or not. localhost counts as a
+   secure context, so navigator.clipboard is available here. */
+async function copyCd(dir, btn) {
+  const shown = btn.textContent;
+  try {
+    await navigator.clipboard.writeText("cd " + dir);
+    btn.textContent = "copied";
+  } catch {
+    btn.textContent = "couldn't copy";
+    btn.dataset.failed = "true";
+  }
+  setTimeout(() => { btn.textContent = shown; btn.dataset.failed = "false"; }, 1200);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Resizing the rail, and panning/zooming the fabric. Both persist, because
+   a pane width and a zoom level are opinions about your screen, not about
+   the run - and re-setting them after every restart would be a chore.      */
+/* ------------------------------------------------------------------------ */
+
+const RAIL_MIN = 220, RAIL_MAX = 720, RAIL_DEFAULT = 330;
+const ZOOM_MIN = 0.4, ZOOM_MAX = 1.6;
+let zoom = 1;
+
+function setRailCollapsed(collapsed) {
+  document.getElementById("shell").dataset.railCollapsed = collapsed;
+  const toggle = document.getElementById("rail-toggle");
+  toggle.setAttribute("aria-pressed", String(!collapsed));
+  toggle.title = collapsed ? "Show the side panel" : "Hide the side panel";
+  localStorage.setItem("zent.railCollapsed", collapsed);
+  drawWarp();                       // the loom just changed width
+}
+
+function setShowStopped(shown) {
+  showStopped = shown;
+  document.getElementById("show-stopped").checked = shown;
+  localStorage.setItem("zent.showStopped", shown);
+  render();
+}
+
+function setRail(px) {
+  const w = Math.min(RAIL_MAX, Math.max(RAIL_MIN, px));
+  document.documentElement.style.setProperty("--rail", w + "px");
+  localStorage.setItem("zent.rail", w);
+  drawWarp();                       // the loom just changed width
+}
+
+function setZoom(z) {
+  zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  document.getElementById("levels").style.zoom = zoom;
+  localStorage.setItem("zent.zoom", zoom);
+  drawWarp();
+}
+
+function initViewControls() {
+  const grip = document.getElementById("grip");
+  const loom = document.getElementById("loom");
+
+  document.getElementById("rail-toggle").onclick = () =>
+    setRailCollapsed(document.getElementById("shell").dataset.railCollapsed !== "true");
+
+  document.getElementById("show-stopped").checked = showStopped;
+  document.getElementById("show-stopped").onchange = (e) => setShowStopped(e.target.checked);
+
+  // delegated: #preset-picker's own content is replaced wholesale on every
+  // push (render()'s outerHTML assignment), so a listener on it directly
+  // wouldn't survive past the first snapshot.
+  document.getElementById("rail-run").addEventListener("click", (e) => {
+    const name = e.target.closest(".preset-name")?.dataset.preset;
+    if (name) previewPreset(name);
+  });
+
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    grip.dataset.dragging = "true";
+    document.body.dataset.resizing = "true";
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (grip.dataset.dragging === "true") setRail(window.innerWidth - e.clientX);
+  });
+  const endResize = (e) => {
+    if (grip.dataset.dragging !== "true") return;
+    grip.releasePointerCapture(e.pointerId);
+    grip.dataset.dragging = "false";
+    document.body.dataset.resizing = "false";
+  };
+  grip.addEventListener("pointerup", endResize);
+  grip.addEventListener("pointercancel", endResize);
+  grip.addEventListener("dblclick", () => setRail(RAIL_DEFAULT));
+
+  // pan: drag anywhere that isn't a card or an interactive control (a
+  // button/link - the picker's preset buttons live outside any .node), so
+  // dragging never competes with selecting a card or hitting a button
+  let from = null;
+  loom.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest(".node, button, a")) return;
+    from = { x: e.clientX, y: e.clientY, left: loom.scrollLeft, top: loom.scrollTop };
+    loom.setPointerCapture(e.pointerId);
+    loom.dataset.panning = "true";
+  });
+  loom.addEventListener("pointermove", (e) => {
+    if (!from) return;
+    loom.scrollLeft = from.left - (e.clientX - from.x);
+    loom.scrollTop = from.top - (e.clientY - from.y);
+  });
+  const endPan = (e) => {
+    if (!from) return;
+    // a press that didn't drag is a click on the empty fabric: deselect
+    const click = e.type === "pointerup" && Math.hypot(e.clientX - from.x, e.clientY - from.y) < 4;
+    from = null;
+    loom.releasePointerCapture(e.pointerId);
+    loom.dataset.panning = "false";
+    if (click && selected) setSelected(null);
+  };
+  loom.addEventListener("pointerup", endPan);
+  loom.addEventListener("pointercancel", endPan);
+
+  // ctrl/cmd + wheel, i.e. the trackpad pinch - plain wheel stays scrolling
+  loom.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    setZoom(zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08));
+  }, { passive: false });
+
+  setRail(Number(localStorage.getItem("zent.rail")) || RAIL_DEFAULT);
+  setRailCollapsed(localStorage.getItem("zent.railCollapsed") === "true");
+  setZoom(Number(localStorage.getItem("zent.zoom")) || 1);
+}
+
+let reconnecting = false;
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws/view`);
+  const link = document.getElementById("link");
+  ws.onopen = async () => {
+    link.textContent = "live";
+    link.dataset.live = "true";
+    // after a reconnect the daemon may be a new process: new write token,
+    // command ids from 0 - refresh one, forget pending spinners of the other
+    if (reconnecting) {
+      pending.clear();
+      try {
+        const { token } = await (await fetch("/api/token")).json();
+        document.querySelector('meta[name="csrf-token"]').content = token;
+      } catch { /* the next reconnect retries */ }
+    }
+    reconnecting = true;
+  };
+  ws.onclose = () => {
+    link.textContent = "reconnecting";
+    link.dataset.live = "false";
+    setTimeout(connect, 1000);
+  };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "snapshot") {
+      view = msg.data;
+      // rendered server-side (zent.ui.render/run-summary, preset-picker) -
+      // pushed alongside the raw component data, not nested in it, since
+      // they're not per-component.
+      view.summaryHtml = msg["summary-html"];
+      view.presetsHtml = msg["presets-html"];
+      render();
+    }
+  };
+}
+
+function initLogControls() {
+  addEventListener("hashchange", showTab);
+  const times = document.getElementById("log-times");
+  times.checked = localStorage.getItem("zent.logTimes") === "true";
+  const applyTimes = () => {
+    logsPane.term.dataset.times = String(times.checked);
+    localStorage.setItem("zent.logTimes", times.checked);
+  };
+  times.onchange = applyTimes;
+  applyTimes();
+
+  let typing = null;
+  document.getElementById("log-term").addEventListener("input", (e) => {
+    clearTimeout(typing);
+    typing = setTimeout(() => writeLogFilter({ term: e.target.value }), 200);
+  });
+  document.querySelectorAll(".levels-filter button")
+    .forEach((b) => { b.onclick = () => writeLogFilter({ level: b.dataset.level }); });
+  logsPane.onCounts = ({ warn, error }) => {
+    document.getElementById("n-warn").textContent = warn;
+    document.getElementById("n-error").textContent = error;
+  };
+  const copy = document.getElementById("log-copy");
+  copy.onclick = async () => {
+    const lines = logsPane.visibleText();
+    try { await navigator.clipboard.writeText(lines.join("\n")); copy.textContent = "copied " + lines.length; }
+    catch { copy.textContent = "couldn't copy"; }
+    setTimeout(() => { copy.textContent = "copy"; }, 1500);
+  };
+  document.getElementById("log-clear").onclick = () => logsPane.clear();
+  // delegated: #detail is replaced on every refresh. Its "Logs" opens the
+  // tab on that component alone - one click on its pill brings the rest back
+  document.querySelector(".rail").addEventListener("click", (e) => {
+    const name = e.target.closest(".open-logs")?.dataset.name;
+    if (!name) return;
+    setLogSelection([name]);
+    location.hash = "#logs";
+  });
+}
+
+connect();
+initViewControls();
+initLogControls();
+showTab();
+render();
+addEventListener("resize", () => render());
+</script>
+</body>
+</html>

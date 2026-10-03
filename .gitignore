@@ -1,0 +1,10 @@
+target/
+.cpcache/
+.jolt/cpcache/
+*.jar
+.nrepl-port
+
+# a common global gitignore excludes bin/ as build output - not here, it's
+# the tracked bin/zent launcher script
+!bin/
+!bin/zent

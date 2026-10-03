@@ -1,0 +1,6 @@
+;; a catalog repo's root: this file plus presets/ (zent.catalog)
+{:name :fixture
+ :defaults {:jdk-home "~/jdk"}
+ :components {:db {:kind :docker-compose :repo "db"}
+              :api {:kind :process :repo "api" :cmd "./run"}
+              :ui {:kind :process :repo "ui" :cmd "npm start"}}}
