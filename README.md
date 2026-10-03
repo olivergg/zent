@@ -3,6 +3,7 @@
 [![Homebrew tap](https://img.shields.io/badge/homebrew-olivergg%2Fzent-FBB040?logo=homebrew&logoColor=white)](#quickstart)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20x86__64-lightgrey)](#quickstart)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![AI-assisted](https://img.shields.io/badge/AI--assisted-LLM-blueviolet)](#ai-disclosure)
 
 > ⚠️ **Everything here is experimental.** APIs, CLI verbs, catalog format, on-disk state and
 > docs can change or break at any time, with no migration path. Use at your own risk.
@@ -200,6 +201,10 @@ jolt test/runner.clj
 
 Jolt only: the HTTP deps bind Jolt internals (`jolt.ffi`, `jolt.io-poller`), so `clj` can't
 load the project.
+
+## AI disclosure
+
+Large parts of this code were written with an LLM agent, then reviewed and tested by me.
 
 ## License
 
