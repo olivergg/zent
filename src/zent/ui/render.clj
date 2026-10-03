@@ -44,9 +44,9 @@
   {:process "▸" :quarkus-app "▸" :docker-compose "▤"
    :compose-services "▥" :one-shot "↓" :external "◇" :k8s "⎈"})
 
-(def ^:private home-re #"^/(?:Users|home)/[^/]+")
-
-(defn- tildify [path] (when path (str/replace path home-re "~")))
+(defn- tildify [path]
+  (let [home (System/getenv "HOME")]
+    (if (and path home (str/starts-with? path (str home "/"))) (str "~" (subs path (count home))) path)))
 
 (defn- svc-class
   [{:keys [state health]}]

@@ -89,12 +89,13 @@
   (testing "a pinned branch shows a worktree badge; the workdir path is
             home-tildified for display but the raw path stays in the title
             for copyCd"
-    (let [html (render/component-card :svc {:kind :process :status :up
-                                              :source {:dir "/home/me/workspace/svc"
+    (let [dir (str (System/getenv "HOME") "/workspace/svc")
+          html (render/component-card :svc {:kind :process :status :up
+                                              :source {:dir dir
                                                         :branch "feature/x" :worktree "/x"}})]
       (is (str/includes? html "<span class=\"branch\">feature/x</span>"))
       (is (str/includes? html "~/workspace/svc"))
-      (is (str/includes? html "Copy `cd /home/me/workspace/svc`"))
+      (is (str/includes? html (str "Copy `cd " dir "`")))
       (is (str/includes? html "worktree</em>")))))
 
 (deftest run-summary-test

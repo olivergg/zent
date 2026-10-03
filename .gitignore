@@ -8,3 +8,8 @@ target/
 # the tracked bin/zent launcher script
 !bin/
 !bin/zent
+
+# docs/demo/record.sh's working files
+docs/demo/node_modules/
+docs/demo/out/
+docs/demo/serve.log

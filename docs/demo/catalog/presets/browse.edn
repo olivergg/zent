@@ -1,0 +1,2 @@
+;; the catalog side only
+[:postgres :seed :catalog-api :storefront]

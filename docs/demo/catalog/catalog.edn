@@ -1,0 +1,41 @@
+;; The demo's pretend shop (docs/demo/README.md): every component is fakesvc.py,
+;; copied into a throwaway ~/workspace/<repo> by record.sh.
+{:name :acme
+ :components
+ {:postgres
+  {:kind :process :repo "shop-db" :cmd "python3 -u svc.py postgres 7101 --startup 3" :port 7101
+   :readiness {:type :http-poll :url "http://127.0.0.1:7101/health"}
+   :permanent true}
+
+  :seed
+  {:kind :one-shot :repo "shop-db" :scripts ["./migrate.sh" "./load-fixtures.sh"]
+   :deps [:postgres] :attached-to :postgres :description "schema + 2,000 test orders"}
+
+  :broker
+  {:kind :process :repo "shop-broker" :cmd "python3 -u svc.py broker 7102 --startup 4" :port 7102
+   :readiness {:type :http-poll :url "http://127.0.0.1:7102/health"}
+   :keep-warm true}
+
+  :catalog-api
+  {:kind :process :repo "catalog-api" :cmd "python3 -u svc.py catalog-api 7103" :port 7103
+   :deps [:seed] :readiness {:type :http-poll :url "http://127.0.0.1:7103/health"}
+   :links [{:url "http://127.0.0.1:7103/health" :label "health"}]}
+
+  :orders-api
+  {:kind :process :repo "orders-api" :cmd "python3 -u svc.py orders-api 7104 --startup 4" :port 7104
+   :deps [:seed :broker] :readiness {:type :http-poll :url "http://127.0.0.1:7104/health"}
+   :links [{:url "http://127.0.0.1:7104/health" :label "health"}]}
+
+  :mailer
+  {:kind :process :repo "mailer" :build-cmd "./build.sh" :cmd "python3 -u svc.py mailer 7105" :port 7105
+   :deps [:broker] :readiness {:type :http-poll :url "http://127.0.0.1:7105/health"}}
+
+  :payments
+  {:kind :process :repo "payments" :cmd "python3 -u svc.py payments 7106" :port 7106
+   :readiness {:type :http-poll :url "http://127.0.0.1:7106/health"}}
+
+  :storefront
+  {:kind :process :repo "storefront" :cmd "python3 -u svc.py storefront 7107" :port 7107
+   :deps [:catalog-api :orders-api] :related [:payments]
+   :readiness {:type :http-poll :url "http://127.0.0.1:7107/health"}
+   :links [{:url "http://127.0.0.1:7107/" :label "open shop"}]}}}

@@ -1,0 +1,2 @@
+;; the whole shop
+[:postgres :seed :broker :catalog-api :orders-api :storefront]

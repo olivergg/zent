@@ -45,7 +45,9 @@
             [zent.ui.server :as server]))
 
 (def log-tail-lines 200)
-(def ^:private port 8765)
+(def ^:private port
+  ;; ZENT_PORT: a second daemon (another $HOME, e.g. docs/demo) beside the usual one
+  (or (some-> (System/getenv "ZENT_PORT") parse-long) 8765))
 (def ui-url (str "http://127.0.0.1:" port))
 (def ^:private detach-timeout-ms 120000)
 

@@ -3,6 +3,8 @@
 > ⚠️ **Everything here is experimental.** APIs, CLI verbs, catalog format, on-disk state and
 > docs can change or break at any time, with no migration path. Use at your own risk.
 
+![zent dashboard demo](docs/demo.gif)
+
 A Clojure/Jolt orchestrator for local dev environments. This repo is the engine
 (`zent.*`: ordering, deploy, readiness, teardown, watch); what runs is a **catalog**, plain data
 kept in a repo of its own (see "A catalog repo" below, `docs/resource-kinds.md` for what a
