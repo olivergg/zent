@@ -98,6 +98,10 @@ What a catalog's components themselves need is listed in that catalog's repo.
 
 - Symlink this clone's `bin/zent` onto PATH (README "Quickstart"), then `zent reload-code` from
   a catalog repo picks an edit up.
+- `zent mcp` is a process its client spawned and keeps: an engine change reaches it only
+  once the client restarts it (`/mcp` reconnect in Claude Code), whatever `reload-code` did
+  to the daemon. Its stdout is the protocol - code it runs must not print outside a tool
+  call (zent.mcp captures per call, the rest goes to stderr).
 - Kinds and their keys: `src/zent/schema.clj`, `docs/resource-kinds.md`. A catalog's format:
   `README.md` ("A catalog repo", "For Java/Python developers").
 
