@@ -103,3 +103,23 @@
       (is (= {:defaults {:jdk-hom ["disallowed key"] :allow-secret-contexts ["invalid type"]}}
              (errors {:defaults {:jdk-hom "/jdk" :allow-secret-contexts "dev"}})))
       (is (= {:defaults. ["disallowed key"]} (errors {:defaults. {}}))))))
+
+(deftest watch-needs-repo-test
+  (testing "a resolved cfg watching without a :repo would scan ~/workspace whole"
+    (is (= {:watch ["needs a :repo"]}
+           (try (schema/validate-component! :ide {:kind :external :watch {:paths ["src"]}}) nil
+                (catch clojure.lang.ExceptionInfo e (:errors (ex-data e))))))
+    (is (some? (schema/validate-component! :ui {:kind :process :repo "ui" :cmd "x" :watch {:paths ["src"]}}))))
+  (testing "a registry entry may still get its :repo from :defaults"
+    (is (some? (schema/validate-registry! {:ui {:kind :process :cmd "x" :watch {:paths ["src"]}}})))))
+
+(deftest describe-secret-env-test
+  (testing ":secret-env is a map of refs, not of strings"
+    (let [f (some #(when (= :secret-env (:key %)) %) (get (schema/describe-kinds) :process))]
+      (is (= :map (:type f)))
+      (is (= #{:context :namespace :secret :key} (into #{} (map :key) (get-in f [:of :fields])))))))
+
+(deftest allow-k8s-contexts-names-test
+  (testing "both context allowlists take k8s names only"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (schema/validate-catalog! {:components {} :presets {} :defaults {:allow-k8s-contexts ["--context=prod"]}})))))

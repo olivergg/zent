@@ -1,5 +1,6 @@
 (ns zent.schema
-  "Malli validation for resolved component configs, dispatched on :kind.
+  "Malli validation: a catalog's shape (its root, :defaults), its registry
+  entries, and resolved component configs, dispatched on :kind.
 
   The kinds are builtin-kinds, implemented in zent.kinds. A kind is declared
   as just its extra map entries - the shared keys below are spliced in."
@@ -155,7 +156,7 @@
          [:workload k8s-name]
          [:context k8s-name]
          [:namespace k8s-name]
-         [:allow-k8s-contexts {:optional true} [:vector :string]]
+         [:allow-k8s-contexts {:optional true} [:vector k8s-name]]
          [:strip-affinity {:optional true} :boolean]
          [:image-placeholder {:optional true} :string]
          [:image {:optional true} image-ref]
@@ -265,25 +266,37 @@
                            (concat shared-entries extra))]))
         builtin-kinds))
 
+(defn- repo-errors
+  "A :watch without a :repo would resolve to ~/workspace itself
+  (zent.source/checkout-dir), scanning every repo there. (A :branch without
+  one is inert: nothing reads it.)"
+  [cfg]
+  (when (and (:watch cfg) (not (:repo cfg)))
+    {:watch ["needs a :repo"]}))
+
+(defn- check!
+  "Throws on `cfg` failing `schema`, then on `more-errors` of it, if given."
+  [schema what name cfg & [more-errors]]
+  (when-let [errors (if (m/validate schema cfg)
+                      (when more-errors (more-errors cfg))
+                      (me/humanize (m/explain schema cfg)))]
+    (throw (ex-info (format "Invalid %s for %s: %s" what name errors)
+                    {:component name :cfg cfg :errors errors}))))
+
 (defn validate-registry!
   "Every registry entry against its own kind, closed. Returns `components`
   unchanged when they all pass."
   [components]
   (doseq [[name cfg] components]
-    (when-not (m/validate registry-schema cfg)
-      (let [errors (me/humanize (m/explain registry-schema cfg))]
-        (throw (ex-info (format "Invalid registry entry for %s: %s" name errors)
-                        {:component name :cfg cfg :errors errors})))))
+    (check! registry-schema "registry entry" name cfg))
   components)
 
 (defn validate-component!
   "`cfg` against its kind, throwing ex-info with a humanized report if invalid."
   [name cfg]
-  (if (m/validate component-schema cfg)
-    cfg
-    (let [errors (me/humanize (m/explain component-schema cfg))]
-      (throw (ex-info (format "Invalid component config for %s: %s" name errors)
-                      {:component name :cfg cfg :errors errors})))))
+  ;; on the resolved cfg only: a :repo may come from :defaults
+  (check! component-schema "component config" name cfg repo-errors)
+  cfg)
 
 ;; ---------------------------------------------------------------------------
 ;; schema -> field digest, for anything describing kinds to a reader
@@ -306,9 +319,11 @@
     (and (vector? form) (= (first form) :re)) {:type :string}
     (and (vector? form) (= (first form) :and)) (describe-type (second form))
     (and (vector? form) (= (first form) :vector)) {:type :list :of (describe-type (second form))}
-    ;; :env's shape - only string-keyed maps show up in practice, so this
-    ;; isn't a general [:map-of k v] renderer
-    (and (vector? form) (= (first form) :map-of)) {:type :string-map}
+    ;; only string keys show up in practice: :env (string values) and
+    ;; :secret-env (a map each), so this isn't a general [:map-of k v] renderer
+    (and (vector? form) (= (first form) :map-of))
+    (let [v (describe-type (nth form 2))]
+      (if (= :string (:type v)) {:type :string-map} {:type :map :of v}))
     (and (vector? form) (= (first form) :map))
     {:type :group :fields (mapv describe-field (rest form))}
     :else {:type :any}))

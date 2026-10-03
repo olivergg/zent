@@ -55,6 +55,18 @@
     (throw (ex-info (format "preset %s sets %s on %s - %s" (name preset-name) (vec ks) k why)
                     {:preset preset-name :component k :keys (vec ks)}))))
 
+(defn- refuse-unknown-refs!
+  "Refuses a :deps/:related/:attached-to naming no catalog component: a dep
+  outside the preset is skipped (zent.topo), so a typo'd one would let its
+  dependent start without waiting."
+  [k cfg known]
+  (doseq [ref-key [:deps :related :attached-to]
+          :let [v (get cfg ref-key)
+                unknown (remove known (if (keyword? v) [v] v))]
+          :when (seq unknown)]
+    (throw (ex-info (format "%s: %s names unknown component(s) %s" k ref-key (vec unknown))
+                    {:component k :key ref-key :unknown (vec unknown)}))))
+
 (defn resolve-preset
   "Resolves `preset-name` in `catalog` to {component-name validated-cfg}.
 
@@ -82,5 +94,7 @@
                      (refuse-overrides! preset-name k over schema/secret-safe-overrides
                                         (str "it reads secrets, only " (vec (sort schema/secret-safe-overrides))
                                              " may be set there")))
-                   [k (schema/validate-component! k (update (merge defaults base over) :deps vec))])))
+                   (let [cfg (schema/validate-component! k (update (merge defaults base over) :deps vec))]
+                     (refuse-unknown-refs! k cfg (set (keys components)))
+                     [k cfg]))))
           overlay)))

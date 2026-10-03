@@ -131,3 +131,15 @@
       (is (= [] (get-in (compose/resolve-preset c :p) [:api :deps])))))
   (testing "without one, the registry's still applies"
     (is (= [:db] (get-in (compose/resolve-preset catalog :full) [:api :deps])))))
+
+(deftest unknown-references-test
+  (let [resolve #(compose/resolve-preset (assoc-in catalog [:components :api] %) :full)]
+    (testing "a dep outside the preset is fine, one naming no component is a typo"
+      (is (map? (compose/resolve-preset (assoc-in catalog [:presets :api-only] {:api {:mode :on}}) :api-only)))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":deps names unknown component\(s\) \[:dbb\]"
+                            (resolve {:kind :quarkus-app :repo "api" :port 8080 :deps [:dbb]}))))
+    (testing ":related and :attached-to too"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":related names unknown"
+                            (resolve {:kind :quarkus-app :repo "api" :port 8080 :related [:nope]})))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":attached-to names unknown"
+                            (resolve {:kind :one-shot :repo "api" :scripts ["x"] :attached-to :nope}))))))
