@@ -1,5 +1,9 @@
 # zent
 
+[![Homebrew tap](https://img.shields.io/badge/homebrew-olivergg%2Fzent-FBB040?logo=homebrew&logoColor=white)](#quickstart)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20x86__64-lightgrey)](#quickstart)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+
 > ⚠️ **Everything here is experimental.** APIs, CLI verbs, catalog format, on-disk state and
 > docs can change or break at any time, with no migration path. Use at your own risk.
 
