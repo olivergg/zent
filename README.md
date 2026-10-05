@@ -107,7 +107,7 @@ A catalog component, then the same in YAML:
 ```clojure
 :broker-seed
 {:kind :one-shot                 ; runs once, then ends as done
- :repo "broker-stack"            ; ~/workspace/broker-stack
+ :repo "broker-stack"            ; ~/myworkdir/broker-stack
  :scripts ["./SeedSchemas.java" "./ApplyTopics.java"]
  :deps [:broker :broker-connect]
  :watch {:paths ["."] :exts [".avsc" ".java"]}}  ; re-run when a schema changes
@@ -142,7 +142,7 @@ Why EDN rather than JSON or YAML:
 
 ### Typical day
 
-1. Clone the repos you need into `~/workspace/` (zent never clones).
+1. Clone the repos you need into (for example) `~/myworkdir/` (zent never clones).
 2. `preview`, then `apply` (a dry run first, like `terraform plan`: with a daemon up, it lists
    what would stop, start or redeploy, and why). `apply` starts each component
    once its dependencies are ready, up to 3 at once (local builds one at a time), and returns
