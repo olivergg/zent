@@ -465,6 +465,17 @@
         (is (thrown? Exception (engine/deploy-component! :svc {:kind ::spawned :mode :on :readiness {:url "u"}}))))
       (is (not (.isAlive @spawned))))))
 
+(deftest on-demand-test
+  (let [ran (atom [])
+        cfg {:kind :one-shot :mode :on :on-demand true}]
+    (with-redefs [engine/deploy-kind! (fn [n _] (swap! ran conj n) nil)]
+      (testing "given an :on-demand one-shot, when an apply deploys it, then it isn't run"
+        (engine/deploy-component! :seed cfg)
+        (is (= [] @ran)))
+      (testing "when it's reloaded, then it runs"
+        (reload! :seed cfg engine/deploy-component! nil)
+        (is (= [:seed] @ran))))))
+
 (defmethod engine/already-running? ::checkable [_ _] false)
 
 (deftest recheck-liveness-any-kind-test

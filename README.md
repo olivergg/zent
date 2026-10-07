@@ -148,6 +148,9 @@ the preset has it: its main clone - the current state on disk - unless the prese
 [:db-seed :webapp {:mode :off :branch "feature/x"}]  ; seed from feature/x, webapp not started
 ```
 
+A destructive one-shot (a database reset) can be `:on-demand true`: listed in every preset that
+should offer it, an apply never runs it - it waits as "not run" until `zent reload <it>`.
+
 Why EDN rather than JSON or YAML:
 
 - **Comments**, which JSON lacks. The catalog relies on them to explain the reason behind each value.

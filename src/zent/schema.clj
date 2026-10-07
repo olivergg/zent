@@ -145,6 +145,9 @@
               ;; display only: one line on what the scripts do
               [:description {:optional true} :string]
               [:pre-check {:optional true} Readiness]
+              ;; never run by an apply, only by a reload (zent.engine/deploy-component!):
+              ;; listed in a preset, it waits as "not run" - for a destructive one
+              [:on-demand {:optional true} :boolean]
               [:env {:optional true} [:map-of :string :string]]
               source-env
               allow-parallel]

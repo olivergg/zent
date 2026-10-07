@@ -3,6 +3,7 @@
   into the engine - which never requires this ns. Also holds the running
   catalog and the control queue the HTTP API feeds."
   (:require [clojure.string :as str]
+            [zent.engine :as engine]
             [zent.source :as source]))
 
 ;; ---------------------------------------------------------------------------
@@ -175,10 +176,11 @@
 (defn- resting-status
   "What a component settles into once deployed - from mode and kind, not
   the handle: a nil handle means both \"finished one-shot\" and \"off\".
-  A one-shot rests at :done, like a completed k8s Job."
-  [{:keys [mode kind]}]
+  A one-shot rests at :done, like a completed k8s Job - or :off (\"not
+  run\") when it's :on-demand and an apply skipped it."
+  [{:keys [mode kind] :as cfg}]
   (cond
-    (not= :on mode) :off
+    (or (not= :on mode) (engine/on-demand-skip? cfg)) :off
     (= :external kind) :external
     (= :one-shot kind) :done
     :else :up))

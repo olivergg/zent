@@ -73,13 +73,26 @@
 
 (defmethod already-running? :default [_ _] nil)
 
+(defn on-demand-skip?
+  "Whether `cfg` is an :on-demand one-shot not asked for: only reload! sets
+  ::run-now, so an apply - or a redeploy after a change - never runs it."
+  [{:keys [on-demand] ::keys [run-now]}]
+  (boolean (and on-demand (not run-now))))
+
 (defn deploy-component!
   "Is this component part of the run at all? If so, hand it to its kind,
   then wait on its :readiness - here, not per kind, so dependents of any
   kind wait for it to answer, not just to be spawned. *How* it's provided
   (even \"by someone else\", :external) is its :kind."
   [name {:keys [mode readiness] :as cfg}]
-  (if (= :on mode)
+  (cond
+    (not= :on mode)
+    (do (println (format "[%s] mode=%s - nothing to do" name mode)) nil)
+
+    (on-demand-skip? cfg)
+    (do (println (format "[%s] on demand - `zent reload %s` runs it" name (clojure.core/name name))) nil)
+
+    :else
     (let [handle (deploy-kind! name (built name cfg))]
       (try (probe/wait-ready! name readiness)
            (catch Exception e
@@ -87,8 +100,7 @@
              ;; untracked, holding its port. Converging kinds are left as is.
              (when (instance? Process handle) (lifecycle/down! [handle]))
              (throw e)))
-      handle)
-    (do (println (format "[%s] mode=%s - nothing to do" name mode)) nil)))
+      handle)))
 
 (defn- pid-alive?
   "Whether a persisted {:kind :pid ...} handle's process is still the one
@@ -197,7 +209,7 @@
     (let [cfg (if (= :on (:mode cfg)) (built name cfg) cfg)]
       (when (process-handle? current)
         (lifecycle/down! [current]))
-      {:ok true :handle (deploy-fn name cfg)})
+      {:ok true :handle (deploy-fn name (assoc cfg ::run-now true))})
     (catch Exception e
       (println (format "[%s] reload failed: %s"
                        name (ex-message e)))
@@ -555,7 +567,7 @@
                         (let [cfg (current-cfg @catalog-ref name cfg)]
                           (println (format "[%s] restarting" name))
                           (swap! st #(-> % (update :parked dissoc name) (assoc-in [:active name] cfg)))
-                          (deploy-into! (partial put-handle! st) [[name cfg]] deploy-fn session-path))
+                          (deploy-into! (partial put-handle! st) [[name (assoc cfg ::run-now true)]] deploy-fn session-path))
                         (when-let [cfg (some->> (get-in @st [:active name]) (current-cfg @catalog-ref name))]
                           (swap! st assoc-in [:active name] cfg)
                           (let [{:keys [ok handle]} (reload! name cfg deploy-fn (get-in @st [:handles name]))]
