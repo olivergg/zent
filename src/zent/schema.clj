@@ -88,6 +88,16 @@
                                                    [:key secret-key]]]]
    [:use-secret-env {:optional true} :boolean]])
 
+;; Env vars set to another component's source dir (zent.compose pins where it is
+;; in the preset, zent.kinds resolves it at deploy): its :branch worktree, else
+;; its main clone. :main-clone ignores the :branch - for untracked files a
+;; worktree lacks (a downloaded dump).
+(def ^:private source-env
+  [:source-env {:optional true} [:map-of :string [:map
+                                                  [:component :keyword]
+                                                  [:path {:optional true} :string]
+                                                  [:main-clone {:optional true} :boolean]]]])
+
 ;; On kinds running local builds or scripts: let them run alongside other
 ;; components' instead of one at a time (zent.kinds/local-commands-lock).
 (def ^:private allow-parallel [:allow-parallel {:optional true} :boolean])
@@ -116,12 +126,14 @@
                    [:cmd :string]
                    [:build-cmd {:optional true} :string]
                    [:env {:optional true} [:map-of :string :string]]
+                   source-env
                    [:port {:optional true} pos-int?]
                    allow-parallel]
                   secret-entries)
    :quarkus-app (into [[:repo :string]
                        [:port pos-int?]
                        [:env {:optional true} [:map-of :string :string]]
+                       source-env
                        [:jdk-home {:optional true} :string]
                        allow-parallel]
                       secret-entries)
@@ -133,6 +145,8 @@
               ;; display only: one line on what the scripts do
               [:description {:optional true} :string]
               [:pre-check {:optional true} Readiness]
+              [:env {:optional true} [:map-of :string :string]]
+              source-env
               allow-parallel]
    ;; Some named services of a compose file, not the whole stack - for when
    ;; a repo's file carries both a webapp and the infra another component
@@ -319,8 +333,8 @@
     (and (vector? form) (= (first form) :re)) {:type :string}
     (and (vector? form) (= (first form) :and)) (describe-type (second form))
     (and (vector? form) (= (first form) :vector)) {:type :list :of (describe-type (second form))}
-    ;; only string keys show up in practice: :env (string values) and
-    ;; :secret-env (a map each), so this isn't a general [:map-of k v] renderer
+    ;; only string keys show up in practice: :env (string values),
+    ;; :secret-env/:source-env (a map each), so this isn't a general [:map-of k v] renderer
     (and (vector? form) (= (first form) :map-of))
     (let [v (describe-type (nth form 2))]
       (if (= :string (:type v)) {:type :string-map} {:type :map :of v}))

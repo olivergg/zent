@@ -122,7 +122,8 @@ What a catalog's components themselves need is listed in that catalog's repo.
   `--remote-debugging-port` and read the page's state over the DevTools protocol
   (`Runtime.evaluate`, e.g. `document.querySelectorAll('.ln').length`).
 - `:branch` runs from a worktree in `~/.cache/zent/worktrees/`, reset to `origin/<branch>`
-  on each deploy, so the branch must be pushed. The main clone is never touched.
+  on each deploy, so the branch must be pushed - unless the main clone has it checked out:
+  then it runs from the main clone, as it is. The main clone is never touched.
 - State: `~/.cache/zent/` (session, logs, `serve.log`, worktrees), user presets in
   `~/.config/zent/presets/`.
 - Never run a bare `zent down` to clean up: the session also tracks stacks you started.

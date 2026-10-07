@@ -56,24 +56,44 @@
                     {:preset preset-name :component k :keys (vec ks)}))))
 
 (defn- refuse-unknown-refs!
-  "Refuses a :deps/:related/:attached-to naming no catalog component: a dep
-  outside the preset is skipped (zent.topo), so a typo'd one would let its
-  dependent start without waiting."
+  "Refuses a :deps/:related/:attached-to/:source-env naming no catalog
+  component: a dep outside the preset is skipped (zent.topo), so a typo'd one
+  would let its dependent start without waiting."
   [k cfg known]
-  (doseq [ref-key [:deps :related :attached-to]
-          :let [v (get cfg ref-key)
-                unknown (remove known (if (keyword? v) [v] v))]
+  (doseq [[ref-key refs] {:deps (:deps cfg)
+                          :related (:related cfg)
+                          :attached-to (some-> (:attached-to cfg) vector)
+                          :source-env (map :component (vals (:source-env cfg)))}
+          :let [unknown (remove known refs)]
           :when (seq unknown)]
     (throw (ex-info (format "%s: %s names unknown component(s) %s" k ref-key (vec unknown))
                     {:component k :key ref-key :unknown (vec unknown)}))))
+
+(defn- pin-sources
+  "Pins each :source-env entry of `cfg` to where its component's source is:
+  that component's cfg in this preset (`resolved`), else its catalog entry -
+  :repo :branch :workspace-dir :org, all zent.kinds needs to find the dir. So
+  a :branch set on the source in the preset changes `cfg` too: its dependent
+  redeploys."
+  [k cfg resolved components defaults]
+  (cond-> cfg
+    (:source-env cfg)
+    (update :source-env update-vals
+            (fn [{:keys [component main-clone] :as ref}]
+              (let [source (or (get resolved component) (merge defaults (get components component)))
+                    coords (select-keys source [:repo :branch :workspace-dir :org])]
+                (when-not (:repo coords)
+                  (throw (ex-info (format "%s: :source-env names %s, which has no :repo" k component)
+                                  {:component k :source component})))
+                (merge ref (cond-> coords main-clone (dissoc :branch))))))))
 
 (defn resolve-preset
   "Resolves `preset-name` in `catalog` to {component-name validated-cfg}.
 
   Each component's cfg is its catalog :defaults, then its registry entry,
-  then the preset's overlay - later winning. Pure: no source resolution, no
-  secrets read, no processes started, so this is what tests and a UI can
-  call freely."
+  then the preset's overlay - later winning; its :source-env is then pinned
+  to its sources (pin-sources). Pure: no source resolution, no secrets read,
+  no processes started, so this is what tests and a UI can call freely."
   [catalog preset-name]
   (let [{:keys [components presets defaults]} (schema/validate-catalog! catalog)
         ;; the registry is checked closed, before any merging: a typo'd key
@@ -81,20 +101,22 @@
         _ (schema/validate-registry! components)
         overlay (or (get presets preset-name)
                     (throw (ex-info (str "unknown preset: " preset-name)
-                                    {:preset preset-name :known (vec (keys presets))})))]
-    (into {}
-          (map (fn [[k over]]
-                 (let [base (or (get components k)
-                                (throw (ex-info (str "preset " preset-name
-                                                     " references unknown component " k)
-                                                {:preset preset-name :component k})))]
-                   (refuse-overrides! preset-name k over (complement schema/catalog-only-keys)
-                                      "only the catalog may")
-                   (when (:secret-env base)
-                     (refuse-overrides! preset-name k over schema/secret-safe-overrides
-                                        (str "it reads secrets, only " (vec (sort schema/secret-safe-overrides))
-                                             " may be set there")))
-                   (let [cfg (schema/validate-component! k (update (merge defaults base over) :deps vec))]
-                     (refuse-unknown-refs! k cfg (set (keys components)))
-                     [k cfg]))))
-          overlay)))
+                                    {:preset preset-name :known (vec (keys presets))})))
+        resolved (into {}
+                       (map (fn [[k over]]
+                              (let [base (or (get components k)
+                                             (throw (ex-info (str "preset " preset-name
+                                                                  " references unknown component " k)
+                                                             {:preset preset-name :component k})))]
+                                (refuse-overrides! preset-name k over (complement schema/catalog-only-keys)
+                                                   "only the catalog may")
+                                (when (:secret-env base)
+                                  (refuse-overrides! preset-name k over schema/secret-safe-overrides
+                                                     (str "it reads secrets, only " (vec (sort schema/secret-safe-overrides))
+                                                          " may be set there")))
+                                (let [cfg (schema/validate-component! k (update (merge defaults base over) :deps vec))]
+                                  (refuse-unknown-refs! k cfg (set (keys components)))
+                                  [k cfg]))))
+                       overlay)]
+    ;; a second pass: pinning a :source-env needs its sources' resolved cfgs
+    (into {} (map (fn [[k cfg]] [k (pin-sources k cfg resolved components defaults)])) resolved)))

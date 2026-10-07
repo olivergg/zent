@@ -142,4 +142,30 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #":related names unknown"
                             (resolve {:kind :quarkus-app :repo "api" :port 8080 :related [:nope]})))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #":attached-to names unknown"
-                            (resolve {:kind :one-shot :repo "api" :scripts ["x"] :attached-to :nope}))))))
+                            (resolve {:kind :one-shot :repo "api" :scripts ["x"] :attached-to :nope}))))
+    (testing "and a :source-env's :component"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #":source-env names unknown component\(s\) \[:nope\]"
+                            (resolve {:kind :one-shot :repo "api" :scripts ["x"]
+                                      :source-env {"DIR" {:component :nope}}}))))))
+
+(deftest source-env-test
+  (let [seed {:kind :one-shot :repo "db" :scripts ["./seed.sh"]
+              :source-env {"UI_DIR" {:component :ui :path "src"}
+                           "UI_DATA" {:component :ui :main-clone true}}}
+        cat (-> catalog (assoc-in [:components :seed] seed) (assoc-in [:components :ext] {:kind :external}))
+        pinned #(get-in (compose/resolve-preset (assoc-in cat [:presets :p] (apply compose/run %)) :p)
+                        [:seed :source-env])]
+    (testing "given a source the preset doesn't name, then it's pinned to its catalog
+              entry - the main clone, the current state on disk"
+      (is (= {:component :ui :path "src" :repo "ui" :org "acme"} ((pinned [:seed]) "UI_DIR"))))
+    (testing "given the preset puts the source on a branch, without running it, then
+              that branch is pinned - except for a :main-clone entry"
+      (let [p (pinned [:seed :ui {:mode :off :branch "feature/x"}])]
+        (is (= "feature/x" (:branch (p "UI_DIR"))))
+        (is (not (contains? (p "UI_DATA") :branch)))))
+    (testing "given a source with no :repo, then the preset is refused - it has no dir"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"names :ext, which has no :repo"
+                            (compose/resolve-preset
+                             (-> cat (assoc-in [:components :seed :source-env] {"X" {:component :ext}})
+                                 (assoc-in [:presets :p] (compose/run :seed)))
+                             :p))))))

@@ -36,6 +36,16 @@
         (is (= worktree-dir
                (source/resolve-source "another-repo" {:workspace-dir root :branch "feature/foo"})))))))
 
+(deftest resolve-source-branch-checked-out-in-main-clone-test
+  (testing "given the main clone has the branch checked out, then it runs from the
+            main clone as it is - no worktree, which git would refuse anyway"
+    (let [root (str (System/getProperty "java.io.tmpdir") "/zent-source-test-main-" (System/currentTimeMillis))
+          repo-dir (str root "/some-repo")]
+      (.mkdirs (File. repo-dir))
+      (with-redefs [zent.shell/sh! (fn [_] {:exit 0 :out "feature/foo\n" :err ""})
+                    branch/resolve-worktree (fn [& _] (throw (ex-info "must not be called" {})))]
+        (is (= repo-dir (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo"})))))))
+
 (deftest resolve-source-not-found-test
   (testing "fails loudly with the clone hint when the repo isn't checked out"
     (let [tmp (System/getProperty "java.io.tmpdir")
@@ -60,11 +70,17 @@
               one - resolve-worktree fetches and hard-resets, which a UI read
               must never trigger"
       (with-redefs [branch/resolve-worktree (fn [& _] (throw (ex-info "must not be called" {})))
-                    zent.shell/sh! (fn [_] {:exit 0 :out "feature/x\n" :err ""})]
+                    zent.shell/sh! (fn [[_ _ dir]] {:exit 0 :out (if (= dir repo-dir) "main\n" "feature/x\n") :err ""})]
         (let [d (source/describe {:repo "some-repo" :workspace-dir root :branch "feature/x"})]
           (is (= repo-dir (:workdir d)))
           (is (= (branch/worktree-path "some-repo" "feature/x") (:worktree d)))
           (is (= (:worktree d) (:dir d))))))
+
+    (testing "given the pinned branch is the one checked out in the main clone, then it
+              reads the main clone - git refuses that branch a worktree"
+      (with-redefs [zent.shell/sh! (fn [_] {:exit 0 :out "feature/x\n" :err ""})]
+        (is (= {:workdir repo-dir :dir repo-dir :branch "feature/x"}
+               (source/describe {:repo "some-repo" :workspace-dir root :branch "feature/x"})))))
 
     (testing "a detached HEAD or a non-repo directory reports no branch rather
               than the literal string git prints"

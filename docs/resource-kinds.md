@@ -23,7 +23,7 @@ next month, without the catalog entry becoming a different thing.
 | 6 | a registry image, run directly | via `:k8s` (`:image`) | no plain `docker run` kind - a compose file covers that |
 | 7 | a k8s workload from a repo's manifests | `:k8s` | yes - §4 |
 | 8 | started by someone else, zent only probes it | `:external` | yes (was a *mode* - §3) |
-| 9 | not part of this run | `:mode :off` | a preset overlay (`:a {:mode :off}`); listing a component sets `:mode :on`, so a catalog never writes it |
+| 9 | not part of this run | `:mode :off` | a preset overlay (`:a {:mode :off}`); listing a component sets `:mode :on`, so a catalog never writes it. Still resolved: another component's `:source-env` reads its checkout (its `:branch` included) |
 
 All sections record done work.
 

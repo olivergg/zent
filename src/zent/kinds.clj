@@ -23,6 +23,14 @@
   [{:keys [repo branch workspace-dir org] ::keys [dir]}]
   (or dir (resolve-source repo {:branch branch :workspace-dir workspace-dir :org org})))
 
+(defn- source-env
+  "Each :source-env var -> its source's dir (+ :path): zent.compose pinned the
+  source's coordinates onto the entry, so it resolves like that source's own
+  deploy would - a :branch worktree created and synced first."
+  [{:keys [source-env]}]
+  (into {} (map (fn [[var {:keys [path] :as ref}]] [var (cond-> (source-dir ref) path (str "/" path))]))
+        source-env))
+
 ;; Writing to a file, not a terminal, tools drop their colours - asked back
 ;; here for what lands in a component's log (the Logs tab renders them).
 ;; Never for commands zent itself parses (git, ps, compose ps): codes would
@@ -34,14 +42,19 @@
 (defn- run-or-throw!
   "Runs `cmd` in `dir`, throwing ex-info naming the component on a non-zero
   exit. Output goes to the component's log, not zent's stdout, so a `mvn
-  package` doesn't bury the deploy progress."
+  package` doesn't bury the deploy progress - as it's written
+  (shell/run-logged!), so a long script can be followed. The ex-info's :err
+  is the tail of what it wrote."
   [name cmd {:keys [dir env label]}]
   (println (format "[%s%s] %s" name (or label "") (shell/display cmd)))
-  (let [{:keys [exit out err]} (shell/sh! cmd :dir dir :env (merge color-env env))]
-    (logs/append! name (str "$ " (shell/display cmd) "\n" out err))
+  (logs/append! name (str "$ " (shell/display cmd)))
+  (let [log-file (logs/log-file name)
+        offset (.length (java.io.File. (str log-file)))
+        {:keys [exit]} (shell/run-logged! cmd :dir dir :env (merge color-env env) :log-file log-file)]
     (when-not (zero? exit)
       (throw (ex-info (format "%s failed: `%s` exited %d" name (shell/display cmd) exit)
-                      {:component name :cmd cmd :exit exit :err err})))
+                      {:component name :cmd cmd :exit exit
+                       :err (str/join "\n" (take-last 20 (:lines (logs/read-since name offset))))})))
     nil))
 
 ;; Local builds and scripts share the filesystem (~/.m2, node_modules, a
@@ -245,7 +258,7 @@
         log-file (logs/log-file name)]
     (println (format "[%s] %s%s (logs -> %s)" name cmd
                      (if port (format " (port %d)" port) "") log-file))
-    (shell/spawn! cmd :dir dir :env (merge color-env env secret-env) :log-file log-file)))
+    (shell/spawn! cmd :dir dir :env (merge color-env env (source-env cfg) secret-env) :log-file log-file)))
 
 (defn- quarkus-full-env [{:keys [port env jdk-home]}]
   (commands/quarkus-env {:jdk-home jdk-home
@@ -263,14 +276,16 @@
         log-file (logs/log-file name)
         run-cmd (commands/quarkus-run-cmd jdk-home)]
     (println (format "[%s] %s (port %d, logs -> %s)" name (shell/display run-cmd) port log-file))
-    (shell/spawn! run-cmd :dir dir :env (merge color-env (quarkus-full-env cfg) secret-env) :log-file log-file)))
+    (shell/spawn! run-cmd :dir dir :env (merge color-env (quarkus-full-env cfg) (source-env cfg) secret-env)
+                  :log-file log-file)))
 
 (defmethod engine/deploy-kind! :one-shot
-  [name {:keys [scripts pre-check] :as cfg}]
-  (let [dir (source-dir cfg)]
+  [name {:keys [scripts pre-check env] :as cfg}]
+  (let [dir (source-dir cfg)
+        env (merge env (source-env cfg))]
     (probe/wait-ready! name pre-check)
     (doseq [s scripts]
-      (run-local! name s cfg {:dir dir}))
+      (run-local! name s cfg {:dir dir :env env}))
     nil))
 
 (defn- check-k8s-cfg!

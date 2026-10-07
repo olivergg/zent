@@ -55,3 +55,9 @@
         (.redirectErrorStream pb true))
       (.inheritIO pb))
     (.start pb)))
+
+(defn run-logged!
+  "Runs `cmd` to completion, its stdout+stderr appended to `log-file` as
+  they're written (spawn!), not captured for the end like sh!; {:exit code}."
+  [cmd & {:keys [env dir log-file]}]
+  {:exit (.waitFor (spawn! cmd :env env :dir dir :log-file log-file))})

@@ -131,6 +131,23 @@ A preset is a vector of component names; a map right after a name overrides it:
                       :url "http://localhost:8080/health/readiness"}}]
 ```
 
+A `:branch` already checked out in the main clone runs from the main clone, as it is (git
+refuses it a worktree).
+
+A tool reading other repos gets their dirs through `:source-env` (`:one-shot`, `:process`,
+`:quarkus-app`; plain values go in `:env`). Each var is set to that component's checkout as
+the preset has it: its main clone - the current state on disk - unless the preset puts it on a
+`:branch`:
+
+```clojure
+:db-seed
+{:kind :one-shot :repo "seeder" :scripts ["./seed.sh"]
+ :source-env {"SCHEMA_DIR" {:component :webapp :path "db/schema"}
+              "DUMP_DIR"   {:component :webapp :path "dump" :main-clone true}}} ; untracked: never a worktree
+
+[:db-seed :webapp {:mode :off :branch "feature/x"}]  ; seed from feature/x, webapp not started
+```
+
 Why EDN rather than JSON or YAML:
 
 - **Comments**, which JSON lacks. The catalog relies on them to explain the reason behind each value.

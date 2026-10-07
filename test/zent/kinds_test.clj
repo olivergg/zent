@@ -10,6 +10,9 @@
             [zent.shell :as shell])
   (:import [java.io File]))
 
+;; the real one, for the test that runs a local script for real
+(def ^:private real-spawn! shell/spawn!)
+
 ;; nothing spawned for real either: a deployed stack starts its log follower
 ;; (zent.engine/follow-logs!) - recorded here instead
 (def ^:private spawned (atom []))
@@ -65,13 +68,14 @@
     (fn [root _repo-dir]
       (testing "a whole-stack component still brings up everything (the `up`
                 takes no service args), and reports what's inside for display"
-        (let [cmds (atom [])]
-          (with-redefs [shell/sh! (fn [cmd & _]
-                                    (swap! cmds conj (shell/display cmd))
-                                    {:exit 0
-                                     :out (if (re-find #"config --services" (shell/display cmd))
-                                            "db\nsso\nmailcatcher\n" "")
-                                     :err ""})]
+        (let [cmds (atom [])
+              stub (fn [cmd & _]
+                     (swap! cmds conj (shell/display cmd))
+                     {:exit 0
+                      :out (if (re-find #"config --services" (shell/display cmd))
+                             "db\nsso\nmailcatcher\n" "")
+                      :err ""})]
+          (with-redefs [shell/sh! stub shell/run-logged! stub]
             (let [handle (engine/deploy-kind!
                           :idp {:kind :docker-compose :repo "some-repo"
                                 :workspace-dir root :profiles ["mailcatcher"]})]
@@ -83,7 +87,8 @@
         (with-redefs [shell/sh! (fn [cmd & _]
                                   (if (re-find #"config --services" (shell/display cmd))
                                     {:exit 1 :out "" :err "boom"}
-                                    {:exit 0 :out "" :err ""}))]
+                                    {:exit 0 :out "" :err ""}))
+                      shell/run-logged! (fn [& _] {:exit 0})]
           (let [handle (engine/deploy-kind! :idp {:kind :docker-compose :repo "some-repo"
                                                   :workspace-dir root})]
             (is (= :docker-compose (:kind handle)))
@@ -96,11 +101,11 @@
             deploy-two (fn [extra]
                          (reset! most 0)
                          (binding [logs/*dir* (str root "/logs")]
-                           (with-redefs [shell/sh! (fn [& _]
-                                                     (swap! most max (swap! inside inc))
-                                                     (Thread/sleep 100)
-                                                     (swap! inside dec)
-                                                     {:exit 0 :out "" :err ""})]
+                           (with-redefs [shell/run-logged! (fn [& _]
+                                                             (swap! most max (swap! inside inc))
+                                                             (Thread/sleep 100)
+                                                             (swap! inside dec)
+                                                             {:exit 0})]
                              (run! deref (mapv #(future (engine/deploy-kind!
                                                          % (merge {:kind :one-shot :repo "some-repo"
                                                                    :workspace-dir root :scripts ["./seed.sh"]}
@@ -113,15 +118,36 @@
         (testing "given :allow-parallel, then they overlap"
           (is (= 2 (deploy-two {:allow-parallel true}))))))))
 
+(deftest one-shot-env-and-log-test
+  (with-tmp-repo
+    (fn [root repo-dir]
+      (spit (str repo-dir "/seed.sh") "echo \"a=$A src=$SRC\"\nexit 3\n")
+      (binding [logs/*dir* (str root "/logs")]
+        (with-redefs [shell/spawn! real-spawn!]
+          (let [e (try (engine/deploy-kind! :seed {:kind :one-shot :repo "some-repo" :workspace-dir root
+                                                   :scripts ["sh ./seed.sh"] :env {"A" "1"}
+                                                   :source-env {"SRC" {:component :x :repo "some-repo"
+                                                                       :workspace-dir root :path "src"}}})
+                       nil
+                       (catch clojure.lang.ExceptionInfo e e))
+                line (str "a=1 src=" repo-dir "/src")]
+            (testing "given :env and a pinned :source-env, then the script gets both"
+              (is (some #{line} (logs/tail :seed 5))))
+            (testing "given the script fails, then the ex-info carries what it wrote - its
+                      output lands in the log as it runs, not captured for the end"
+              (is (= 3 (:exit (ex-data e))))
+              (is (= line (:err (ex-data e)))))))))))
+
 (deftest deploy-compose-services-test
   (with-tmp-repo
     (fn [root repo-dir]
-      (let [cmds (atom [])]
-        (with-redefs [shell/sh! (fn [cmd & _]
-                                  (swap! cmds conj (shell/display cmd))
-                                  {:exit 0
-                                   :out (if (re-find #"config --services" (shell/display cmd)) declared "")
-                                   :err ""})]
+      (let [cmds (atom [])
+            stub (fn [cmd & _]
+                   (swap! cmds conj (shell/display cmd))
+                   {:exit 0
+                    :out (if (re-find #"config --services" (shell/display cmd)) declared "")
+                    :err ""})]
+        (with-redefs [shell/sh! stub shell/run-logged! stub]
           (let [handle (engine/deploy-kind!
                         :deps {:kind :compose-services :repo "some-repo"
                                :workspace-dir root
@@ -262,7 +288,8 @@
     (fn [root _repo-dir]
       (binding [logs/*dir* (str root "/logs")]
         (with-redefs [shell/sh! (fn [cmd & _]
-                                  {:exit 0 :out (if (re-find #"config --services" (shell/display cmd)) declared "") :err ""})]
+                                  {:exit 0 :out (if (re-find #"config --services" (shell/display cmd)) declared "") :err ""})
+                      shell/run-logged! (fn [& _] {:exit 0})]
           (let [cfg {:kind :compose-services :repo "some-repo" :workspace-dir root :services [:postgres :redis]}]
             (testing "given a deployed stack, then its own services' output follows into its log, from now"
               (let [handle (engine/deploy-kind! :deps cfg)]
@@ -292,7 +319,7 @@
   (testing "secrets go to the spawned run's env only - the build never sees them"
     (let [calls (atom [])]
       (with-redefs [secrets/read-k8s-secret! (constantly "v")
-                    shell/sh! (fn [cmd & {:keys [env]}] (swap! calls conj [:build cmd env]) {:exit 0 :out "" :err ""})
+                    shell/run-logged! (fn [cmd & {:keys [env]}] (swap! calls conj [:build cmd env]) {:exit 0})
                     shell/spawn! (fn [cmd & {:keys [env]}] (swap! calls conj [:run cmd env]) nil)]
         (engine/deploy-component! :svc {:kind :process :mode :on :cmd "run" :build-cmd "build"
                                    :env {"A" "1" "FORCE_COLOR" "0"}
