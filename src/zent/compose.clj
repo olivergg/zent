@@ -63,27 +63,28 @@
   (doseq [[ref-key refs] {:deps (:deps cfg)
                           :related (:related cfg)
                           :attached-to (some-> (:attached-to cfg) vector)
-                          :source-env (map :component (vals (:source-env cfg)))}
+                          :source-env (keep :component (vals (:source-env cfg)))}
           :let [unknown (remove known refs)]
           :when (seq unknown)]
     (throw (ex-info (format "%s: %s names unknown component(s) %s" k ref-key (vec unknown))
                     {:component k :key ref-key :unknown (vec unknown)}))))
 
 (defn- pin-sources
-  "Pins each :source-env entry of `cfg` to where its component's source is:
-  that component's cfg in this preset (`resolved`), else its catalog entry -
-  :repo :branch :workspace-dir :org, all zent.kinds needs to find the dir. So
-  a :branch set on the source in the preset changes `cfg` too: its dependent
-  redeploys."
+  "Pins each :source-env entry of `cfg` to where its source is - :repo
+  :branch :workspace-dir :org, all zent.kinds needs to find the dir: a
+  :component's cfg in this preset (`resolved`), else its catalog entry; a
+  :repo's main clone. So a :branch set on a source component in the preset
+  changes `cfg` too: its dependent redeploys."
   [k cfg resolved components defaults]
   (cond-> cfg
     (:source-env cfg)
     (update :source-env update-vals
-            (fn [{:keys [component main-clone] :as ref}]
-              (let [source (or (get resolved component) (merge defaults (get components component)))
+            (fn [{:keys [component repo main-clone] :as ref}]
+              (let [source (cond component (or (get resolved component) (merge defaults (get components component)))
+                                 repo (assoc defaults :repo repo))
                     coords (select-keys source [:repo :branch :workspace-dir :org])]
                 (when-not (:repo coords)
-                  (throw (ex-info (format "%s: :source-env names %s, which has no :repo" k component)
+                  (throw (ex-info (format "%s: :source-env %s has no :repo" k (or component "entry"))
                                   {:component k :source component})))
                 (merge ref (cond-> coords main-clone (dissoc :branch))))))))
 

@@ -135,15 +135,17 @@ A `:branch` already checked out in the main clone runs from the main clone, as i
 refuses it a worktree).
 
 A tool reading other repos gets their dirs through `:source-env` (`:one-shot`, `:process`,
-`:quarkus-app`; plain values go in `:env`). Each var is set to that component's checkout as
-the preset has it: its main clone - the current state on disk - unless the preset puts it on a
-`:branch`:
+`:quarkus-app`; plain values go in `:env`). Each var is set to a component's checkout as the
+preset has it - its main clone, the current state on disk, unless the preset puts it on a
+`:branch` - or to a `:repo`'s main clone. The dashboard shows each dir and its branch on the
+card, preview included: what it will read, before it runs.
 
 ```clojure
 :db-seed
 {:kind :one-shot :repo "seeder" :scripts ["./seed.sh"]
  :source-env {"SCHEMA_DIR" {:component :webapp :path "db/schema"}
-              "DUMP_DIR"   {:component :webapp :path "dump" :main-clone true}}} ; untracked: never a worktree
+              "DUMP_DIR"   {:component :webapp :path "dump" :main-clone true}  ; untracked: never a worktree
+              "MIGRATIONS" {:repo "migrations"}}}
 
 [:db-seed :webapp {:mode :off :branch "feature/x"}]  ; seed from feature/x, webapp not started
 ```

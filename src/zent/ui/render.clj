@@ -22,11 +22,12 @@
   "Display text per :status. :external reads \"up\" - the card already names
   the kind."
   {:pending "pending" :deploying "starting" :up "up"
-   :done "done" :idle "idle" :stopping "stopping" :failed "failed" :external "up" :off "off" :down "stopped"})
+   :done "done" :idle "idle" :stopping "stopping" :failed "failed" :external "up" :off "off" :down "stopped"
+   :ready "ready"})
 
 (def ^:private one-shot-label
   "A job's own wording where a service's would mislead - nothing to stop."
-  {:off "not run" :down "not run" :pending "queued" :deploying "running"})
+  {:off "not run" :down "not run" :pending "queued" :deploying "running" :ready "on demand"})
 
 (defn label-of
   "A :status as shown - the dashboard's wording, also the CLI's/MCP's."
@@ -81,9 +82,25 @@
 (defn- can-stop? [status] (contains? #{:up :deploying :idle} status))
 (defn- links-visible? [status] (contains? #{:up :external :deploying} status))
 
+(defn- workdir
+  "A checkout as shown: its branch, its dir (a click copies `cd <dir>`), whether it's a worktree."
+  [{:keys [branch dir worktree]}]
+  (str (when branch (str "<span class=\"branch\">" (esc branch) "</span>"))
+       "<span class=\"workdir\">"
+       "<button type=\"button\" class=\"workdir-open\" data-dir=\"" (esc dir) "\" title=\"Copy `cd " (esc dir) "`\">"
+       (esc (tildify dir)) "</button>"
+       (when worktree " <em class=\"wt\">worktree</em>")
+       "</span>"))
+
+(defn- source-env-rows
+  "What a :source-env component reads: one row per var (its name the tooltip)."
+  [source-env]
+  (apply str (map (fn [[var src]] (str "<span class=\"source-env\" title=\"" (esc var) "\">" (workdir src) "</span>"))
+                  (sort-by key source-env))))
+
 (defn- card-body
   "A full card's content - everything but the error and the actions."
-  [cname {:keys [kind status repo repo-url port services service-status source links permanent] :as c}]
+  [cname {:keys [kind status repo repo-url port services service-status source source-env links permanent] :as c}]
   (let [show-links? (links-visible? status)]
     (str
      "<span class=\"name\">" (esc (name cname)) "</span>"
@@ -101,13 +118,8 @@
      (service-rows c)
      (when (and port (not (or (seq service-status) (seq services))))
        (str "<span class=\"ports own\">:" (esc port) "</span>"))
-     (when source
-       (str (when (:branch source) (str "<span class=\"branch\">" (esc (:branch source)) "</span>"))
-            "<span class=\"workdir\">"
-            "<button type=\"button\" class=\"workdir-open\" title=\"Copy `cd " (esc (:dir source)) "`\">"
-            (esc (tildify (:dir source))) "</button>"
-            (when (:worktree source) " <em class=\"wt\">worktree</em>")
-            "</span>"))
+     (when source (workdir source))
+     (source-env-rows source-env)
      (when show-links?
        (apply str (map (fn [{:keys [url label]}]
                           (str "<a class=\"endpoint\" href=\"" (esc url) "\" target=\"_blank\" rel=\"noopener\">" (esc label) "</a>"))
@@ -120,7 +132,7 @@
   nothing in a preview is deployed. An :attached-to one-shot gets a
   strip drawn under its host's card: the scripts it runs, its state and
   :description; the component name is the tooltip."
-  [cname {:keys [kind status error preview? attached-to scripts description] :as c}]
+  [cname {:keys [kind status error preview? attached-to scripts description source-env] :as c}]
   (let [reload? (and (not preview?) (can-reload? status))
         stop? (and (not preview?) (can-stop? status))]
     (str
@@ -129,22 +141,26 @@
             "<span class=\"name\" title=\"" (esc (name cname)) "\">"
             (esc (if (seq scripts) (str/join " → " (map script-name scripts)) (name cname))) "</span>"
             "<span class=\"state\">" (esc (label-of kind status)) "</span>"
-            (when description (str "<span class=\"desc\">" (esc description) "</span>")))
+            (when description (str "<span class=\"desc\">" (esc description) "</span>"))
+            (source-env-rows source-env))
        (card-body cname c))
      ;; only while :failed - a stale error must not linger after recovery
      (when (and error (= status :failed)) (str "<span class=\"fray\">" (esc error) "</span>"))
      "<span class=\"actions\">"
      (when reload?
-       (str "<button type=\"button\" class=\"act reload\" title=\"Reload now\" "
-            "hx-post=\"/api/trigger/" (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\""
-            (when (= status :deploying) " disabled")
-            ">&#8635;</button>"))
+       ;; same trigger, but a one-shot has nothing loaded to reload: it runs its scripts
+       (let [one-shot? (= :one-shot kind)]
+         (str "<button type=\"button\" class=\"act reload\" title=\""
+              (cond (not one-shot?) "Reload now" (= status :ready) "Run" :else "Run again") "\" "
+              "hx-post=\"/api/trigger/" (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\""
+              (when (= status :deploying) " disabled")
+              ">" (if one-shot? "&#9654;" "&#8635;") "</button>")))
      (when stop?
        (str "<button type=\"button\" class=\"act stop\" title=\"Stop\" "
             "hx-post=\"/api/stop/" (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\">&#9632;</button>"))
      "</span>")))
 
-(def ^:private summary-order ["up" "done" "idle" "starting" "stopping" "pending" "failed" "off" "stopped"])
+(def ^:private summary-order ["up" "done" "ready" "idle" "starting" "stopping" "pending" "failed" "off" "stopped"])
 
 (defn run-summary
   "The whole #summary element (outerHTML, class included)."

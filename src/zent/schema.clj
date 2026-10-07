@@ -88,15 +88,19 @@
                                                    [:key secret-key]]]]
    [:use-secret-env {:optional true} :boolean]])
 
-;; Env vars set to another component's source dir (zent.compose pins where it is
-;; in the preset, zent.kinds resolves it at deploy): its :branch worktree, else
-;; its main clone. :main-clone ignores the :branch - for untracked files a
-;; worktree lacks (a downloaded dump).
+;; Env vars set to a checkout dir (zent.compose pins it, zent.kinds resolves it
+;; at deploy): a :component's - its :branch worktree in the preset, else its
+;; main clone - or a :repo's main clone, as it is on disk. :main-clone ignores
+;; the :branch - for untracked files a worktree lacks (a downloaded dump).
 (def ^:private source-env
-  [:source-env {:optional true} [:map-of :string [:map
-                                                  [:component :keyword]
-                                                  [:path {:optional true} :string]
-                                                  [:main-clone {:optional true} :boolean]]]])
+  [:source-env {:optional true} [:map-of :string [:and
+                                                  [:map
+                                                   [:component {:optional true} :keyword]
+                                                   [:repo {:optional true} :string]
+                                                   [:path {:optional true} :string]
+                                                   [:main-clone {:optional true} :boolean]]
+                                                  [:fn {:error/message "needs a :component or a :repo"}
+                                                   #(boolean (or (:component %) (:repo %)))]]]])
 
 ;; On kinds running local builds or scripts: let them run alongside other
 ;; components' instead of one at a time (zent.kinds/local-commands-lock).

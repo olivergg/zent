@@ -9,7 +9,7 @@
 
 (deftest validate-one-shot-env-test
   (testing "given a one-shot with :env and :source-env, then it's valid; a :source-env
-            entry with no :component isn't"
+            entry with neither a :component nor a :repo isn't"
     (let [cfg {:kind :one-shot :repo "seeder" :scripts ["./seed.sh"] :env {"A" "1"}
                :source-env {"SRC" {:component :api :path "core" :main-clone true}}}]
       (is (= cfg (schema/validate-component! :seed cfg)))

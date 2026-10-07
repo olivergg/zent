@@ -57,4 +57,6 @@
                        :on-stopping on-stopping
                        :on-stop on-stop
                        :on-seeded on-seeded
-                       :on-check on-check)))
+                       :on-check on-check
+                       ;; a branch switched on disk shows without re-applying
+                       :on-refresh #'state/refresh-sources!)))

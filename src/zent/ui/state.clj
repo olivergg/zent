@@ -160,15 +160,41 @@
 ;; observers - wired into the engine by zent.ui.bridge
 ;; ---------------------------------------------------------------------------
 
+(defn source-env-view
+  "`cfg`'s :source-env as shown: each var's dir (+ :path) and the branch
+  checked out there - what the component will read, before it runs. Shells
+  out to git, like source/describe."
+  [cfg]
+  (not-empty (update-vals (:source-env cfg)
+                          (fn [{:keys [path] :as ref}] (cond-> (source/describe ref) path (update :dir str "/" path))))))
+
+;; the :on cfgs the last preset described - what refresh-sources! re-reads
+(defonce ^:private described (atom {}))
+
+(defn- describe-sources!
+  "Sets `k`'s :source and :source-env from `cfg` - only when they changed, so
+  an unchanged refresh pushes nothing to the clients."
+  [k cfg]
+  (let [now (into {} (remove (comp nil? val)) {:source (source/describe cfg) :source-env (source-env-view cfg)})]
+    (when (and (contains? (:components @view-state) k)
+               (not= now (select-keys (get-in @view-state [:components k]) [:source :source-env])))
+      (swap! view-state update-in [:components k] #(merge (dissoc % :source :source-env) now)))))
+
+(defn refresh-sources!
+  "Re-reads every described component's checkouts: a branch switched on disk
+  shows without re-applying. One failing (a repo gone) doesn't stop the rest."
+  []
+  (doseq [[k cfg] @described]
+    (try (describe-sources! k cfg)
+         (catch Exception e (println (format "[%s] source refresh failed: %s" k (ex-message e)))))))
+
 (defn observe-preset-resolved! [preset-name resolved]
   ;; the skeleton first, so a client sees the whole run before git answers
   (swap-view! set-preset preset-name resolved
          {:repo-url-template (get-in @catalog [:defaults :repo-url-template])})
   ;; :external included: which branch the IDE-run checkout is on matters too
-  (doseq [[k cfg] resolved]
-    (when (= :on (:mode cfg))
-      (when-let [d (source/describe cfg)]
-        (swap! view-state assoc-in [:components k :source] d)))))
+  (reset! described (into {} (filter #(= :on (:mode (val %)))) resolved))
+  (refresh-sources!))
 
 (defn observe-deploy-start! [name]
   (swap-view! mark-status name :deploying))
@@ -176,11 +202,12 @@
 (defn- resting-status
   "What a component settles into once deployed - from mode and kind, not
   the handle: a nil handle means both \"finished one-shot\" and \"off\".
-  A one-shot rests at :done, like a completed k8s Job - or :off (\"not
-  run\") when it's :on-demand and an apply skipped it."
+  A one-shot rests at :done, like a completed k8s Job - or :ready when it's
+  :on-demand and an apply skipped it: shown, with its reload, unlike :off."
   [{:keys [mode kind] :as cfg}]
   (cond
-    (or (not= :on mode) (engine/on-demand-skip? cfg)) :off
+    (not= :on mode) :off
+    (engine/on-demand-skip? cfg) :ready
     (= :external kind) :external
     (= :one-shot kind) :done
     :else :up))

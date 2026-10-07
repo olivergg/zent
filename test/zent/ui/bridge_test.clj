@@ -2,6 +2,7 @@
   "The UI observer path, driven by an injected deploy-fn - no docker, no
   processes, a synthetic catalog."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [zent.compose :as compose]
             [zent.lifecycle :as lifecycle]
             [zent.ui.bridge :as bridge]
             [zent.ui.state :as state]))
@@ -127,3 +128,17 @@
     (state/observe-handled! [{:id 1005 :error "later"}])
     (is (= {1005 "later"} (:command-errors @state/view-state)))
     (is (not (contains? (:done @state/view-state) 5)))))
+
+(deftest refresh-sources-test
+  (let [branch (atom "main")]
+    (with-redefs [zent.source/describe (fn [_] {:dir "/w/db" :branch @branch})]
+      (state/observe-preset-resolved! :all (compose/resolve-preset catalog :all))
+      (testing "given a checkout switched on disk, when the sources are refreshed, then
+                the card shows the new branch - no re-apply"
+        (reset! branch "feature/x")
+        (state/refresh-sources!)
+        (is (= "feature/x" (get-in @state/view-state [:components :db :source :branch]))))
+      (testing "given nothing changed, then a refresh leaves the state as it is - no push"
+        (let [before @state/view-state]
+          (state/refresh-sources!)
+          (is (identical? before @state/view-state)))))))

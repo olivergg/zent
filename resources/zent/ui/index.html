@@ -290,6 +290,9 @@
   /* a script name breaks between scripts, never mid-name */
   .node.satellite .name { font-size: 11px; letter-spacing: 0.02em; text-transform: none; flex: 1; overflow-wrap: normal; }
   .node.satellite .desc { flex-basis: 100%; padding-left: 14px; color: var(--grey); font-size: 10px; }
+  /* what a one-shot reads (:source-env): one dir per row, under its description */
+  .node .source-env { display: block; }
+  .node.satellite .source-env { flex-basis: 100%; padding-left: 14px; }
   .node.satellite .actions { top: 1px; }
   .node.satellite .fray { flex-basis: 100%; margin-top: 2px; }
 
@@ -361,6 +364,9 @@
   /* done: a one-shot that ran to completion, like a finished k8s Job */
   .node[data-status="done"] { border-color: var(--indigo); background: #e9ebf4; }
   .node[data-status="done"] .state { color: var(--indigo); }
+  /* ready: an :on-demand one-shot waiting for its reload - shown, not run */
+  .node[data-status="ready"] { border-color: var(--indigo); border-style: dashed; }
+  .node[data-status="ready"] .state { color: var(--indigo); font-style: italic; }
   /* stopping: a stop is tearing it down - greyed, the pick running backwards */
   .node[data-status="stopping"] { border-color: var(--grey); opacity: 0.75; }
   .node[data-status="stopping"] .state { color: var(--grey); font-style: italic; }
@@ -858,7 +864,7 @@ let showStopped = localStorage.getItem("zent.showStopped") === "true";
 // itself is server-rendered, see zent.ui.render's state-label).
 const STATE_CLASS = {
   pending: "queued", deploying: "starting", up: "up", done: "done", idle: "idle", stopping: "stopping",
-  failed: "failed", external: "external", off: "off", down: "stopped"
+  failed: "failed", external: "external", off: "off", down: "stopped", ready: "ready"
 };
 const WOVEN = new Set(["up", "done", "external"]);
 
@@ -1133,8 +1139,8 @@ function nodeEl(name, c, satellite) {
   el.onclick = (e) => { if (!e.target.closest("a, button")) select(); };
   el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(); } };
   el.onmouseenter = el.onmouseleave = () => drawWarp();
-  const cdBtn = el.querySelector(".workdir-open");
-  if (cdBtn && c.source) cdBtn.onclick = () => copyCd(c.source.dir, cdBtn);
+  // its own checkout and, for a :source-env one, every dir it reads
+  for (const b of el.querySelectorAll(".workdir-open")) b.onclick = () => copyCd(b.dataset.dir, b);
   return el;
 }
 

@@ -3,6 +3,15 @@
             [clojure.test :refer [deftest is testing]]
             [zent.ui.render :as render]))
 
+(deftest component-card-source-env-test
+  (testing "given a strip reading other checkouts, then each dir shows with its branch
+            and its var as the tooltip - what it reads, before it runs"
+    (let [html (render/component-card :seed {:kind :one-shot :status :ready :attached-to :db
+                                             :source-env {"SCHEMA" {:dir "/w/api/db" :branch "feature/x"}}})]
+      (is (str/includes? html "title=\"SCHEMA\""))
+      (is (str/includes? html "<span class=\"branch\">feature/x</span>"))
+      (is (str/includes? html "data-dir=\"/w/api/db\"")))))
+
 (deftest component-card-status-label-test
   (testing "each status gets its label-of wording, :external reading as
             plain \"up\""
@@ -19,6 +28,14 @@
     (let [html (render/component-card :svc {:kind :process :status :deploying})]
       (is (str/includes? html "act reload"))
       (is (str/includes? html "disabled"))))
+
+  (testing "given a one-shot, then the button runs it: \"Run\" while :ready (on demand,
+            never run), \"Run again\" once :done - a service keeps \"Reload now\""
+    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :ready}) "title=\"Run\""))
+    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :ready})
+                       "<span class=\"state\">on demand</span>"))
+    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :done}) "title=\"Run again\""))
+    (is (str/includes? (render/component-card :svc {:kind :process :status :up}) "title=\"Reload now\"")))
 
   (testing "stop: only :up/:deploying/:idle"
     (is (str/includes? (render/component-card :svc {:kind :process :status :up}) "act stop"))

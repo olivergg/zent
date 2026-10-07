@@ -531,11 +531,13 @@
     :reload-code    - (fn []) run for a queued {:action :reload-code}, as a
                       job so never mid-deploy; without it the command is ignored.
     :planner        - atom, set to (fn [preset-name]) -> plan-summary from the
-                      current state: what an :apply would do, for preview."
+                      current state: what an :apply would do, for preview.
+    :on-refresh     - (fn []) every :refresh-ms (default 5s) in the loop, e.g.
+                      to re-read what's checked out on disk; errors logged."
   [catalog & {:keys [poll-ms quiet-ms max-ms session-path deploy-fn on-resolved
                      control on-handled on-stopping on-stop on-seeded on-check initial-preset
-                     catalog-ref on-ready reload-code liveness-ms planner]
-             :or {poll-ms watch/default-poll-ms quiet-ms 200 max-ms 10000 liveness-ms 30000
+                     catalog-ref on-ready reload-code liveness-ms planner on-refresh refresh-ms]
+             :or {poll-ms watch/default-poll-ms quiet-ms 200 max-ms 10000 liveness-ms 30000 refresh-ms 5000
                   session-path session/default-path
                   deploy-fn deploy-component!
                   control (atom [])
@@ -548,6 +550,7 @@
         st (new-state)
         jobs (java.util.concurrent.LinkedBlockingQueue.)
         checked-at (atom 0)
+        refreshed-at (atom 0)
         torn-down (atom false)
         ;; set by :shutdown: jobs still queued are reported, not run
         stopping (atom false)
@@ -622,6 +625,9 @@
                      (when (>= (- (System/currentTimeMillis) @checked-at) liveness-ms)
                        (reset! checked-at (System/currentTimeMillis))
                        (recheck-liveness! st on-check))
+                     (when (and on-refresh (>= (- (System/currentTimeMillis) @refreshed-at) refresh-ms))
+                       (reset! refreshed-at (System/currentTimeMillis))
+                       (on-refresh))
                      (let [commands (first (reset-vals! control []))]
                        (if (some #(= :shutdown (:action %)) commands)
                          ;; after the running job, but not the queued ones (they're

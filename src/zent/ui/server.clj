@@ -228,7 +228,12 @@
                                     {:repo-url-template template})]
       (json-response
        {:preset preset-name
-        :components (with-cards (update-vals (:components preview) #(assoc % :preview? true)))
+        ;; :source-env too: what a one-shot will read is the point of looking first
+        :components (with-cards (into {} (map (fn [[k c]]
+                                                [k (cond-> (assoc c :preview? true)
+                                                     (:source-env (resolved k))
+                                                     (assoc :source-env (state/source-env-view (resolved k))))]))
+                                      (:components preview)))
         :graph (:graph preview)
         :informational (:informational preview)
         :plan (when-let [f @state/planner] (f preset-name))}))
