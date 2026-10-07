@@ -140,6 +140,7 @@
                                          :attached-to (:attached-to cfg)
                                          :scripts (:scripts cfg)
                                          :description (:description cfg)
+                                         :confirm (:confirm cfg)
                                          :repo-url (repo-url cfg repo-url-template)
                                          ;; replaced by the discovered list on deploy
                                          :services (:services cfg)

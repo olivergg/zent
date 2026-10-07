@@ -37,6 +37,11 @@
     (is (str/includes? (render/component-card :seed {:kind :one-shot :status :done}) "title=\"Run again\""))
     (is (str/includes? (render/component-card :svc {:kind :process :status :up}) "title=\"Reload now\"")))
 
+  (testing "given a :confirm, then the button asks it before posting; without, it doesn't ask"
+    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :ready :confirm "Wipe the DB?"})
+                       "hx-confirm=\"Wipe the DB?\""))
+    (is (not (str/includes? (render/component-card :seed {:kind :one-shot :status :ready}) "hx-confirm"))))
+
   (testing "stop: only :up/:deploying/:idle"
     (is (str/includes? (render/component-card :svc {:kind :process :status :up}) "act stop"))
     (is (str/includes? (render/component-card :svc {:kind :process :status :deploying}) "act stop"))

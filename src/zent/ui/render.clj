@@ -132,7 +132,7 @@
   nothing in a preview is deployed. An :attached-to one-shot gets a
   strip drawn under its host's card: the scripts it runs, its state and
   :description; the component name is the tooltip."
-  [cname {:keys [kind status error preview? attached-to scripts description source-env] :as c}]
+  [cname {:keys [kind status error preview? attached-to scripts description source-env confirm] :as c}]
   (let [reload? (and (not preview?) (can-reload? status))
         stop? (and (not preview?) (can-stop? status))]
     (str
@@ -153,6 +153,8 @@
          (str "<button type=\"button\" class=\"act reload\" title=\""
               (cond (not one-shot?) "Reload now" (= status :ready) "Run" :else "Run again") "\" "
               "hx-post=\"/api/trigger/" (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\""
+              ;; a destructive one asks first (htmx: nothing is posted on cancel)
+              (when confirm (str " hx-confirm=\"" (esc confirm) "\""))
               (when (= status :deploying) " disabled")
               ">" (if one-shot? "&#9654;" "&#8635;") "</button>")))
      (when stop?

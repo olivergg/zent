@@ -11,7 +11,7 @@
   (testing "given a one-shot with :env and :source-env, then it's valid; a :source-env
             entry with neither a :component nor a :repo isn't"
     (let [cfg {:kind :one-shot :repo "seeder" :scripts ["./seed.sh"] :env {"A" "1"}
-               :source-env {"SRC" {:component :api :path "core" :main-clone true}}}]
+               :source-env {"SRC" {:component :api :path "core"}}}]
       (is (= cfg (schema/validate-component! :seed cfg)))
       (is (thrown? clojure.lang.ExceptionInfo
                    (schema/validate-component! :seed (assoc cfg :source-env {"SRC" {:path "core"}})))))))

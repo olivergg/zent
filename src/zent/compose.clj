@@ -79,14 +79,14 @@
   (cond-> cfg
     (:source-env cfg)
     (update :source-env update-vals
-            (fn [{:keys [component repo main-clone] :as ref}]
+            (fn [{:keys [component repo] :as ref}]
               (let [source (cond component (or (get resolved component) (merge defaults (get components component)))
                                  repo (assoc defaults :repo repo))
                     coords (select-keys source [:repo :branch :workspace-dir :org])]
                 (when-not (:repo coords)
                   (throw (ex-info (format "%s: :source-env %s has no :repo" k (or component "entry"))
                                   {:component k :source component})))
-                (merge ref (cond-> coords main-clone (dissoc :branch))))))))
+                (merge ref coords))))))
 
 (defn resolve-preset
   "Resolves `preset-name` in `catalog` to {component-name validated-cfg}.

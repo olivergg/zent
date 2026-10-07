@@ -90,15 +90,13 @@
 
 ;; Env vars set to a checkout dir (zent.compose pins it, zent.kinds resolves it
 ;; at deploy): a :component's - its :branch worktree in the preset, else its
-;; main clone - or a :repo's main clone, as it is on disk. :main-clone ignores
-;; the :branch - for untracked files a worktree lacks (a downloaded dump).
+;; main clone - or a :repo's main clone, as it is on disk.
 (def ^:private source-env
   [:source-env {:optional true} [:map-of :string [:and
                                                   [:map
                                                    [:component {:optional true} :keyword]
                                                    [:repo {:optional true} :string]
-                                                   [:path {:optional true} :string]
-                                                   [:main-clone {:optional true} :boolean]]
+                                                   [:path {:optional true} :string]]
                                                   [:fn {:error/message "needs a :component or a :repo"}
                                                    #(boolean (or (:component %) (:repo %)))]]]])
 
@@ -152,6 +150,8 @@
               ;; never run by an apply, only by a reload (zent.engine/deploy-component!):
               ;; listed in a preset, it waits as "not run" - for a destructive one
               [:on-demand {:optional true} :boolean]
+              ;; display only: the question the dashboard's Run button asks first
+              [:confirm {:optional true} :string]
               [:env {:optional true} [:map-of :string :string]]
               source-env
               allow-parallel]

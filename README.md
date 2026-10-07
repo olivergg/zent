@@ -144,14 +144,14 @@ card, preview included: what it will read, before it runs.
 :db-seed
 {:kind :one-shot :repo "seeder" :scripts ["./seed.sh"]
  :source-env {"SCHEMA_DIR" {:component :webapp :path "db/schema"}
-              "DUMP_DIR"   {:component :webapp :path "dump" :main-clone true}  ; untracked: never a worktree
               "MIGRATIONS" {:repo "migrations"}}}
 
 [:db-seed :webapp {:mode :off :branch "feature/x"}]  ; seed from feature/x, webapp not started
 ```
 
 A destructive one-shot (a database reset) can be `:on-demand true`: listed in every preset that
-should offer it, an apply never runs it - it waits as "not run" until `zent reload <it>`.
+should offer it, an apply never runs it - it waits as "on demand" until `zent reload <it>` or its
+▶ button, which asks its `:confirm` question first, if it has one.
 
 Why EDN rather than JSON or YAML:
 
