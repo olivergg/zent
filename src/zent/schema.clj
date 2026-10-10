@@ -148,7 +148,7 @@
               [:description {:optional true} :string]
               [:pre-check {:optional true} Readiness]
               ;; never run by an apply, only by a reload (zent.engine/deploy-component!):
-              ;; listed in a preset, it waits as "not run" - for a destructive one
+              ;; listed in a preset, it waits as "on demand" - for a destructive one
               [:on-demand {:optional true} :boolean]
               ;; display only: the question the dashboard's Run button asks first
               [:confirm {:optional true} :string]
