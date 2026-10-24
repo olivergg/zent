@@ -2,7 +2,7 @@
  ;; All Jolt-native (see zent.ui.server's docstring): the daemon always
  ;; serves its HTTP API, and every other CLI verb is a client of it.
  ;; jolt-lang/time only supplies the DateTimeFormatter data.json needs.
- :deps {metosin/malli {:mvn/version "0.20.2"}
+ :deps {metosin/malli {:mvn/version "0.20.3"}
         jolt-lang/ring-chez-adapter
         {:git/url "https://github.com/jolt-lang/ring-chez-adapter"
          :git/sha "87e637e2ce3b6d25fee67b8bf86cd7595eea30a4"} ; v0.8.0
