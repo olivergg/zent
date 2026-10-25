@@ -242,11 +242,11 @@
   :unready - restarting it is the cure, not looking for what killed it.
   :error is always set, so recovery clears it."
   [name cfg verdict]
-  (swap-view! mark-status name (case verdict true (resting-status cfg) :unready :unready :failed)
-         {:error (case verdict
-                   true nil
-                   :unready (str "running, not ready: " (get-in cfg [:readiness :url]) " doesn't answer")
-                   "liveness check failed - no longer reachable")}))
+  (let [[status error] (case verdict
+                         true [(resting-status cfg) nil]
+                         :unready [:unready (str "running, not ready: " (get-in cfg [:readiness :url]) " doesn't answer")]
+                         [:failed "liveness check failed - no longer reachable"])]
+    (swap-view! mark-status name status {:error error})))
 
 ;; ---------------------------------------------------------------------------
 ;; the control queue - fed by zent.ui.server's POSTs, drained by

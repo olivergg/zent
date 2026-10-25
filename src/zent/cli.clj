@@ -34,10 +34,8 @@
 
 (defn- fail! [msg] (throw (ex-info msg {})))
 
-(def ^:private groups ["Everyday" "Before switching" "Daemon" "Catalog" "Advanced"])
-
 (def verbs
-  "Every verb, in help order: `:args` its usage, `:doc` one line, `:more` the
+  "Every verb, in help order, grouped by `:group`: `:args` its usage, `:doc` one line, `:more` the
   details `zent help <verb>` adds, `:see` the verbs it's mistaken for or used with."
   [{:verb "apply" :group "Everyday" :args "<preset>"
     :doc "switch to <preset>, starting the daemon if needed; waits until settled"
@@ -52,7 +50,7 @@
     :more ["Files in ~/.cache/zent/logs/. The dashboard's Logs tab interleaves them all."]}
    {:verb "reload" :group "Everyday" :args "<component>"
     :doc "redeploy one running component now"
-    :more ["Not to mistake for reload-code, which reloads zent's own code."]
+    :more ["reload-code is another verb: it reloads zent's own code."]
     :see ["logs" "reload-code"]}
    {:verb "stop" :group "Everyday" :args "[<component>...]"
     :doc "stop just these, or all but :permanent components"
@@ -97,7 +95,7 @@
     :doc "MCP server on stdio: these verbs as tools, for an agent"}
    {:verb "down" :group "Advanced"
     :doc "no daemon: tear down everything the session lists"
-    :more ["That includes stacks you started yourself through zent: not a cleanup reflex."]}])
+    :more ["It also stops the stacks you started yourself through zent, so don't use it to clean up."]}])
 
 (defn- verb-entry [verb] (some #(when (= verb (:verb %)) %) verbs))
 
@@ -134,7 +132,7 @@
       (str/join "\n" (concat [(str (paint :title "zent") " - local dev stacks from a catalog. Dashboard: " ui-url)]
                              (mapcat (fn [g] (cons (str "\n" (paint :title g))
                                                    (map #(help-row paint %) (filter #(= g (:group %)) verbs))))
-                                     groups)
+                                     (distinct (map :group verbs)))
                              [""
                               (str (paint :title "Presets: ")
                                    (if (seq presets) (str/join ", " (map #(paint :name %) presets)) "none")

@@ -108,9 +108,8 @@
             (fn [{t :type :as m}]
               (case t
                 :begin-test-var
-                (emit (cond-> {:event :begin :test (-> m :var meta :name str)}
-                        (-> m :var meta :doc) (assoc :doc (-> m :var meta :doc))
-                        (-> m :var meta :zent/kind) (assoc :kind (-> m :var meta :zent/kind))))
+                (let [{test :name :keys [doc] kind :zent/kind} (-> m :var meta)]
+                  (emit (cond-> {:event :begin :test (str test)} doc (assoc :doc doc) kind (assoc :kind kind))))
                 :end-test-var
                 (emit {:event :end :test (-> m :var meta :name str)})
                 (:pass :fail :error)

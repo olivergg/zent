@@ -91,8 +91,8 @@ they assert.
 
 - **Contract.** The ns attr-map carries `:zent/observes` (the components it judges) and
   `:zent/description`; a test's `:doc` is shown under it. Deps in `checks/deps.edn`, run by
-  `clojure -M` from `checks/` (JVM Clojure, not Jolt: checks talk to JVM services). Code checks
-  share lives in `checks/lib/`, which discovery skips and `:paths` puts on the classpath.
+  `clojure -M` from `checks/` (JVM Clojure, not Jolt: checks talk to JVM services). The code
+  shared between checks lives in `checks/lib/`, which discovery skips and `:paths` puts on the classpath.
 - **Output.** The runner rebinds `clojure.test/report` to write `#zent/check` EDN lines to a log
   file, never a pipe (output was truncated once). A run without its `:done` line is `:unknown`,
   never `:pass`; verdicts merge fail > unknown > pass, an `:error` counting as unknown.

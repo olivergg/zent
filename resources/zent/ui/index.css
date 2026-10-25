@@ -8,7 +8,8 @@
   --weld:      #c1892b;
   --grey:      #a5a199;
   /* muted text still meant to be read - grey is for rules and borders */
-  --muted:     #5d5f6e;  /* verdigris: the one non-indigo "good" colour - reserved for a
+  --muted:     #5d5f6e;
+  /* verdigris: the one non-indigo "good" colour - reserved for a
      component actually up and running, so it reads distinctly from
      merely-woven/external (indigo) at a glance, closer to how most
      dashboards use green for healthy. */
@@ -475,7 +476,6 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   to   { box-shadow: 0 0 0 12px transparent; }
 }
 
-
 .node .repo {
   display: block;
   margin-top: 3px;
@@ -832,7 +832,6 @@ ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
 .chk-cmd code { flex: 1; background: #fff; border: 1px solid var(--grey); padding: 4px 8px; border-radius: 3px; font-size: 11.5px; overflow: auto; white-space: nowrap; }
 .chk-error { white-space: pre-wrap; color: var(--madder); background: var(--card); padding: 8px 12px; border-radius: 3px; }
 .checks-empty { color: var(--muted); padding: 30px; }
-.checks-view .quiet { color: var(--muted); }
 
 /* a terminal: dark, in the dashboard's ink */
 .term {

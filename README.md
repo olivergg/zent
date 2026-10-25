@@ -74,8 +74,8 @@ the dashboard asking first) - never with the preset's other checks. A deftest's
 `:zent/kind` (`:invariant`, `:pseudo-oracle`, `:metamorphic`, `:heuristic`, ...) says what
 kind of oracle it is, shown next to it.
 
-Code several checks share goes in `checks/lib/` (on the `:paths`, so `lib/acme/db.clj` is
-`acme.db`): it's not a preset's checks.
+Code several checks share goes in `checks/lib/`, on the `:paths` (`lib/acme/db.clj` is
+`acme.db`); discovery skips it.
 
 A result is `:pass`, `:fail` or `:unknown` (it couldn't judge: an exception, nothing run).
 `zent verify [<preset> [<check>...]] [--only=<test>,...]` runs them (MCP: `verify`), the
