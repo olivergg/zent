@@ -386,12 +386,19 @@ function drawWarp() {
   // only the ones of components depending on it are drawn - unless it's
   // selected, and even then not the one to its host, which it already hangs from
   const strips = new Set([...loom.querySelectorAll(".node.satellite")].map((n) => n.dataset.name));
-  // a selected card's threads stand out - what it waits for in indigo, what
-  // waits for it in weld - and every other thread fades back
-  const focus = at[selected] ? selected : null;
   // the flowing dash is kept to the selected or hovered card's threads: a
   // whole fabric animating keeps the GPU busy for nothing
   const hovered = loom.querySelector(".node:hover")?.dataset.name;
+  // a hovered, else selected, card's threads stand out - what it waits for
+  // in indigo, what waits for it in weld - and every other thread fades back
+  const focus = at[hovered] ? hovered : at[selected] ? selected : null;
+  // hovering also steps back every card but it, its neighbours and their strips
+  const near = new Set(hovered ? [hovered, ...(data.graph || []).flatMap(([to, from]) =>
+    to === hovered ? [from] : from === hovered ? [to] : [])] : []);
+  loom.dataset.hovering = String(!!hovered);
+  loom.querySelectorAll(".node").forEach((n) => {
+    n.dataset.near = String(near.has(n.dataset.name) || near.has(data.components[n.dataset.name]?.["attached-to"]));
+  });
   const nowTaut = new Set();
   for (const [to, from] of data.graph || []) {
     const a = at[from], b = at[to];
@@ -475,7 +482,7 @@ const detailPlaceholder = document.getElementById("detail").outerHTML;
 
 function setSelected(name) {
   selected = name;
-  if (!name) document.getElementById("detail").outerHTML = detailPlaceholder;
+  if (!name) { document.getElementById("detail").outerHTML = detailPlaceholder; detailShown = null; }
   render();
 }
 
@@ -483,11 +490,14 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && selected) setSelected(null);
 });
 
+let detailShown = null;                             // whose detail last came in, to animate a new one only
 async function loadDetail(name) {
   try {
     const res = await fetch("/api/detail/" + name);
     if (selected !== name) return;                  // selection moved mid-fetch
     document.getElementById("detail").outerHTML = await res.text();
+    if (detailShown !== name) document.getElementById("detail").classList.add("enter");
+    detailShown = name;
   } catch {
     /* transient - the next push retries */
   }
@@ -771,8 +781,19 @@ function writeLogFilter(changes) {
   readLogFilter();
 }
 
+const TABS = ["graph", "logs", "checks"];
+const tabOf = () => location.hash.startsWith("#logs") ? "logs" : location.hash.startsWith("#checks") ? "checks" : "graph";
+
+// a tab change slides the old tab out the way you went (a View Transition), the new one in
+function switchTab() {
+  const from = TABS.indexOf(document.body.dataset.tab), to = TABS.indexOf(tabOf());
+  if (from === to || !document.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) return showTab();
+  document.documentElement.dataset.nav = to > from ? "next" : "prev";
+  document.startViewTransition(showTab);
+}
+
 function showTab() {
-  const tab = location.hash.startsWith("#logs") ? "logs" : location.hash.startsWith("#checks") ? "checks" : "graph";
+  const tab = tabOf();
   document.body.dataset.tab = tab;
   document.querySelectorAll("#tabs a").forEach((a) => {
     if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
@@ -1201,7 +1222,7 @@ function connect() {
 }
 
 function initLogControls() {
-  addEventListener("hashchange", showTab);
+  addEventListener("hashchange", switchTab);
   const times = document.getElementById("log-times");
   times.checked = localStorage.getItem("zent.logTimes") === "true";
   const applyTimes = () => {

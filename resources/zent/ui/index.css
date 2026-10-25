@@ -325,8 +325,11 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   border: 1px solid var(--c, var(--grey));
   border-left-width: 3px;
   cursor: pointer;
-  transition: border-color 240ms ease, background 240ms ease, box-shadow 240ms ease, transform 160ms ease;
+  transition: border-color 240ms ease, background 240ms ease, box-shadow 240ms ease, transform 160ms ease,
+              opacity 200ms ease;
 }
+/* hovering a card: it and its neighbours stay, the rest of the fabric steps back */
+.loom[data-hovering="true"] .node[data-near="false"] { opacity: .35; }
 
 /* a card and its strips move as one piece */
 .stack:hover > .node { transform: translateX(2px); }
@@ -594,6 +597,10 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .act { background: none; border: none; color: var(--grey);
        font-size: 11px; line-height: 1; cursor: pointer; }
 .act:hover { color: var(--indigo); }
+/* a press gives way under the finger before the daemon answers */
+.act, .run-toggle { transition: transform 90ms ease; }
+.act:active { transform: scale(.85); }
+.run-toggle:active { transform: scale(.96); }
 .act.stop:hover { color: var(--madder); }
 .act[data-failed="true"] { color: var(--madder); opacity: 1; }
 
@@ -641,6 +648,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 }
 
 #rail-run { display: flex; flex-direction: column; gap: 22px; }
+/* a newly selected component's detail comes in; a refresh of the same one doesn't move */
+#detail.enter { animation: detail-in 320ms cubic-bezier(.215, .61, .355, 1); }
+@keyframes detail-in { from { opacity: 0; transform: translateY(6px); } }
 
 .rail h2 {
   font-family: var(--display);
@@ -710,6 +720,17 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 }
 .tabs a[aria-current="page"] { border-color: var(--ink); background: var(--card); }
 body[data-tab="logs"] .shell, body[data-tab="checks"] .shell { display: none; }
+/* switching tabs (index.js switchTab): the old one slides out the way you went, the new one in */
+.shell, .logs-view, .checks-view { view-transition-name: tab; }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+::view-transition-old(tab) { animation: tab-out-l 200ms cubic-bezier(.55, .06, .68, .19) both; }
+::view-transition-new(tab) { animation: tab-in-r 360ms cubic-bezier(.215, .61, .355, 1) both; }
+html[data-nav="prev"]::view-transition-old(tab) { animation-name: tab-out-r; }
+html[data-nav="prev"]::view-transition-new(tab) { animation-name: tab-in-l; }
+@keyframes tab-out-l { to { opacity: 0; transform: translateX(-28px); } }
+@keyframes tab-out-r { to { opacity: 0; transform: translateX(28px); } }
+@keyframes tab-in-r { from { opacity: 0; transform: translateX(28px); } }
+@keyframes tab-in-l { from { opacity: 0; transform: translateX(-28px); } }
 body:not([data-tab="logs"]) .logs-view { display: none; }
 body:not([data-tab="checks"]) .checks-view { display: none; }
 
