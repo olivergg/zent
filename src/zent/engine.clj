@@ -430,19 +430,27 @@
                           [component cfg handle]))))))
           handles)))
 
+(defn- alive-and-ready
+  "A live process whose :readiness fails is :unready - running, not serving (a Kafka Streams app
+  gone to ERROR keeps its JVM up); a dead one is false, whatever it would answer."
+  [alive? readiness]
+  (cond (not alive?) false
+        (and readiness (not (probe/ready? readiness))) :unready
+        :else true))
+
 (defn- check-liveness
-  "Whether `name`'s deployed component still checks out, or nil when
-  nothing can tell (unknown kind/handle, or the check threw). nil is
-  deliberately not `false`: an inconclusive check must not be reported as
-  a transition. Spawned processes read their handle (.isAlive, or
-  pid-alive? for a reused :pid handle); other kinds ask already-running?,
-  then the one-shot probe/ready? when it can't tell (:external) - wait-ready!
-  would block the loop."
+  "Whether `name`'s deployed component still checks out: true, false, :unready
+  (alive-and-ready), or nil when nothing can tell (unknown kind/handle, or the
+  check threw). nil is deliberately not `false`: an inconclusive check must not
+  be reported as a transition. Spawned processes read their handle (.isAlive,
+  or pid-alive? for a reused :pid handle), then their :readiness; other kinds
+  ask already-running?, then the one-shot probe/ready? when it can't tell
+  (:external) - wait-ready! would block the loop."
   [name {:keys [readiness] :as cfg} handle]
   (try
     (cond
-      (instance? Process handle) (.isAlive ^Process handle)
-      (= :pid (:kind handle)) (pid-alive? handle)
+      (instance? Process handle) (alive-and-ready (.isAlive ^Process handle) readiness)
+      (= :pid (:kind handle)) (alive-and-ready (pid-alive? handle) readiness)
       :else (let [up (already-running? name (assoc cfg ::handle handle))]
               (if (and (nil? up) readiness) (probe/ready? readiness) up)))
     (catch Exception _ nil)))
@@ -517,7 +525,8 @@
     :on-stop        - (fn [name]) called once a :stop lands.
     :on-seeded      - (fn [name cfg handle]) called once per component
                       adopt-session! finds still running at start.
-    :on-check       - (fn [name cfg ok?]) on a liveness transition (see
+    :on-check       - (fn [name cfg verdict]) on a liveness transition, verdict
+                      true, false or :unready (see
                       recheck-liveness!).
     :liveness-ms    - how often that recheck runs (default 30s): it shells
                       out (`docker compose ps`, kubectl) per component, far

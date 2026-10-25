@@ -19,7 +19,7 @@ let showStopped = localStorage.getItem("zent.showStopped") === "true";
 // itself is server-rendered, see zent.ui.render's state-label).
 const STATE_CLASS = {
   pending: "queued", deploying: "starting", up: "up", done: "done", idle: "idle", stopping: "stopping",
-  failed: "failed", external: "external", off: "off", down: "stopped", ready: "ready"
+  failed: "failed", external: "external", off: "off", down: "stopped", ready: "ready", unready: "unready"
 };
 const WOVEN = new Set(["up", "done", "external"]);
 

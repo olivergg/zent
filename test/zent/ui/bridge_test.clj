@@ -88,6 +88,17 @@
       (is (= :external (get-in @state/view-state [:components :api :status])))
       (is (nil? (get-in @state/view-state [:components :api :error]))))
 
+    (testing "a running process whose readiness fails reads as :unready, with what
+              didn't answer; ready again, back to :up with the error cleared"
+      (let [app-cfg {:mode :on :kind :quarkus-app :readiness {:type :http-poll :url "http://x/live"}}]
+        (swap! state/view-state assoc-in [:components :app] {:status :up})
+        (state/observe-liveness-check! :app app-cfg :unready)
+        (is (= :unready (get-in @state/view-state [:components :app :status])))
+        (is (= "running, not ready: http://x/live doesn't answer" (get-in @state/view-state [:components :app :error])))
+        (state/observe-liveness-check! :app app-cfg true)
+        (is (= :up (get-in @state/view-state [:components :app :status])))
+        (is (nil? (get-in @state/view-state [:components :app :error])))))
+
     (testing "a compose-backed component recovers to :up, not :external -
               resting-status is read from its own cfg, not hardcoded"
       (swap! state/view-state assoc-in [:components :db] {:status :failed})

@@ -238,10 +238,15 @@
 
 (defn observe-liveness-check!
   "A deployed component's liveness flipped: down reads as plain :failed,
-  like any broken dependency. :error is always set, so recovery clears it."
-  [name cfg ok?]
-  (swap-view! mark-status name (if ok? (resting-status cfg) :failed)
-         {:error (when-not ok? "liveness check failed - no longer reachable")}))
+  like any broken dependency; :unready (running, its readiness failing) as
+  :unready - restarting it is the cure, not looking for what killed it.
+  :error is always set, so recovery clears it."
+  [name cfg verdict]
+  (swap-view! mark-status name (case verdict true (resting-status cfg) :unready :unready :failed)
+         {:error (case verdict
+                   true nil
+                   :unready (str "running, not ready: " (get-in cfg [:readiness :url]) " doesn't answer")
+                   "liveness check failed - no longer reachable")}))
 
 ;; ---------------------------------------------------------------------------
 ;; the control queue - fed by zent.ui.server's POSTs, drained by

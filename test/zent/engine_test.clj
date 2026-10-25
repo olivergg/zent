@@ -402,6 +402,26 @@
           (is (= {} (:handles @st)))))
       (finally (.destroy proc) (session/clear! path)))))
 
+(deftest recheck-liveness-process-readiness-test
+  (let [proc (.start (ProcessBuilder. ["sleep" "30"]))
+        cfg {:kind :quarkus-app :mode :on :readiness {:type :http-poll :url "http://x/live"}}
+        st (state {:active {:app cfg} :handles {:app proc}})
+        calls (atom [])
+        on-check (fn [_ _ verdict] (swap! calls conj verdict))]
+    (try
+      (testing "given a live process whose readiness fails, then it's :unready - running, not serving"
+        (with-redefs [probe/ready? (fn [_] false)] (recheck-liveness! st on-check))
+        (is (= [:unready] @calls)))
+      (testing "given it ready again, then true"
+        (with-redefs [probe/ready? (fn [_] true)] (recheck-liveness! st on-check))
+        (is (= [:unready true] @calls)))
+      (testing "given the process dead, then false, its readiness not even asked"
+        (.waitFor (doto proc .destroy))
+        (with-redefs [probe/ready? (fn [_] (throw (ex-info "should not be called" {})))]
+          (recheck-liveness! st on-check))
+        (is (= [:unready true false] @calls)))
+      (finally (.destroy proc)))))
+
 (deftest recheck-liveness-external-test
   (let [external-cfg {:kind :external :mode :on :readiness {:type :http-poll :url "http://x"}}
         st (state {:active {:svc external-cfg} :handles {}})

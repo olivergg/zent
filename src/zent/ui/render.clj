@@ -23,7 +23,11 @@
   the kind."
   {:pending "pending" :deploying "starting" :up "up"
    :done "done" :idle "idle" :stopping "stopping" :failed "failed" :external "up" :off "off" :down "stopped"
-   :ready "ready"})
+   :ready "ready" :unready "unready"})
+
+(def ^:private error-shown?
+  "Statuses whose :error is shown - only while in them: a stale error must not linger after recovery."
+  #{:failed :unready})
 
 (def ^:private one-shot-label
   "A job's own wording where a service's would mislead - nothing to stop."
@@ -79,7 +83,7 @@
       "")))
 
 (defn- can-reload? [status] (not (contains? #{:off :external :stopping} status)))
-(defn- can-stop? [status] (contains? #{:up :deploying :idle} status))
+(defn- can-stop? [status] (contains? #{:up :deploying :idle :unready} status))
 (defn- links-visible? [status] (contains? #{:up :external :deploying} status))
 
 (defn- workdir
@@ -144,8 +148,7 @@
             (when description (str "<span class=\"desc\">" (esc description) "</span>"))
             (source-env-rows source-env))
        (card-body cname c))
-     ;; only while :failed - a stale error must not linger after recovery
-     (when (and error (= status :failed)) (str "<span class=\"fray\">" (esc error) "</span>"))
+     (when (and error (error-shown? status)) (str "<span class=\"fray\">" (esc error) "</span>"))
      "<span class=\"actions\">"
      (when reload?
        ;; same trigger, but a one-shot has nothing loaded to reload: it runs its scripts
@@ -162,7 +165,7 @@
             "hx-post=\"/api/stop/" (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\">&#9632;</button>"))
      "</span>")))
 
-(def ^:private summary-order ["up" "done" "ready" "idle" "starting" "stopping" "pending" "failed" "off" "stopped"])
+(def ^:private summary-order ["up" "done" "ready" "idle" "starting" "stopping" "pending" "unready" "failed" "off" "stopped"])
 
 (defn run-summary
   "The whole #summary element (outerHTML, class included)."
@@ -217,7 +220,7 @@
          "<dt>state</dt><dd>" (esc (label-of (:kind c) (:status c))) "</dd>"
          "<dt>waits for</dt><dd>" (esc (if-let [deps (seq (:deps c))] (str/join ", " (map name deps)) "nothing")) "</dd>"
          (when-let [hs (:handle-summary c)] (str "<dt>handle</dt><dd>" (esc hs) "</dd>"))
-         (when (and (:error c) (= :failed (:status c))) (str "<dt>error</dt><dd>" (esc (:error c)) "</dd>"))
+         (when (and (:error c) (error-shown? (:status c))) (str "<dt>error</dt><dd>" (esc (:error c)) "</dd>"))
          "</dl>"
          ;; its output lives in the Logs tab, opened on this component alone
          "<button type=\"button\" class=\"open-logs\" data-name=\"" (esc (name cname)) "\""

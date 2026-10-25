@@ -16,7 +16,8 @@
   (testing "each status gets its label-of wording, :external reading as
             plain \"up\""
     (doseq [[status label] {:pending "pending" :deploying "starting" :up "up"
-                             :done "done" :idle "idle" :failed "failed" :external "up" :off "off" :down "stopped"}]
+                             :done "done" :idle "idle" :failed "failed" :external "up" :off "off" :down "stopped"
+                             :unready "unready"}]
       (is (str/includes? (render/component-card :svc {:kind :process :status status})
                           (str "<span class=\"state\">" label "</span>"))))))
 
@@ -42,8 +43,10 @@
                        "hx-confirm=\"Wipe the DB?\""))
     (is (not (str/includes? (render/component-card :seed {:kind :one-shot :status :ready}) "hx-confirm"))))
 
-  (testing "stop: only :up/:deploying/:idle"
+  (testing "stop: only :up/:deploying/:idle/:unready (still running)"
     (is (str/includes? (render/component-card :svc {:kind :process :status :up}) "act stop"))
+    (is (str/includes? (render/component-card :svc {:kind :process :status :unready}) "act stop"))
+    (is (str/includes? (render/component-card :svc {:kind :process :status :unready}) "act reload"))
     (is (str/includes? (render/component-card :svc {:kind :process :status :deploying}) "act stop"))
     (is (not (str/includes? (render/component-card :svc {:kind :process :status :off}) "act stop")))
     (is (not (str/includes? (render/component-card :job {:kind :one-shot :status :done}) "act stop")))
@@ -68,10 +71,12 @@
       (is (not (str/includes? html "act stop"))))))
 
 (deftest component-card-error-gating-test
-  (testing "the error banner shows only while actually :failed - never lingers
-            on a card that's since recovered"
+  (testing "the error banner shows only while actually :failed or :unready - never
+            lingers on a card that's since recovered"
     (is (str/includes? (render/component-card :svc {:kind :process :status :failed :error "boom"})
                         "<span class=\"fray\">boom</span>"))
+    (is (str/includes? (render/component-card :svc {:kind :process :status :unready :error "not ready"})
+                        "<span class=\"fray\">not ready</span>"))
     (is (not (str/includes? (render/component-card :svc {:kind :process :status :up :error "boom"}) "fray")))))
 
 (deftest component-card-escaping-test

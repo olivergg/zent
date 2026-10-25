@@ -358,6 +358,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node[data-status="starting"] .state { color: var(--weld); }
 .node[data-status="failed"]   { border-color: var(--madder); background: #f6eae8; }
 .node[data-status="failed"] .state { color: var(--madder); }
+/* running but its readiness failing: between up and failed */
+.node[data-status="unready"]  { border-color: var(--madder); border-style: dashed; background: #f6eae8; }
+.node[data-status="unready"] .state { color: var(--madder); font-style: italic; }
 .node[data-status="off"],
 .node[data-status="stopped"]  { opacity: 0.5; font-style: italic; }
 /* idle: kept warm, still running, but no current preset needs it */
@@ -626,7 +629,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .tally .t-up b { color: var(--verdigris); }
 .tally .t-done b { color: var(--indigo); }
 .tally .t-starting b { color: var(--weld); }
-.tally .t-failed b { color: var(--madder); }
+.tally .t-failed b,
+.tally .t-unready b { color: var(--madder); }
 
 .blocked { margin: 10px 0 0; color: var(--madder); }
 
