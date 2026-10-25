@@ -332,10 +332,6 @@
             #(-> % (str/replace "{{CSRF_TOKEN}}" (or @csrf-token ""))
                  (str/replace "{{VERSION}}" (render/esc (or (version) "")))))
 
-    (and (= (:request-method req) :get) (= (:uri req) "/tokens.css"))
-    {:status 200 :headers {"Content-Type" "text/css; charset=utf-8"}
-     :body (slurp (io/resource "zent/ui/tokens.css"))}
-
     ;; the page's own style and code: read on each request, and no-cache, so
     ;; an edit shows on the next reload
     (and (= (:request-method req) :get) (#{"/index.css" "/index.js"} (:uri req)))
