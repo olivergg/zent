@@ -262,8 +262,9 @@
 
 (defn verify!
   "Runs `preset`'s checks - the daemon's preset when nil; those named in
-  `check-names` when given, only the `tests` named when given - and prints
-  each result. Fails unless every one passed: :unknown is no pass."
+  `check-names` when given, else all but the ones that write (:writes, run
+  only when named); only the `tests` named when given - and prints each
+  result. Fails unless every one passed: :unknown is no pass."
   [ctx preset check-names tests]
   (let [c (catalog ctx)
         preset (or preset (some-> (live) (client/request :get "/api/view") :preset keyword)
@@ -271,12 +272,15 @@
         _ (check-preset! ctx preset)
         all (get-in c [:checks preset])
         names (set (map :name all))
-        wanted (if (seq check-names) (set (map keyword check-names)) names)
+        wanted (if (seq check-names) (set (map keyword check-names)) (set (map :name (remove :writes all))))
         chosen (filterv (comp wanted :name) all)]
     (when (empty? all) (fail! (format "%s has no checks (checks/%s/)" (name preset) (checks/dir-name preset))))
     (when-let [unknown (seq (remove names wanted))]
       (fail! (format "%s: no check %s - its checks: %s" (name preset) (str/join ", " (map name unknown))
                      (str/join ", " (map (comp name :name) all)))))
+    (when-let [skipped (and (empty? check-names) (seq (filter :writes all)))]
+      (println (format "skipped, it writes - name it to run it: %s" (str/join ", " (map (comp name :name) skipped)))))
+    (when (empty? chosen) (fail! (format "%s: every check writes - name the one to run" (name preset))))
     (let [results (doall (for [{:keys [problem] :as chk} chosen]
                            (let [r (if problem
                                      ;; not run: a result judging nothing, :unknown

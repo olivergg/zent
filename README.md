@@ -57,7 +57,7 @@ Plain data, no code and no deps: `zent` runs the catalog repo enclosing the curr
 from. `zent check` validates every preset (a catalog's test).
 
 The one exception is `checks/`: a preset's checks, clojure.test namespaces judging its
-running stack, read-only - each file a check, its deftests the tests, run in a JVM
+running stack - each file a check, its deftests the tests, run in a JVM
 `clojure -M` from `checks/` (the [Clojure CLI](https://clojure.org/guides/install_clojure)).
 The directory is the preset's name, munged like a namespace (`my-preset` → `my_preset`), and
 the ns attr-map says what it reads:
@@ -67,6 +67,12 @@ the ns attr-map says what it reads:
   {:zent/observes [:api :db] :zent/description "every order reaches the db"}
   (:require [clojure.test :refer [deftest is]]))
 ```
+
+A check is read-only; one that writes (a scenario: it acts, then asserts) says
+`:zent/writes true` in its attr-map, and runs only when named (`zent verify <preset> <check>`,
+the dashboard asking first) - never with the preset's other checks. A deftest's
+`:zent/kind` (`:invariant`, `:pseudo-oracle`, `:metamorphic`, `:heuristic`, ...) says what
+kind of oracle it is, shown next to it.
 
 Code several checks share goes in `checks/lib/` (on the `:paths`, so `lib/acme/db.clj` is
 `acme.db`): it's not a preset's checks.

@@ -1,15 +1,20 @@
 (ns zent.checks
   "A preset's checks: clojure.test namespaces under <catalog>/checks/<preset>/
-  that judge a running stack (read-only by contract) - one file per check, its
-  deftests the tests. The ns attr-map carries what zent needs:
+  that judge a running stack - one file per check, its deftests the tests. The
+  ns attr-map carries what zent needs:
 
     (ns supportn3o_6504.charge-history
       {:zent/observes [:oceanv3 :renault-ingestor] :zent/description \"...\"}
       (:require [clojure.test :refer [deftest is]]))
 
+  Read-only by default; :zent/writes true marks one that writes (a scenario):
+  it runs only when named, never with the preset's other checks. A deftest's
+  :zent/kind (:invariant, :pseudo-oracle, :metamorphic, :heuristic...) says
+  what kind of oracle it is.
+
   A check runs in a JVM `clojure -M` from <catalog>/checks (its deps.edn, with
-  :paths [\".\"]): it is the catalog's code, not the engine's - Jolt never loads
-  it. clojure.test's own `report` hook prints one EDN event per line, read back
+  :paths [\".\" \"lib\"]): it is the catalog's code, not the engine's - Jolt never
+  loads it. clojure.test's own `report` hook prints one EDN event per line, read back
   into a result whose :status is :pass, :fail or :unknown (could not judge:
   an error, nothing run), merged the way Jepsen merges :valid?."
   (:require [clojure.edn :as edn]
@@ -55,9 +60,10 @@
                                               expected (symbol (str (.getName pdir) "." (demunge base)))
                                               check {:name (keyword (demunge base)) :root (.getPath root) :ns expected}]]
                                     (try
-                                      (let [[ns-sym {:zent/keys [observes description]}] (read-ns-form (slurp f))]
+                                      (let [[ns-sym {:zent/keys [observes description writes]}] (read-ns-form (slurp f))]
                                         (cond-> (assoc check :observes (vec (filter keyword? observes)))
                                           description (assoc :description (str description))
+                                          (true? writes) (assoc :writes true)
                                           (not (every? keyword? observes))
                                           (assoc :problem ":zent/observes is a vector of component keywords")
                                           (not= ns-sym expected)
@@ -103,7 +109,8 @@
               (case t
                 :begin-test-var
                 (emit (cond-> {:event :begin :test (-> m :var meta :name str)}
-                        (-> m :var meta :doc) (assoc :doc (-> m :var meta :doc))))
+                        (-> m :var meta :doc) (assoc :doc (-> m :var meta :doc))
+                        (-> m :var meta :zent/kind) (assoc :kind (-> m :var meta :zent/kind))))
                 :end-test-var
                 (emit {:event :end :test (-> m :var meta :name str)})
                 (:pass :fail :error)
@@ -152,7 +159,9 @@
                               acc (if (= i (count acc)) (conj acc {:name test :status :pass :assertions 0 :failures []}) acc)
                               detail (dissoc e :event :test)]
                           (case event
-                            :begin (cond-> acc (:doc e) (assoc-in [i :doc] (:doc e)))
+                            :begin (cond-> acc
+                                     (:doc e) (assoc-in [i :doc] (:doc e))
+                                     (:kind e) (assoc-in [i :kind] (:kind e)))
                             :end (assoc-in acc [i :done?] true)
                             :pass (update-in acc [i :assertions] inc)
                             :fail (-> acc (update-in [i :assertions] inc) (update-in [i :failures] conj detail)
@@ -188,8 +197,9 @@
             (:assertions counts) (/ (or duration-ms 0) 1000.0))]
    (when only [(str "  only: " (str/join ", " only))])
    (when error (map #(str "  | " %) (str/split-lines error)))
-   (for [{:keys [name status assertions failures doc]} tests
-         line (concat [(format "  %s %s  %d" (glyph status) name assertions)]
+   (for [{:keys [name status assertions failures doc kind]} tests
+         line (concat [(format "  %s %s%s  %d" (glyph status) name (if kind (str " [" (clojure.core/name kind) "]") "")
+                               assertions)]
                       ;; the why of a test, where it matters: when it doesn't pass
                       (when (and doc (not= :pass status))
                         (map #(str "      # " (str/trim %)) (str/split-lines doc)))

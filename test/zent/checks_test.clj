@@ -17,7 +17,7 @@
 ;; what the fixture's run printed (zent.checks/run-cmd), around unrelated output
 (def ^:private real-run
   ["Reflection warning, ignore me"
-   "#zent/check {:event :begin, :test \"passes\", :doc \"One equals one.\"}"
+   "#zent/check {:event :begin, :test \"passes\", :doc \"One equals one.\", :kind :invariant}"
    "#zent/check {:event :pass, :test \"passes\"}"
    "#zent/check {:event :pass, :test \"passes\"}"
    "#zent/check {:event :end, :test \"passes\"}"
@@ -40,6 +40,13 @@
            (checks/discover fixture))))
   (testing "given a dir without checks/, no checks"
     (is (= {} (checks/discover "test/fixtures/k8s"))))
+  (testing "given :zent/writes true, the check is marked as writing - nothing else is"
+    (let [dir (tmp-dir)
+          write! #(doto (io/file dir "checks" "my_preset" %1) io/make-parents (spit %2))]
+      (write! "scenario.clj" "(ns my_preset.scenario {:zent/observes [:db] :zent/writes true})")
+      (write! "reads.clj" "(ns my_preset.reads {:zent/observes [:db] :zent/writes \"yes\"})")
+      (is (= {:reads nil :scenario true}
+             (into {} (map (juxt :name :writes)) (:my-preset (checks/discover dir)))))))
   (testing "given a ns not matching its path or bad :zent/observes, the check carries a :problem"
     (let [dir (tmp-dir)
           write! #(doto (io/file dir "checks" "my_preset" %1) io/make-parents (spit %2))]
@@ -84,6 +91,7 @@
       (is (= [["passes" :pass 2] ["fails" :fail 1] ["throws" :error 0]]
              (map (juxt :name :status :assertions) tests)))
       (is (= ["One equals one." "One equals two,\n  on two lines." nil] (map :doc tests)) "a deftest's docstring")
+      (is (= [:invariant nil nil] (map :kind tests)) "a deftest's :zent/kind")
       (is (= {:message "[:label \"x\"]" :expected "(= 1 2)" :actual "(not (= 1 2))"
               :file "smoke.clj" :line 9 :context "ctx"}
              (first (:failures (second tests)))))
@@ -108,7 +116,7 @@
 (deftest report-test
   (testing "given a failing run, a line per check and test, each failure under its test"
     (is (= ["✗ full/smoke  fail - 3 test(s), 2 not passing, 3 assertion(s), 1.2 s"
-            "  ✓ passes  2"
+            "  ✓ passes [invariant]  2"
             "  ✗ fails  1"
             "      # One equals two,"
             "      # on two lines."
@@ -156,8 +164,9 @@
     (println "skipped real-clojure-run-test (ZENT_TEST_CLOJURE unset)")
     (let [[chk] (:full (checks/discover fixture))
           r (binding [checks/*dir* (tmp-dir)] (checks/run! :full chk nil))]
-      (is (= [["passes" :pass "One equals one."] ["fails" :fail "One equals two,\n  on two lines."] ["throws" :error nil]]
-             (map (juxt :name :status :doc) (:tests r))))
+      (is (= [["passes" :pass "One equals one." :invariant] ["fails" :fail "One equals two,\n  on two lines." nil]
+              ["throws" :error nil nil]]
+             (map (juxt :name :status :doc :kind) (:tests r))))
       (is (= "clojure.lang.ExceptionInfo: kaput" (-> r :tests (nth 2) :failures first :actual))))))
 
 (deftest verify-test
@@ -179,7 +188,16 @@
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"standalone-ui has no checks"
                               (cli/verify! ctx :standalone-ui nil nil))))
       (testing "given no preset and no daemon, the usage"
-        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"usage: zent verify" (cli/verify! ctx nil nil nil)))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"usage: zent verify" (cli/verify! ctx nil nil nil))))
+      (testing "given a check that writes, it's skipped unless named, and says so"
+        (let [ctx (assoc ctx :catalog #(update-in (catalog/load-dir fixture) [:checks :full] conj
+                                                   {:name :scenario :ns 'full.scenario :writes true}))]
+          (reset! ran [])
+          (is (str/includes? (with-out-str (cli/verify! ctx :full nil nil)) "skipped, it writes - name it to run it: scenario"))
+          (is (= [[:full :smoke nil]] @ran))
+          (reset! ran [])
+          (with-out-str (cli/verify! ctx :full ["scenario"] nil))
+          (is (= [[:full :scenario nil]] @ran)))))
     (testing "given a check not passing, verify fails after printing it"
       (with-redefs [daemon/live (constantly nil)
                     checks/run! (fn [& _] (assoc (checks/parse real-run 0) :preset :full :check :smoke))]

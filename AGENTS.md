@@ -99,8 +99,10 @@ they assert.
 - **Results.** `~/.cache/zent/checks/<preset>/<check>/<started-at>.edn`; "current" is the last
   full run overlaid by later `--only` runs. `zent verify`, the MCP `verify` tool and the Checks
   tab go through the same `run!` and the same files.
-- **Read-only, by convention** (not enforced): a check judges, it doesn't act. A scenario that
-  writes is an `:on-demand` one-shot with `:confirm`.
+- **Read-only, by convention** (not enforced): a check judges, it doesn't act. One that writes
+  says `:zent/writes true`: `verify` without check names skips it, naming it runs it, the
+  dashboard confirms first and its "run all" leaves it out. A deftest's `:zent/kind` reaches
+  the result (`:begin` event) and the display; zent gives it no meaning.
 - The pure parts (`discover`, `parse`, `report`, `current`) are tested without a JVM;
   `ZENT_TEST_CLOJURE=1` also runs a real check.
 

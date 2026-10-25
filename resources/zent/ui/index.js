@@ -826,6 +826,8 @@ function followCheck(c) {
 }
 
 async function runCheck(c, only) {
+  // a check that writes (a scenario) runs only when asked for, like a :confirm one-shot
+  if (c.writes && !confirm(`${c.name} writes to the running stack (a scenario). Run it?`)) return;
   const q = new URLSearchParams({ check: c.name });
   if (only?.length) q.set("only", only.join(","));
   const res = await fetch("/api/checks/run?" + q, {
@@ -877,10 +879,10 @@ function renderChecks() {
         <span class="c quiet">${r && !r.live ? `${r.counts.tests} test(s) · ${r.counts.assertions} assertions · ${((r["duration-ms"] || 0) / 1000).toFixed(1)} s` : ""}</span></div>
       <div class="chk-meta">${c.description ? `<span class="desc">${escHtml(c.description)}</span><br>` : ""}${meta}</div>
       ${c.problem ? `<div class="chk-problem">${escHtml(c.problem)}</div>` : ""}
-      ${c.observes?.length ? `<div class="chk-chips">observes ${c.observes.map((o) => `<span>${escHtml(o)}</span>`).join("")}</div>` : ""}
+      ${c.observes?.length || c.writes ? `<div class="chk-chips">observes ${(c.observes || []).map((o) => `<span>${escHtml(o)}</span>`).join("")}${c.writes ? `<span class="writes" title="a scenario: runs only when asked for, never with run all">writes</span>` : ""}</div>` : ""}
       <ul class="chk-tests">${(r?.tests || []).filter((t) => !onlyFailed || t.status !== "pass").map((t) => `
         <li data-test="${escHtml(t.name)}" data-status="${t.status}" aria-selected="${t.name === sel}">
-          <span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span><span class="n">${escHtml(t.name)}${t.doc ? `<span class="doc">${escHtml(docInline(t.doc))}</span>` : ""}</span>
+          <span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span><span class="n">${escHtml(t.name)}${t.kind ? `<span class="kind">${escHtml(t.kind)}</span>` : ""}${t.doc ?`<span class="doc">${escHtml(docInline(t.doc))}</span>` : ""}</span>
           <span class="c">${t.at ? `<span class="quiet">${hms(t.at)}</span> ` : ""}${testCounts(t)}</span></li>`).join("")}
       </ul></div>`;
   }).join("");
@@ -935,7 +937,7 @@ function initChecksControls() {
   });
   document.getElementById("checks-only-failed").onchange = renderChecks;
   // every check of the preset, one after the other would queue on the server: one run each, in parallel
-  document.getElementById("checks-run-all").onclick = () => checkList().forEach((c) => runCheck(c, null));
+  document.getElementById("checks-run-all").onclick = () => checkList().filter((c) => !c.writes).forEach((c) => runCheck(c, null));
   document.getElementById("checks-run-failed").onclick = () => checkList().forEach((c) => {
     const failing = (shownCheckRun(c)?.tests || []).filter((t) => t.status !== "pass").map((t) => t.name);
     if (failing.length) runCheck(c, failing);
