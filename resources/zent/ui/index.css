@@ -8,19 +8,18 @@
   --weld:      #c1892b;
   --grey:      #a5a199;
   /* muted text still meant to be read - grey is for rules and borders */
-  --muted:     #5d5f6e;
-  /* verdigris: the one non-indigo "good" colour - reserved for a
+  --muted:     #5d5f6e;  /* verdigris: the one non-indigo "good" colour - reserved for a
      component actually up and running, so it reads distinctly from
      merely-woven/external (indigo) at a glance, closer to how most
      dashboards use green for healthy. */
-  --verdigris: #2f7a4d;
+  --verdigris: #2a6d45;
   /* a one-shot's strip under its card: linen washed in indigo */
   --strip:     color-mix(in srgb, var(--indigo) 10%, var(--card));
   /* the logs terminal: indigo-dyed ink, not a foreign dark theme */
   --term-bg:   #141829;
   --term-bar:  #1b2038;
   --term-fg:   #d9d6cc;
-  --term-dim:  #7c7f94;
+  --term-dim:  #8b8ea6;
   --term-rule: #2c3254;
   --term-warn: #e0a948;
   --term-err:  #e46c5f;
@@ -76,7 +75,7 @@ body {
 .run-label { display: flex; flex-direction: column; justify-content: center; padding: 3px 12px; line-height: 1.2; }
 .run-label small {
   font-family: var(--display); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
-  color: var(--grey); display: flex; align-items: center; gap: 5px;
+  color: var(--muted); display: flex; align-items: center; gap: 5px;
 }
 .run[data-state="live"] .run-label small::before,
 .run[data-state="preview"] .run-label small::before {
@@ -128,7 +127,7 @@ body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   font-size: 10.5px;
-  color: var(--grey);
+  color: var(--muted);
   display: flex;
   align-items: center;
   gap: 7px;
@@ -303,7 +302,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 }
 /* a script name breaks between scripts, never mid-name */
 .node.satellite .name { font-size: 11px; letter-spacing: 0.02em; text-transform: none; flex: 1; overflow-wrap: normal; }
-.node.satellite .desc { flex-basis: 100%; padding-left: 14px; color: var(--grey); font-size: 10px; }
+/* read on an indigo-washed strip: a shade deeper than muted */
+.node.satellite .desc { flex-basis: 100%; padding-left: 14px; color: color-mix(in srgb, var(--muted) 80%, var(--ink)); font-size: 10px; }
 /* what a one-shot reads (:source-env): one dir per row, under its description */
 .node .source-env { display: block; }
 .node.satellite .source-env { flex-basis: 100%; padding-left: 14px; }
@@ -333,7 +333,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 /* a card and its strips move as one piece */
 .stack:hover > .node { transform: translateX(2px); }
-.node:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+/* keyboard focus: one indigo ring everywhere, linen on the dark terminal */
+:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+.logs-view :focus-visible { outline-color: var(--term-fg); }
 
 .node .permanent {
   display: inline-block;
@@ -361,7 +363,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  color: var(--grey);
+  color: var(--muted);
   font-size: 10.5px;
   margin-top: 3px;
 }
@@ -373,7 +375,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
    on are washed in it and cast its shade. up and external are both
    verdigris (both mean "confirmed healthy") - the dashed border is what
    still marks external as "zent didn't start this", not a different colour */
-.node .state { color: var(--c, var(--ink)); }
+/* the state as text: its dye deepened with ink, readable on the dyed ground */
+.node .state { color: color-mix(in srgb, var(--c, var(--ink)) 65%, var(--ink)); }
 .node[data-status="up"],
 .node[data-status="external"] { --c: var(--verdigris); }
 .node[data-status="external"] { border-left-style: dashed; }
@@ -446,12 +449,12 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .repo {
   display: block;
   margin-top: 3px;
-  color: var(--grey);
+  color: var(--muted);
   font-size: 10px;
   overflow-wrap: anywhere;
 }
 .node .repo::before { content: "repo: "; }
-.node .repo-link { color: var(--grey); text-decoration: none; border-bottom: 1px dotted var(--grey); }
+.node .repo-link { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--grey); }
 .node .repo-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
 
 /* one box per container inside the component's own box: a compose
@@ -470,7 +473,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   gap: 5px;
   padding: 2px 6px;
   font-size: 10px;
-  color: var(--grey);
+  color: var(--muted);
   background: rgba(255, 255, 255, 0.55);
   border: 1px solid var(--grey);
   border-left-width: 2px;
@@ -520,7 +523,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .workdir {
   display: block;
   margin-top: 2px;
-  color: var(--grey);
+  color: var(--muted);
   font-size: 9.5px;
   overflow-wrap: anywhere;
 }
@@ -584,7 +587,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   overflow-wrap: anywhere;
 }
 
-/* action buttons: quiet until hovered, so the card still reads first as a
+/* action buttons: small and muted, so the card still reads first as a
    status card and only second as a set of controls. */
 .node .actions {
   position: absolute;
@@ -594,7 +597,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 }
 /* .node and .preset-row both host these (reload/stop, play/stop) - shared
    look, context-specific rest opacity/padding/disabled dimming below */
-.act { background: none; border: none; color: var(--grey);
+.act { background: none; border: none; color: var(--muted);
        font-size: 11px; line-height: 1; cursor: pointer; }
 .act:hover { color: var(--indigo); }
 /* a press gives way under the finger before the daemon answers */
@@ -604,9 +607,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .act.stop:hover { color: var(--madder); }
 .act[data-failed="true"] { color: var(--madder); opacity: 1; }
 
-.node .act { padding: 2px 4px; opacity: 0.45; }
-.node:hover .act { opacity: 1; }
-.node .act:disabled { opacity: 0.25; cursor: default; color: var(--grey); }
+.node .act { padding: 2px 4px; }
+.node .act:disabled { opacity: 0.25; cursor: default; }
 
 .empty-loom {
   position: relative;
@@ -658,7 +660,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   font-weight: 500;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--grey);
+  color: var(--muted);
   margin: 0 0 10px;
   padding-bottom: 5px;
   border-bottom: 1px solid var(--grey);
@@ -705,10 +707,10 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .blocked { margin: 10px 0 0; color: var(--madder); }
 
 .facts { display: grid; grid-template-columns: 74px 1fr; gap: 4px 10px; margin: 0; }
-.facts dt { color: var(--grey); }
+.facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 
-.quiet { color: var(--grey); }
+.quiet { color: var(--muted); }
 
 /* ---------------------------------------------------------------- logs */
 
@@ -766,11 +768,11 @@ body:not([data-tab="checks"]) .checks-view { display: none; }
 .chk-tests .kind[data-kind="invariant"]     { border-color: #3b4a8f; color: #3b4a8f; background: #eceef7; }
 .chk-tests .kind[data-kind="pseudo-oracle"] { border-color: #4a6b78; color: #4a6b78; background: #ebf1f3; }
 .chk-tests .kind[data-kind="metamorphic"]   { border-color: #6b4a8f; color: #6b4a8f; background: #f1ecf6; }
-.chk-tests .kind[data-kind="business-rule"] { border-color: #8a6a2b; color: #8a6a2b; background: #f6f0e4; }
+.chk-tests .kind[data-kind="business-rule"] { border-color: #7d5f25; color: #7d5f25; background: #f6f0e4; }
 .chk-tests .kind[data-kind="heuristic"]     { border-style: dashed; font-style: italic; }
 .gl { display: inline-block; width: 14px; text-align: center; font-weight: 700; }
 .st-pass { color: var(--verdigris); } .st-fail { color: var(--madder); }
-.st-error, .st-unknown { color: var(--weld); } .st-run { color: var(--grey); }
+.st-error, .st-unknown { color: var(--weld); } .st-run { color: var(--muted); }
 ul.chk-tests { list-style: none; margin: 0 0 0 14px; padding: 0; border-left: 1px solid var(--grey); }
 ul.chk-tests li { display: flex; gap: 8px; align-items: baseline; padding: 3px 8px; cursor: pointer; border-radius: 3px; }
 ul.chk-tests li:hover { background: var(--card); }
@@ -789,8 +791,9 @@ ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
 .checks-view h3 { font-family: var(--display); font-weight: 400; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
 .chk-runs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .chk-runs button { width: 22px; height: 22px; border: 0; border-radius: 3px; color: #fff; font-size: 11px; cursor: pointer; padding: 0; }
-.chk-runs .pass { background: var(--verdigris); } .chk-runs .fail { background: var(--madder); } .chk-runs .unknown { background: var(--weld); }
-.chk-runs .partial { opacity: .55; }
+.chk-runs .pass { background: var(--verdigris); } .chk-runs .fail { background: var(--madder); } .chk-runs .unknown { background: var(--weld); color: var(--ink); }
+/* a partial run (--only): hatched rather than faded, so its glyph stays readable */
+.chk-runs .partial { background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgb(255 255 255 / .3) 3px 5px); }
 .chk-runs [aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .chk-detail-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
 .chk-where { color: var(--muted); margin-bottom: 12px; }
