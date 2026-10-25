@@ -75,7 +75,7 @@ body {
    (state + name), not a button; Stop/Start acts on that very preset. The
    "am I running, and can I stop/start it from here" answer - everything
    else (the rail's per-row play/stop) is deliberately quiet by comparison. */
-.run { display: inline-flex; align-items: stretch; border: 1px solid var(--ink); }
+.run { --led: var(--verdigris); display: inline-flex; align-items: stretch; border: 1px solid var(--ink); }
 .run[data-state="idle"] { border-color: var(--grey); }
 .run-label { display: flex; flex-direction: column; justify-content: center; padding: 3px 12px; line-height: 1.2; }
 .run-label small {
@@ -84,7 +84,7 @@ body {
 }
 .run[data-state="live"] .run-label small::before,
 .run[data-state="preview"] .run-label small::before {
-  content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--led, var(--verdigris));
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--led);
 }
 .run[data-state="preview"] .run-label small::before { background: none; border: 1px solid var(--verdigris); }
 /* the LED: the live run's health (index.js healthOf) - ready glows steady,
@@ -92,7 +92,7 @@ body {
 .run[data-health="starting"] { --led: var(--weld); }
 .run[data-health="stopping"] { --led: var(--grey); }
 .run[data-health="failed"] { --led: var(--madder); }
-.run[data-health] .run-label small::before { box-shadow: 0 0 0 3px color-mix(in srgb, var(--led, var(--verdigris)) 22%, transparent); }
+.run[data-health] .run-label small::before { box-shadow: 0 0 0 3px color-mix(in srgb, var(--led) 22%, transparent); }
 .run:is([data-health="starting"], [data-health="stopping"]) .run-label small::before { animation: led 1.4s ease-in-out infinite; }
 @keyframes led { 50% { opacity: .3; } }
 .preset { font-family: var(--display); letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; }
