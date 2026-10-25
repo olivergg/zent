@@ -213,7 +213,7 @@
     (catch Exception e
       (println (format "[%s] reload failed: %s"
                        name (ex-message e)))
-      {:ok false})))
+      {:ok false :error (or (ex-message e) (str e))})))
 
 ;; serve!'s state, one atom:
 ;;   :active   {name cfg}     what each component runs as
@@ -573,8 +573,12 @@
                           (deploy-into! (partial put-handle! st) [[name (assoc cfg ::run-now true)]] deploy-fn session-path))
                         (when-let [cfg (some->> (get-in @st [:active name]) (current-cfg @catalog-ref name))]
                           (swap! st assoc-in [:active name] cfg)
-                          (let [{:keys [ok handle]} (reload! name cfg deploy-fn (get-in @st [:handles name]))]
-                            (when ok (put-handle! st name handle))))))
+                          (let [{:keys [ok handle error]} (reload! name cfg deploy-fn (get-in @st [:handles name]))]
+                            ;; thrown so the command reports it (`zent reload` exits non-zero), as a
+                            ;; parked one's deploy-into! does; submit! catches it, the loop runs on
+                            (if ok
+                              (put-handle! st name handle)
+                              (throw (ex-info (format "%s: reload failed: %s" (clojure.core/name name) error) {})))))))
         ;; queues `run` as a job over `names` (::all for an apply), reporting
         ;; `commands` handled - with :error if it threw - once it's done
         submit! (fn [names commands run]

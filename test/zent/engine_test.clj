@@ -57,9 +57,10 @@
 (deftest reload-tolerates-failure-test
   (testing "a failing reload reports and yields :ok false - the caller keeps the
             old handle, so a broken edit can't take the running version down"
-    (is (= {:ok false}
-           (reload! :svc {:kind :quarkus-app :mode :on}
-                    (fn [_ _] (throw (ex-info "build broke" {}))) nil))))
+    (let [{:keys [ok error]} (reload! :svc {:kind :quarkus-app :mode :on}
+                                      (fn [_ _] (throw (ex-info "build broke" {}))) nil)]
+      (is (false? ok))
+      (is (string? error) "the reason, for the command that asked")))
 
   (testing "a successful reload hands back the new handle"
     (with-redefs [engine/build-kind! (fn [_ _] nil)]
@@ -90,7 +91,7 @@
       (try
         (with-redefs [engine/build-kind! (fn [_ _] (reset! alive-at-build (.isAlive proc))
                                            (throw (ex-info "mvn exited 1" {})))]
-          (is (= {:ok false}
+          (is (= {:ok false :error "mvn exited 1"}
                  (reload! :svc {:kind :process :mode :on} (fn [_ _] (reset! deployed true)) proc))))
         (is (true? @alive-at-build))
         (is (.isAlive proc) "a broken build can't take the running version down")
@@ -703,6 +704,27 @@
                                    {:svc {:watch {:paths ["src"]} :repo "repo" :workspace-dir root}})))))))
     (testing "given its repo not cloned, then it's just not watched"
       (is (= {} (#'engine/watch-targets {:svc {:watch {:paths ["src"]} :repo "nope" :workspace-dir root}}))))))
+
+(deftest serve-reload-failure-reported-test
+  (testing "given a running component whose reload fails (an exception), then the
+            command carries the error - `zent reload` exits non-zero"
+    (let [catalog {:components {:svc {:kind :external}} :presets {:p {:svc {:mode :on}}}}
+          control (atom [])
+          handled (atom [])
+          deploys (atom 0)
+          deploy-fn (fn [_ _] (when (= 2 (swap! deploys inc)) (throw (ex-info "bad start" {})))
+                      {:kind :external})
+          serving (future
+                    (with-redefs [lifecycle/down! (fn [hs] {:stopped hs :errors []})]
+                      (engine/serve! catalog :initial-preset :p :poll-ms 5 :control control
+                                     :session-path (str (System/getProperty "java.io.tmpdir") "/zent-serve-reload-failure-test.edn")
+                                     :deploy-fn deploy-fn
+                                     :on-handled #(swap! handled into %))))]
+      (try
+        (swap! control conj {:action :reload :name :svc :id 1})
+        (loop [i 0] (when (and (empty? @handled) (< i 300)) (Thread/sleep 10) (recur (inc i))))
+        (is (= "svc: reload failed: bad start" (:error (first @handled))))
+        (finally (swap! control conj {:action :shutdown :id 99}) (deref serving 3000 nil))))))
 
 (deftest serve-commands-always-reported-test
   (let [catalog {:components {:svc {:kind :external}}
