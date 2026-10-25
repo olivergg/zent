@@ -54,7 +54,7 @@
     (when-not (zero? exit)
       (throw (ex-info (format "%s failed: `%s` exited %d" name (shell/display cmd) exit)
                       {:component name :cmd cmd :exit exit
-                       :err (str/join "\n" (take-last 20 (:lines (logs/read-since name offset))))})))
+                       :err (str/join "\n" (take-last 20 (:lines (logs/read-last name offset))))})))
     nil))
 
 ;; Local builds and scripts share the filesystem (~/.m2, node_modules, a

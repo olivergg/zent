@@ -72,7 +72,10 @@
     (logs/append! :big "aaaaaaaaaa\nbbbbbbbbbb\ncccccccccc\ndddd")
     (with-redefs [logs/tail-window 18]                ; 38 bytes: the window starts on the b line's last b
       (is (= ["cccccccccc" "dddd"] (logs/tail :big 10)))
-      (is (= {:lines ["cccccccccc" "dddd"] :offset 38 :reset? false} (logs/read-last :big)))))
+      (is (= {:lines ["cccccccccc" "dddd"] :offset 38 :reset? false} (logs/read-last :big)))
+      (testing "and given an offset (a run's start), then nothing before it, the window still the limit"
+        (is (= ["dddd"] (:lines (logs/read-last :big 33))))                  ; the d line's start, inside the window
+        (is (= ["cccccccccc" "dddd"] (:lines (logs/read-last :big 11)))))))  ; the b line's start, before it
   (testing "given a log within the window, then nothing is dropped"
     (is (= ["aaaaaaaaaa" "bbbbbbbbbb" "cccccccccc" "dddd"] (logs/tail :big 10)))))
 

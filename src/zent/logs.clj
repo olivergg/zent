@@ -96,11 +96,12 @@
 (defn- window-start [f] (max 0 (- (.length f) tail-window)))
 
 (defn read-last
-  "read-since from `component`'s last tail-window bytes, the line the window
-  cuts dropped."
-  [component]
-  (let [from (window-start (io/file (path-of component)))]
-    (cond-> (read-since component from) (pos? from) (update :lines #(vec (rest %))))))
+  "read-since from `component`'s last tail-window bytes - none before
+  `offset` when given - the line the window cuts dropped."
+  ([component] (read-last component 0))
+  ([component offset]
+   (let [from (max offset (window-start (io/file (path-of component))))]
+     (cond-> (read-since component from) (> from offset) (update :lines #(vec (rest %)))))))
 
 (defn tail
   "Last `n` lines of `component`'s log, oldest first, a last unterminated one
