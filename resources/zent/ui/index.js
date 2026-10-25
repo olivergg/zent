@@ -465,7 +465,9 @@ function drawWarp() {
       parts.push(`<path class="shuttle" d="${d}" style="animation-delay:${since(tautAt[key])}"/>`);
     }
   }
-  if (!previewing) tautKeys = nowTaut;
+  // the baseline is taken once the live view has components: the page's
+  // first draw, before any push, would make every taut thread look new
+  if (!previewing && Object.keys(view.components).length) tautKeys = nowTaut;
 
   /* :related edges (zent.schema) - a declared
      coupling zent never orchestrates (e.g. an :external Tomcat expected to
