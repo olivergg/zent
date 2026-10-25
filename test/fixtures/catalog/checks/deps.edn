@@ -1,2 +1,2 @@
-;; checks/: run from here by `clojure -M` (zent.checks), so :paths ["."]
-{:paths ["."]}
+;; checks/: run from here by `clojure -M` (zent.checks); lib/ holds the code checks share
+{:paths ["." "lib"]}

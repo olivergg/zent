@@ -49,7 +49,7 @@ on a PATH entry ahead of Homebrew's.
 ```
 catalog.edn      {:name :acme :defaults {...} :components {...}}  (zent.catalog)
 presets/*.edn    one preset per file, named after it
-checks/          optional: deps.edn ({:paths ["."] ...}) + <preset>/<check>.clj  (zent.checks)
+checks/          optional: deps.edn ({:paths ["." "lib"] ...}) + <preset>/<check>.clj + lib/  (zent.checks)
 ```
 
 Plain data, no code and no deps: `zent` runs the catalog repo enclosing the current directory
@@ -67,6 +67,9 @@ the ns attr-map says what it reads:
   {:zent/observes [:api :db] :zent/description "every order reaches the db"}
   (:require [clojure.test :refer [deftest is]]))
 ```
+
+Code several checks share goes in `checks/lib/` (on the `:paths`, so `lib/acme/db.clj` is
+`acme.db`): it's not a preset's checks.
 
 A result is `:pass`, `:fail` or `:unknown` (it couldn't judge: an exception, nothing run).
 `zent verify [<preset> [<check>...]] [--only=<test>,...]` runs them (MCP: `verify`), the

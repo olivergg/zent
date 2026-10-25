@@ -41,13 +41,14 @@
 
 (defn discover
   "{preset [check ...]} for <dir>/checks/<preset>/*.clj (a missing dir is just
-  no checks). A check whose ns form doesn't read, or doesn't match its path,
-  carries a :problem instead of failing the whole catalog."
+  no checks). checks/lib/ is the checks' shared code, not a preset's. A check
+  whose ns form doesn't read, or doesn't match its path, carries a :problem
+  instead of failing the whole catalog."
   [dir]
   (let [root (io/file dir "checks")]
     (into {}
           (for [^java.io.File pdir (some-> root .listFiles sort)
-                :when (.isDirectory pdir)
+                :when (and (.isDirectory pdir) (not= "lib" (.getName pdir)))
                 :let [checks (vec (for [^java.io.File f (sort (.listFiles pdir))
                                         :when (str/ends-with? (.getName f) ".clj")
                                         :let [base (str/replace (.getName f) #"\.clj$" "")
