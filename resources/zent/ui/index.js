@@ -23,6 +23,28 @@ const STATE_CLASS = {
 };
 const WOVEN = new Set(["up", "done", "external"]);
 
+/* Motion follows what the stack does, live view only: a card that joins
+   rises in, column by column; one that changes status is dyed its new
+   colour; a thread pulled taut gets a shuttle crossing it, from the
+   dependency to its dependent. Every push rebuilds the loom, so each change
+   keeps its time and a rebuilt card or thread resumes its animation where
+   it was (a negative delay) rather than restarting it. */
+const MOTION_MS = 1600;
+const seenStatus = {}, changedAt = {}, arrivedAt = {}, tautAt = {};
+let tautKeys = null;
+const since = (t) => `${Math.round(t - performance.now())}ms`;
+const recent = (t) => performance.now() - (t ?? -Infinity) < MOTION_MS;
+
+function noteChanges(components) {
+  const now = performance.now(), primed = Object.keys(seenStatus).length > 0;
+  for (const [name, c] of Object.entries(components)) {
+    const s = STATE_CLASS[c.status] || "queued";
+    if (!(name in seenStatus)) { if (primed) arrivedAt[name] = now; }
+    else if (seenStatus[name] !== s) changedAt[name] = now;
+    seenStatus[name] = s;
+  }
+}
+
 /* Layered DAG: a component sits one level right of its deepest dependency.
    That level IS the warp position, so the layout carries the dependency
    structure rather than decorating it. Row order within a level starts
@@ -203,6 +225,7 @@ function renderRun() {
   renderPreviewBanner();
 
   const data = activeData();
+  if (!previewing) noteChanges(data.components);
   host.innerHTML = "";
   // a preview shows every one of the preset's own components, never
   // filtered by showStopped - nothing in it is "stopped", it just hasn't
@@ -242,13 +265,14 @@ function renderRun() {
     return;
   }
 
-  levels.forEach((names) => {
+  levels.forEach((names, lvl) => {
     const col = document.createElement("div");
     col.className = "level";
 
     for (const name of names) {
       const stack = document.createElement("div");
       stack.className = "stack";
+      stack.style.setProperty("--lvl", lvl);
       stack.appendChild(nodeEl(name, data.components[name], false));
       for (const s of (strips[name] || []).sort()) stack.appendChild(nodeEl(s, data.components[s], true));
       col.appendChild(stack);
@@ -280,6 +304,9 @@ function nodeEl(name, c, satellite) {
   el.dataset.status = status;
   el.dataset.name = name;
   el.dataset.selected = String(selected === name);
+  for (const [attr, at] of [["arrived", arrivedAt[name]], ["changed", changedAt[name]]]) {
+    if (!previewing && recent(at)) { el.dataset[attr] = "true"; el.style.setProperty(`--${attr}-at`, since(at)); }
+  }
   // the card's own inner markup - name/kind/state/repo/services/ports/
   // source/links/error/reload-stop buttons - is server-rendered
   // (zent.ui.render/component-card, see its docstring on the split);
@@ -365,12 +392,19 @@ function drawWarp() {
   // the flowing dash is kept to the selected or hovered card's threads: a
   // whole fabric animating keeps the GPU busy for nothing
   const hovered = loom.querySelector(".node:hover")?.dataset.name;
+  const nowTaut = new Set();
   for (const [to, from] of data.graph || []) {
     const a = at[from], b = at[to];
     if (!a || !b || (strips.has(to) && (to !== focus || data.components[to]["attached-to"] === from))) continue;
     const taut = WOVEN.has(data.components[from]?.status) && WOVEN.has(data.components[to]?.status);
+    const key = from + ">" + to;
+    if (taut && !previewing) {
+      nowTaut.add(key);
+      if (tautKeys && !tautKeys.has(key)) tautAt[key] = performance.now();
+    }
     const role = !focus ? null : to === focus ? "in" : from === focus ? "out" : "faded";
     const mid = a.r + (b.l - a.r) / 2;
+    const d = `M${a.r} ${a.y} C${mid} ${a.y} ${mid} ${b.y} ${b.l} ${b.y}`;
     const flow = taut && !reduceMotion && [focus, hovered].some((n) => n && (n === to || n === from))
       ? '<animate attributeName="stroke-dashoffset" values="12;0" dur="700ms" repeatCount="indefinite"/>'
       : "";
@@ -378,12 +412,16 @@ function drawWarp() {
     const stroke = role === "in" ? "#25316b" : role === "out" ? "#c1892b" : taut ? "#25316b" : "#c9c6bd";
     const marker = lit ? "arrow-" + role : taut ? "arrow-taut" : "arrow-slack";
     parts.push(
-      `<path class="thread" d="M${a.r} ${a.y} C${mid} ${a.y} ${mid} ${b.y} ${b.l} ${b.y}" ` +
+      `<path class="thread" d="${d}" ` +
       `fill="none" stroke="${stroke}" stroke-width="${lit ? 2.6 : taut ? 1.6 : 1}" ` +
       `stroke-dasharray="${taut || lit ? "5 7" : "3 5"}" opacity="${role === "faded" ? 0.2 : 1}" ` +
       `marker-end="url(#${marker})">${flow}</path>`
     );
+    if (taut && recent(tautAt[key])) {
+      parts.push(`<path class="shuttle" d="${d}" style="animation-delay:${since(tautAt[key])}"/>`);
+    }
   }
+  if (!previewing) tautKeys = nowTaut;
 
   /* :related edges (zent.schema) - a declared
      coupling zent never orchestrates (e.g. an :external Tomcat expected to
@@ -423,6 +461,7 @@ function drawWarp() {
   }
 
   svg.innerHTML = parts.join("");
+  for (const s of svg.querySelectorAll(".shuttle")) s.style.setProperty("--len", s.getTotalLength());
 }
 
 /* Server-rendered (zent.ui.render/detail-panel, GET /api/detail/:name) -

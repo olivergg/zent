@@ -200,6 +200,19 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 /* the warp: hairlines the fabric is woven across */
 .warp { position: absolute; inset: 0; pointer-events: none; }
+/* a thread just pulled taut: one shuttle crossing it, dependency to
+   dependent - a single dash (--len: the path's length, set by drawWarp),
+   parked off the path at rest */
+.warp .shuttle {
+  fill: none;
+  stroke: var(--indigo);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-dasharray: 18px calc(1px * var(--len));
+  stroke-dashoffset: 18px;
+  animation: shuttle 1000ms cubic-bezier(.65, 0, .35, 1);
+}
+@keyframes shuttle { from { stroke-dashoffset: 18px; } to { stroke-dashoffset: calc(-1px * var(--len)); } }
 
 /* `zoom` rather than `transform: scale()` on purpose: it affects layout,
    so .loom's own scrollbars keep reaching the whole fabric instead of
@@ -395,6 +408,37 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   0%, 100% { background: var(--card); }
   50%      { background: #ffffff; }
 }
+
+/* motion follows the stack (index.js noteChanges): a card joining rises in,
+   column after column, in dependency order; a status change washes the card
+   in its new dye from the warp side, settling into its tint; a failure
+   pulses once. --*-at is negative once the card is rebuilt mid-animation. */
+.node::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--c, var(--grey));
+  opacity: 0;
+  transform-origin: left;
+  pointer-events: none;
+}
+.node[data-arrived="true"] {
+  animation: arrive 560ms cubic-bezier(.215, .61, .355, 1) calc(var(--arrived-at, 0ms) + var(--lvl, 0) * 90ms) backwards;
+}
+.node[data-changed="true"]::before { animation: dye 1200ms cubic-bezier(.215, .61, .355, 1) var(--changed-at, 0ms); }
+.node[data-changed="true"][data-status="failed"] { animation: fault 900ms ease-out var(--changed-at, 0ms); }
+@keyframes arrive { from { opacity: 0; transform: translateY(10px); } }
+@keyframes dye {
+  0%   { transform: scaleX(0); opacity: .3; }
+  55%  { transform: scaleX(1); opacity: .18; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+@keyframes fault {
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--madder) 60%, transparent); }
+  to   { box-shadow: 0 0 0 12px transparent; }
+}
+
 
 .node .repo {
   display: block;
@@ -815,7 +859,7 @@ ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
 .logs-main { flex: 1; position: relative; display: flex; min-height: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
 @media (max-width: 900px) {
