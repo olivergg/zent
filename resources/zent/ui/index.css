@@ -14,6 +14,16 @@
      merely-woven/external (indigo) at a glance, closer to how most
      dashboards use green for healthy. */
   --verdigris: #2f7a4d;
+  /* a one-shot's strip under its card: linen washed in indigo */
+  --strip:     color-mix(in srgb, var(--indigo) 10%, var(--card));
+  /* the logs terminal: indigo-dyed ink, not a foreign dark theme */
+  --term-bg:   #141829;
+  --term-bar:  #1b2038;
+  --term-fg:   #d9d6cc;
+  --term-dim:  #7c7f94;
+  --term-rule: #2c3254;
+  --term-warn: #e0a948;
+  --term-err:  #e46c5f;
 
   --display: "Futura", "Avenir Next Condensed", "Century Gothic", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
@@ -89,9 +99,9 @@ body {
   color: #fff;
 }
 .run-toggle.stop { background: var(--madder); }
-.run-toggle.stop:hover { background: #8a2e24; }
+.run-toggle.stop:hover { background: color-mix(in srgb, var(--madder) 82%, var(--ink)); }
 .run-toggle.play { background: var(--verdigris); }
-.run-toggle.play:hover { background: #256640; }
+.run-toggle.play:hover { background: color-mix(in srgb, var(--verdigris) 82%, var(--ink)); }
 .run-toggle:disabled { opacity: 0.5; cursor: default; }
 
 /* a command sent but not yet handled by the daemon (markBusy): the
@@ -180,6 +190,12 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
      than beside it - .warp is position:absolute so it never joins this
      flow either way, so this only ever affects the banner/.levels pair. */
   flex-direction: column;
+  /* the linen's own weave, barely there; `local` so it scrolls with the fabric */
+  background:
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--ink) 5%, transparent) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--ink) 4%, transparent) 0 1px, transparent 1px 4px)
+    var(--linen);
+  background-attachment: local;
 }
 
 /* the warp: hairlines the fabric is woven across */
@@ -203,7 +219,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .loom[data-preview="true"] .node .actions { display: none; }
 /* a strip keeps its tint: transparent, it reads as one more dashed box
    rather than part of the card above */
-.loom[data-preview="true"] .node.satellite { background: #eceef5; }
+.loom[data-preview="true"] .node.satellite { background: var(--strip); }
 
 /* the `display: flex` below only applies while the banner isn't hidden -
    the native [hidden] attribute is display:none by default, but an
@@ -269,8 +285,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   align-items: baseline;
   gap: 2px 6px;
   font-size: 10.5px;
-  background: #eceef5;
-  border-color: #b9bdd3;
+  background: var(--strip);
+  border-color: var(--c, color-mix(in srgb, var(--indigo) 28%, var(--card)));
 }
 /* a script name breaks between scripts, never mid-name */
 .node.satellite .name { font-size: 11px; letter-spacing: 0.02em; text-transform: none; flex: 1; overflow-wrap: normal; }
@@ -293,10 +309,10 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   color: inherit;
   padding: 10px 12px 11px;
   background: var(--card);
-  border: 1px solid var(--grey);
+  border: 1px solid var(--c, var(--grey));
   border-left-width: 3px;
   cursor: pointer;
-  transition: border-color 240ms ease, background 240ms ease, transform 160ms ease;
+  transition: border-color 240ms ease, background 240ms ease, box-shadow 240ms ease, transform 160ms ease;
 }
 
 /* a card and its strips move as one piece */
@@ -334,38 +350,37 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   margin-top: 3px;
 }
 
-.node .state { color: var(--ink); }
 .node .kind { display: inline-flex; align-items: baseline; gap: 4px; }
 .node .glyph { font-style: normal; font-size: 11px; color: var(--ink); }
 
-/* status: up and external are both verdigris (both mean "confirmed
-   healthy") - the dashed border is what still marks external as "zent
-   didn't start this", not a different colour */
+/* status: one dye (--c) for the border and the state; the cards it settled
+   on are washed in it and cast its shade. up and external are both
+   verdigris (both mean "confirmed healthy") - the dashed border is what
+   still marks external as "zent didn't start this", not a different colour */
+.node .state { color: var(--c, var(--ink)); }
 .node[data-status="up"],
-.node[data-status="external"] { border-color: var(--verdigris); background: #e8f2ec; }
-.node[data-status="up"] .state,
-.node[data-status="external"] .state { color: var(--verdigris); }
+.node[data-status="external"] { --c: var(--verdigris); }
 .node[data-status="external"] { border-left-style: dashed; }
 /* done: a one-shot that ran to completion, like a finished k8s Job */
-.node[data-status="done"] { border-color: var(--indigo); background: #e9ebf4; }
-.node[data-status="done"] .state { color: var(--indigo); }
+.node[data-status="done"] { --c: var(--indigo); }
 /* ready: an :on-demand one-shot waiting for its reload - shown, not run */
-.node[data-status="ready"] { border-color: var(--indigo); border-style: dashed; }
-.node[data-status="ready"] .state { color: var(--indigo); font-style: italic; }
+.node[data-status="ready"] { --c: var(--indigo); border-style: dashed; }
 /* stopping: a stop is tearing it down - greyed, the pick running backwards */
-.node[data-status="stopping"] { border-color: var(--grey); opacity: 0.75; }
-.node[data-status="stopping"] .state { color: var(--grey); font-style: italic; }
-.node[data-status="starting"] { border-color: var(--weld); }
-.node[data-status="starting"] .state { color: var(--weld); }
-.node[data-status="failed"]   { border-color: var(--madder); background: #f6eae8; }
-.node[data-status="failed"] .state { color: var(--madder); }
+.node[data-status="stopping"] { --c: var(--grey); opacity: 0.75; }
+.node[data-status="starting"] { --c: var(--weld); }
+.node[data-status="failed"] { --c: var(--madder); }
 /* running but its readiness failing: between up and failed */
-.node[data-status="unready"]  { border-color: var(--madder); border-style: dashed; background: #f6eae8; }
-.node[data-status="unready"] .state { color: var(--madder); font-style: italic; }
+.node[data-status="unready"] { --c: var(--madder); border-style: dashed; }
+.node:is([data-status="up"], [data-status="external"], [data-status="done"],
+         [data-status="failed"], [data-status="unready"]) {
+  background: color-mix(in srgb, var(--c) 14%, var(--card));
+  box-shadow: 0 12px 22px -14px var(--c);
+}
+.node:is([data-status="ready"], [data-status="stopping"], [data-status="unready"]) .state { font-style: italic; }
 .node[data-status="off"],
 .node[data-status="stopped"]  { opacity: 0.5; font-style: italic; }
 /* idle: kept warm, still running, but no current preset needs it */
-.node[data-status="idle"] { opacity: 0.6; border-color: var(--grey); border-left-style: dotted; }
+.node[data-status="idle"] { opacity: 0.6; border-left-style: dotted; }
 /* off has nothing to restart (its mode is off, not merely torn down) -
    stopped keeps its reload button (faded like the rest of the card until
    hovered, same as any other node) so a manual stop is reversible. */
@@ -728,9 +743,8 @@ ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
 .checks-empty { color: var(--muted); padding: 30px; }
 .checks-view .quiet { color: var(--muted); }
 
-/* a terminal: dark, whatever the dashboard's own palette */
+/* a terminal: dark, in the dashboard's ink */
 .term {
-  --term-bg: #0d1017; --term-fg: #c9d1d9; --term-dim: #6e7681; --term-rule: #30363d;
   background: var(--term-bg); color: var(--term-fg);
   font-family: var(--mono); font-size: 12px; line-height: 1.45;
   overflow: auto; position: relative;
@@ -756,47 +770,47 @@ ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
 
 .logs-view {
   height: calc(100vh - var(--head)); display: flex; flex-direction: column;
-  background: #0d1017;
+  background: var(--term-bg);
 }
 /* the pills take the room left and wrap among themselves; the actions stay together */
 #log-pills { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
 .logs-bar {
   display: flex; align-items: center; gap: 6px; padding: 8px 12px;
-  background: #161b22; color: #c9d1d9; border-bottom: 1px solid #30363d;
+  background: var(--term-bar); color: var(--term-fg); border-bottom: 1px solid var(--term-rule);
 }
 .pill {
-  font: inherit; font-size: 11.5px; color: #c9d1d9; background: transparent; cursor: pointer;
-  border: 1px solid #30363d; border-radius: 999px; padding: 2px 10px 2px 8px;
+  font: inherit; font-size: 11.5px; color: var(--term-fg); background: transparent; cursor: pointer;
+  border: 1px solid var(--term-rule); border-radius: 999px; padding: 2px 10px 2px 8px;
 }
 .pill::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
                 margin-right: 6px; border: 1px solid var(--c); }
 .pill[aria-pressed="true"] { border-color: var(--c); }
 .pill[aria-pressed="true"]::before { background: var(--c); }
 .log-term {
-  font: inherit; font-size: 11.5px; width: 28ch; color: #c9d1d9; background: #0d1017;
-  border: 1px solid #30363d; border-radius: 3px; padding: 2px 6px;
+  font: inherit; font-size: 11.5px; width: 28ch; color: var(--term-fg); background: var(--term-bg);
+  border: 1px solid var(--term-rule); border-radius: 3px; padding: 2px 6px;
 }
-.log-term[aria-invalid="true"] { border-color: #f85149; }
+.log-term[aria-invalid="true"] { border-color: var(--term-err); }
 .levels-filter { display: inline-flex; }
 .levels-filter button, .log-act {
-  font: inherit; font-size: 11.5px; color: #8b949e; background: transparent; cursor: pointer;
-  border: 1px solid #30363d; padding: 2px 8px;
+  font: inherit; font-size: 11.5px; color: var(--term-dim); background: transparent; cursor: pointer;
+  border: 1px solid var(--term-rule); padding: 2px 8px;
 }
 .levels-filter button + button { border-left: 0; }
-.levels-filter button[aria-pressed="true"] { color: #c9d1d9; background: #21262d; }
-.levels-filter b { font-weight: normal; color: #6e7681; }
+.levels-filter button[aria-pressed="true"] { color: var(--term-fg); background: var(--term-rule); }
+.levels-filter b { font-weight: normal; color: var(--term-dim); }
 .log-act { border-radius: 3px; }
 /* a warning's or error's line, flagged - also when not filtering */
-.term .ln.warn .tx { box-shadow: inset 3px 0 #d29922; }
-.term .ln.error .tx { box-shadow: inset 3px 0 #f85149; }
-.term .ln.warn.by-level .tx { color: #e3b341; }
-.term .ln.error.by-level .tx { color: #ff7b72; }
+.term .ln.warn .tx { box-shadow: inset 3px 0 var(--term-warn); }
+.term .ln.error .tx { box-shadow: inset 3px 0 var(--term-err); }
+.term .ln.warn.by-level .tx { color: var(--term-warn); }
+.term .ln.error.by-level .tx { color: var(--term-err); }
 .term .ln[hidden] { display: none; }
-.logs-bar label { font-size: 11.5px; color: #8b949e; }
+.logs-bar label { font-size: 11.5px; color: var(--term-dim); }
 .logs-view .term { flex: 1; padding: 6px 0; }
 .new-lines {
   position: absolute; right: 18px; bottom: 14px; font: inherit; cursor: pointer;
-  color: #0d1017; background: #c9d1d9; border: 0; border-radius: 999px; padding: 4px 12px;
+  color: var(--term-bg); background: var(--term-fg); border: 0; border-radius: 999px; padding: 4px 12px;
 }
 .logs-main { flex: 1; position: relative; display: flex; min-height: 0; }
 
