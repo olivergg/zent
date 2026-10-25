@@ -318,15 +318,19 @@
    :headers {"Content-Type" "text/html; charset=utf-8"}
    :body (slurp (io/resource path))})
 
+(defn version "This zent's version, as bin/zent computed it." [] (System/getenv "ZENT_VERSION"))
+
 (defn app [req]
   (cond
     (not (local-host? (get-in req [:headers "host"])))
     {:status 403 :body "zent only answers requests addressed to localhost/127.0.0.1"}
 
-    ;; the token is baked into the page (a <meta> htmx reads back)
+    ;; the token is baked into the page (a <meta> htmx reads back), and the
+    ;; version this daemon was started as (bin/zent's ZENT_VERSION)
     (and (= (:request-method req) :get) (contains? #{"/" "/index.html"} (:uri req)))
     (update (resource-page "zent/ui/index.html") :body
-            str/replace "{{CSRF_TOKEN}}" (or @csrf-token ""))
+            #(-> % (str/replace "{{CSRF_TOKEN}}" (or @csrf-token ""))
+                 (str/replace "{{VERSION}}" (render/esc (or (version) "")))))
 
     (and (= (:request-method req) :get) (= (:uri req) "/tokens.css"))
     {:status 200 :headers {"Content-Type" "text/css; charset=utf-8"}

@@ -9,7 +9,7 @@
   carry subprocess- and catalog-sourced text."
   (:require [clojure.string :as str]))
 
-(defn- esc
+(defn esc
   "HTML-escapes `x` for use in text content or a double-quoted attribute."
   [x]
   (-> (str x)

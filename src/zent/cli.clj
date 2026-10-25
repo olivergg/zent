@@ -3,31 +3,8 @@
   owns the running stack; every other verb is a client of its HTTP API
   (zent.client), same as the dashboard and the MCP server (zent.mcp).
 
-    zent serve [--detach] [--ui]  run the daemon: in this terminal, or in the
-                                  background (output in ~/.cache/zent/serve.log)
-    zent watch <preset> [--ui]    serve, with <preset> applied at start
-    zent apply <preset>           switch to <preset>, starting the daemon if
-    zent <preset>                 needed, and wait for it to settle
-    zent status                   what's running
-    zent stop [<component>...]    stop all but :permanent ones / just these
-    zent reload <component>       redeploy now
-    zent shutdown                 stop the daemon (:permanent ones stay up)
-    zent reload-code              reload the daemon's code, keeping what runs
-    zent presets                  list presets (* = active, + = yours)
-    zent preview <preset>         what a preset would run, and change in what runs now
-    zent check                    every preset resolves and validates (a catalog's test)
-    zent verify [<preset> [<check>...]] [--only=<test>,...]
-                                  run a preset's checks (zent.checks) - the daemon's
-                                  preset by default; fails unless all pass
-    zent preset save <name> <edn> save a preset of your own (zent.presets),
-    zent preset rm <name>         registering it with a running daemon
-    zent logs [-f] <component>    a component's output (see zent.logs)
-    zent attach                   follow a detached daemon's output
-    zent version                  this zent's version (brew: HEAD-<sha>; a clone: git describe)
-    zent mcp                      MCP server on stdio (zent.mcp)
-    zent down                     no daemon: tear down what the session lists
-
-  `logs -f`, `attach` and `version` are handled by the launcher script (bin/zent).
+  The verbs and their help are `verbs` (`zent help [<verb>]`). `logs -f`,
+  `attach` and `version` are handled by the launcher script (bin/zent).
 
   `ctx` below: {:catalog c :name kw :bin launcher-path}.
   :catalog may be a fn, called on each use so an edited catalog is picked up; :name
@@ -57,6 +34,113 @@
 
 (defn- fail! [msg] (throw (ex-info msg {})))
 
+(def ^:private groups ["Everyday" "Before switching" "Daemon" "Catalog" "Advanced"])
+
+(def verbs
+  "Every verb, in help order: `:args` its usage, `:doc` one line, `:more` the
+  details `zent help <verb>` adds, `:see` the verbs it's mistaken for or used with."
+  [{:verb "apply" :group "Everyday" :args "<preset>"
+    :doc "switch to <preset>, starting the daemon if needed; waits until settled"
+    :more ["Stops what <preset> doesn't name, except :keep-warm and :permanent components,"
+           "and redeploys a running one it configures differently. `zent <preset>` is the same."]
+    :see ["preview" "presets" "status"]}
+   {:verb "status" :group "Everyday"
+    :doc "what's running, per component"
+    :more ["Without a daemon, what the session still lists."]}
+   {:verb "logs" :group "Everyday" :args "[-f] <component>"
+    :doc "a component's output (last 200 lines, -f to follow)"
+    :more ["Files in ~/.cache/zent/logs/. The dashboard's Logs tab interleaves them all."]}
+   {:verb "reload" :group "Everyday" :args "<component>"
+    :doc "redeploy one running component now"
+    :more ["Not to mistake for reload-code, which reloads zent's own code."]
+    :see ["logs" "reload-code"]}
+   {:verb "stop" :group "Everyday" :args "[<component>...]"
+    :doc "stop just these, or all but :permanent components"
+    :see ["shutdown"]}
+   {:verb "presets" :group "Before switching"
+    :doc "list presets (* = active, + = yours)"}
+   {:verb "preview" :group "Before switching" :args "<preset>"
+    :doc "what <preset> would run, and what applying it would stop, start or redeploy"
+    :see ["apply"]}
+   {:verb "serve" :group "Daemon" :args "[--detach] [--ui]"
+    :doc "run the daemon here, or in the background; --ui opens the dashboard"
+    :more ["--detach writes its output to ~/.cache/zent/serve.log (`zent attach`)."
+           "Usually not needed: apply starts a daemon when none runs."]
+    :see ["apply" "attach" "shutdown"]}
+   {:verb "watch" :group "Daemon" :args "<preset> [--ui]"
+    :doc "serve in this terminal, <preset> applied at start"}
+   {:verb "attach" :group "Daemon"
+    :doc "follow a detached daemon's output"}
+   {:verb "shutdown" :group "Daemon"
+    :doc "stop the daemon and what it runs, :permanent components excepted"
+    :see ["stop"]}
+   {:verb "reload-code" :group "Daemon"
+    :doc "reload the daemon's zent code and catalog, keeping what runs"
+    :more ["What a running loop already holds isn't swapped: a change there needs"
+           "`zent shutdown`, then `zent apply <preset>`."]
+    :see ["reload"]}
+   {:verb "version" :group "Daemon"
+    :doc "this zent's version (brew: HEAD-<sha>; a clone: git describe)"}
+   {:verb "check" :group "Catalog"
+    :doc "every preset resolves and validates, checks included - a catalog's test"
+    :see ["verify"]}
+   {:verb "verify" :group "Catalog" :args "[<preset> [<check>...]] [--only=<test>,...]"
+    :doc "run a preset's checks (the daemon's by default); fails unless all pass"
+    :more ["A check that writes (:zent/writes) runs only when named."]
+    :see ["check"]}
+   {:verb "preset" :group "Catalog" :args "save <name> <edn> | rm <name>"
+    :doc "save or delete a preset of your own, registered with a running daemon"
+    :more ["Saved in ~/.config/zent/presets/<catalog>/. It may pick components and set"
+           "branch, image, port, context... never what code runs (:cmd, :env, :scripts)."
+           "e.g. zent preset save mine '{:api {:mode :on :branch \"fix-x\"}}'"]}
+   {:verb "mcp" :group "Advanced"
+    :doc "MCP server on stdio: these verbs as tools, for an agent"}
+   {:verb "down" :group "Advanced"
+    :doc "no daemon: tear down everything the session lists"
+    :more ["That includes stacks you started yourself through zent: not a cleanup reflex."]}])
+
+(defn- verb-entry [verb] (some #(when (= verb (:verb %)) %) verbs))
+
+(defn- usage [verb]
+  (str/trimr (str "usage: zent " verb " " (:args (verb-entry verb)))))
+
+(defn- painter
+  "(fn [style s]): `s` in an ANSI `style` (:title :verb :args :name) when
+  `color?`, as is otherwise."
+  [color?]
+  (let [codes {:title "1" :verb "36" :args "2" :name "32"}]
+    (fn [style s] (if color? (str "\u001b[" (codes style) "m" s "\u001b[0m") s))))
+
+(defn- help-row [paint {:keys [verb args doc]}]
+  ;; padded on the plain text: escape codes have no width
+  (let [width (count (str/trimr (str verb " " args)))
+        left (str (paint :verb verb) (when args (str " " (paint :args args))))]
+    (str "  " left (if (< width 30) (str/join (repeat (- 30 width) " ")) (str "\n" (str/join (repeat 32 " ")))) doc)))
+
+(defn help-text
+  "`zent help`: the verbs by group, then `presets` (the catalog's names); or,
+  given `verb`, its usage and details. `color?`: ANSI-styled."
+  [verb presets & {:keys [color?]}]
+  (let [paint (painter color?)]
+    (if verb
+      (let [{:keys [doc more see]}
+            (or (verb-entry verb)
+                (fail! (if (some #{verb} presets)
+                         (str "zent " verb " is `zent apply " verb "`")
+                         (str "no verb " verb " - `zent help` lists them"))))]
+        (str/join "\n" (cond-> [(paint :title (usage verb)) "" doc]
+                         more (into more)
+                         see (conj "" (str "see also: " (str/join ", " (map #(paint :verb %) see)))))))
+      (str/join "\n" (concat [(str (paint :title "zent") " - local dev stacks from a catalog. Dashboard: " ui-url)]
+                             (mapcat (fn [g] (cons (str "\n" (paint :title g))
+                                                   (map #(help-row paint %) (filter #(= g (:group %)) verbs))))
+                                     groups)
+                             [""
+                              (str (paint :title "Presets: ")
+                                   (if (seq presets) (str/join ", " (map #(paint :name %) presets)) "none")
+                                   " - `zent <preset>` applies one")
+                              "Details: zent help <verb>, or zent <verb> --help"])))))
+
 (defn- preset-dir [ctx] (or (:preset-dir ctx) (presets/user-dir (:name ctx))))
 
 (defn catalog
@@ -81,17 +165,15 @@
 
 (defn- live [] (daemon/live daemon/default-path))
 
-(defn- version [] (System/getenv "ZENT_VERSION"))
-
 (defn- warn-if-stale!
   "`d`, after a warning when it runs another zent version than this one."
   [d]
-  (when (daemon/outdated? d (version))
+  (when (daemon/outdated? d (server/version))
     (binding [*out* *err*]
       (println (format (str "warning: zent serve (pid %d) runs zent %s, this is %s - "
                             "`zent shutdown && zent serve --detach` moves it here (stopping all but :permanent), "
                             "then `zent apply <preset>`")
-                       (:pid d) (:version d) (version)))))
+                       (:pid d) (:version d) (server/version)))))
   d)
 
 (defn- refuse-if-running! []
@@ -107,7 +189,7 @@
     (bridge/serve! (catalog ctx) :initial-preset preset
                    :catalog-fn #(catalog ctx)
                    :on-ready (fn []
-                               (daemon/register! daemon/default-path {:port port :token token :version (version)})
+                               (daemon/register! daemon/default-path {:port port :token token :version (server/version)})
                                (when ui? (open-browser! ui-url)))))
   ;; only reached on :shutdown - the server's own thread would keep us alive
   (System/exit 0))
@@ -268,7 +350,7 @@
   [ctx preset check-names tests]
   (let [c (catalog ctx)
         preset (or preset (some-> (live) (client/request :get "/api/view") :preset keyword)
-                   (fail! "usage: zent verify <preset> [check...] [--only=test,...] - no daemon to take its preset from"))
+                   (fail! (str (usage "verify") " - no daemon to take its preset from")))
         _ (check-preset! ctx preset)
         all (get-in c [:checks preset])
         names (set (map :name all))
@@ -337,36 +419,41 @@
                      (name component)))
       (print-log component (map logs/strip-ansi (logs/tail (keyword component) n))))))
 
+(defn- print-help! [ctx verb]
+  ;; a broken catalog mustn't keep the help from showing
+  (println (help-text verb (try (sort (map name (keys (:presets (catalog ctx)))))
+                                (catch Exception _ nil))
+                      ;; set by bin/zent: stdout is a terminal and NO_COLOR is unset
+                      :color? (= "1" (System/getenv "ZENT_COLOR")))))
+
 (defn- dispatch [ctx verb args flags]
   (let [[arg arg2] args
         ui? (flags "--ui")
-        need (fn [x what] (or x (fail! (str "usage: zent " verb " " what))))]
+        need (fn [x] (or x (fail! (str (usage verb) " - zent help " verb))))]
     (case verb
       "serve" (serve! ctx nil ui?)
-      "watch" (serve! ctx (keyword (need arg "<preset>")) ui?)
-      "apply" (apply! ctx (keyword (need arg "<preset>")))
+      "watch" (serve! ctx (keyword (need arg)) ui?)
+      "apply" (apply! ctx (keyword (need arg)))
       "status" (status!)
       "stop" (stop! args)
-      "reload" (reload! (need arg "<component>"))
+      "reload" (reload! (need arg))
       "shutdown" (shutdown!)
       "reload-code" (reload-code!)
       "presets" (presets! ctx)
-      "preview" (preview! ctx (keyword (need arg "<preset>")))
+      "preview" (preview! ctx (keyword (need arg)))
       "check" (check! ctx)
       "verify" (verify! ctx (some-> arg keyword) (rest args)
                         (checks/only (some #(when (str/starts-with? % "--only=") (subs % 7)) flags)))
       "preset" (case arg
-                 "save" (save-preset! ctx (keyword (need arg2 "save <name> <edn>"))
-                                      (need (nth args 2 nil) "save <name> <edn>"))
-                 "rm" (delete-preset! ctx (keyword (need arg2 "rm <name>")))
-                 (fail! "usage: zent preset save <name> <edn> | rm <name>"))
+                 "save" (save-preset! ctx (keyword (need arg2)) (need (nth args 2 nil)))
+                 "rm" (delete-preset! ctx (keyword (need arg2)))
+                 (need nil))
       "mcp" ((requiring-resolve 'zent.mcp/serve!) ctx)
       "down" (down!)
-      "logs" (logs! (need arg "<component>") log-tail-lines)
-      (if (and verb (contains? (:presets (catalog ctx)) (keyword verb)))
+      "logs" (logs! (need arg) log-tail-lines)
+      (if (contains? (:presets (catalog ctx)) (keyword verb))
         (apply! ctx (keyword verb))
-        (fail! (str (when verb (str "unknown verb or preset: " verb "\n"))
-                    "usage: zent serve|watch|apply|status|stop|reload|reload-code|shutdown|presets|preview|check|verify|preset|logs|attach|mcp|down|version - see zent.cli"))))))
+        (fail! (str "unknown verb or preset: " verb " - `zent help` lists them"))))))
 
 (defn main
   "Runs the `zent` command line `args` against `ctx`."
@@ -374,9 +461,11 @@
   (let [flags (set (filter #(str/starts-with? % "--") args))
         [verb & operands] (remove flags args)]
     (try
-      (if (and (= verb "serve") (flags "--detach"))
-        (detach! ctx (flags "--ui"))
-        (dispatch ctx verb operands flags))
+      (cond
+        (or (nil? verb) (#{"help" "-h"} verb)) (print-help! ctx (first operands))
+        (flags "--help") (print-help! ctx verb)
+        (and (= verb "serve") (flags "--detach")) (detach! ctx (flags "--ui"))
+        :else (dispatch ctx verb operands flags))
       ;; ex-info is how every verb reports a user-facing error (bad preset,
       ;; no daemon, refused config) - anything else is a bug, trace and all
       (catch clojure.lang.ExceptionInfo e

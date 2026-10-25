@@ -55,6 +55,7 @@ body {
   text-transform: uppercase;
   margin: 0;
 }
+.wordmark .version { display: block; line-height: 1; font-size: 9px; letter-spacing: 0.08em; text-transform: none; color: var(--muted); }
 
 /* what runs and its one big control, as one piece: the preset is a label
    (state + name), not a button; Stop/Start acts on that very preset. The

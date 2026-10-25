@@ -85,15 +85,19 @@ that observes a component its preset doesn't run.
 
 ## Running it
 
-```
-zent presets                   # list presets (* = active, + = yours)
-zent preview <preset>          # what it would run, and change in what runs now
-zent apply <preset>            # start it (starts the daemon if needed), wait until settled
-zent status                    # per-component state
-zent logs [-f] <component>
-zent stop [<component>]        # :permanent components stay up
-zent serve --detach --ui       # daemon + dashboard on http://127.0.0.1:8765
-```
+`zent help` lists every verb, `zent help <verb>` (or `zent <verb> --help`) details one.
+
+| To | CLI | MCP tool |
+|---|---|---|
+| pick a stack | `zent presets`, `zent preview <preset>`, `zent apply <preset>` | `list_presets`, `preview`, `apply` |
+| see what runs | `zent status` (dashboard: `zent serve --detach --ui`) | `status` |
+| iterate on a component | `zent reload <c>`, then `zent logs [-f] <c>` | `reload`, `logs` |
+| stop some / all but `:permanent` | `zent stop <c>...` / `zent stop` | `stop` |
+| judge the running stack | `zent verify [<preset> [<check>...]]` | `verify` |
+| test a catalog edit | `zent check` | - |
+| try an engine edit | `zent reload-code` (a loop change: `zent shutdown`, `zent apply <preset>`) | `reload_code` |
+| run a branch of your own | `zent preset save mine '{:api {:mode :on :branch "fix-x"}}'`, `zent mine` | `save_preset`, `apply` |
+| end the day | `zent shutdown` (`:permanent` components stay up) | - |
 
 The dashboard's **Logs** tab (`/#logs`) streams the components' output, interleaved and
 coloured per component, container output included. Pills work like a chart legend (click:
@@ -220,7 +224,7 @@ every doc and docstring here means by "`zent <verb>`".
 
 `zent serve --detach` runs the resident daemon in the background (output in
 `~/.cache/zent/serve.log`, `zent attach` follows it). Every other verb - `apply`, `status`,
-`stop`, `reload`, `shutdown`, ... (full list in `zent.cli`) - is a client of its HTTP API,
+`stop`, `reload`, `shutdown`, ... (full list: `zent help`) - is a client of its HTTP API,
 same as the dashboard; `zent apply <preset>` starts the daemon if none runs. The address
 and write token live in `~/.cache/zent/daemon.edn` (0600, see `zent.daemon`).
 

@@ -25,8 +25,12 @@ root="$(cd "$(dirname "$self")/.." && pwd)"
 ZENT_VERSION="$(cat "$root/VERSION" 2>/dev/null || git -C "$root" describe --always --dirty 2>/dev/null || echo unknown)"
 export ZENT_VERSION
 
+# colours for `zent help`, on a terminal only (no-color.org)
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then export ZENT_COLOR=1; else unset ZENT_COLOR; fi
+
 cache="$HOME/.cache/zent"
-case "${1:-}" in
+# `<verb> --help` goes to zent.cli, which has the help
+[[ " $* " == *" --help "* ]] || case "${1:-}" in
   version|--version) echo "zent $ZENT_VERSION"; exit ;;
   attach) exec tail -n 200 -F "$cache/serve.log" ;;
   logs) [[ "${2:-}" == "-f" && -n "${3:-}" ]] && exec tail -n 200 -F "$cache/logs/$3.log" ;;

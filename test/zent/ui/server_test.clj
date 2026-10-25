@@ -142,7 +142,12 @@
     (let [{:keys [status body]} (server/app {:request-method :get :uri "/"})]
       (is (= 200 status))
       (is (str/includes? body "content=\"test-token\""))
-      (is (not (str/includes? body "{{CSRF_TOKEN}}"))))))
+      (is (not (str/includes? body "{{CSRF_TOKEN}}")))))
+
+  (testing "the daemon's version is shown in the masthead, escaped"
+    (with-redefs [server/version (constantly "HEAD-abc1234<")]
+      (is (str/includes? (:body (server/app {:request-method :get :uri "/"}))
+                         ">HEAD-abc1234&lt;</small>")))))
 
 (deftest htmx-is-vendored-locally-test
   (testing "served from the classpath, not a CDN - the dashboard works offline"
