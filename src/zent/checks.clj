@@ -244,7 +244,10 @@
                               :started-at started :duration-ms (- (System/currentTimeMillis) started))
                  (seq tests) (assoc :only (vec tests))
                  (or incomplete (not (zero? exit)))
-                 (assoc :error (str/join "\n" (cons (format "the run ended before it finished (exit %d)" exit)
+                 (assoc :error (str/join "\n" (cons (format (if incomplete
+                                                              "the run ended before it finished (exit %d)"
+                                                              "the run finished, then exited %d")
+                                                            exit)
                                                     (take-last 20 (remove #(str/starts-with? % event-prefix) lines))))))
         f (io/file *dir* (name preset) (name (:name check)) (str started ".edn"))]
     (io/make-parents f)

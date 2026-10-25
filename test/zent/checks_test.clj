@@ -145,7 +145,11 @@
         (let [r (binding [checks/*dir* dir] (checks/run! :full chk nil))]
           (is (= :unknown (:status r)))
           (is (= "the run ended before it finished (exit 1)\nSyntax error compiling" (:error r)))
-          (is (= 2 (count (str/split-lines (slurp (logs/log-file :check-full-smoke)))))))))))
+          (is (= 2 (count (str/split-lines (slurp (logs/log-file :check-full-smoke)))))))))
+    (testing "given a run that finished but exited non-zero, the error says so"
+      (with-redefs [shell/run-logged! (stub (done (take 5 real-run)) 1)]
+        (is (= "the run finished, then exited 1\nReflection warning, ignore me"
+               (:error (binding [checks/*dir* dir] (checks/run! :full chk nil)))))))))
 
 (deftest real-clojure-run-test
   (if-not (System/getenv "ZENT_TEST_CLOJURE")

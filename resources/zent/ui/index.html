@@ -682,12 +682,12 @@
     background: var(--linen); color: var(--ink); border-radius: 3px; cursor: pointer;
   }
   .checks-bar button:disabled, .chk-cmd button:disabled { opacity: .45; cursor: default; }
-  .checks-bar label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: var(--grey); }
+  .checks-bar label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: #5d5f6e; }
   .chk { padding: 12px 14px 6px; }
   .chk-head { display: flex; gap: 8px; align-items: baseline; }
   .chk-head .name { font-weight: 600; }
-  .chk-meta { color: var(--grey); font-size: 11.5px; margin: 2px 0 4px 22px; }
-  .chk-chips { margin: 2px 0 8px 22px; display: flex; flex-wrap: wrap; gap: 4px; color: var(--grey); }
+  .chk-meta { color: #5d5f6e; font-size: 11.5px; margin: 2px 0 4px 22px; }
+  .chk-chips { margin: 2px 0 8px 22px; display: flex; flex-wrap: wrap; gap: 4px; color: #5d5f6e; }
   .chk-chips span { border: 1px solid var(--grey); border-radius: 9px; padding: 0 7px; font-size: 10.5px; }
   .gl { display: inline-block; width: 14px; text-align: center; font-weight: 700; }
   .st-pass { color: var(--verdigris); } .st-fail { color: var(--madder); }
@@ -697,31 +697,37 @@
   ul.chk-tests li:hover { background: var(--card); }
   ul.chk-tests li[aria-selected="true"] { background: #fff; outline: 1px solid var(--grey); }
   ul.chk-tests li .n { flex: 1; overflow-wrap: anywhere; }
-  ul.chk-tests li .doc { display: block; color: var(--grey); font-size: 11px; line-height: 1.4; margin-top: 1px; }
-  .chk-doc { white-space: pre-line; color: #5d5f6e; margin: 0 0 12px; max-width: 80ch; }
-  ul.chk-tests li .c { color: var(--grey); font-size: 11.5px; }
+  /* descriptions are read, not glanced at: near the ink, not muted */
+  ul.chk-tests li .doc, .chk-meta .desc { color: #33364a; }
+  ul.chk-tests li .doc { display: block; font-size: 11px; line-height: 1.4; margin-top: 1px; }
+  .chk-doc { white-space: pre-line; color: #33364a; margin: 0 0 12px; max-width: 80ch; }
+  /* a test's description takes its verdict's colour: what holds, what doesn't */
+  ul.chk-tests li[data-status="pass"] .doc, .chk-doc[data-status="pass"] { color: var(--verdigris); }
+  ul.chk-tests li[data-status="fail"] .doc, .chk-doc[data-status="fail"] { color: var(--madder); }
+  ul.chk-tests li .c { color: #5d5f6e; font-size: 11.5px; }
   .chk-problem { margin: 4px 0 8px 22px; color: var(--madder); }
   .chk-history { margin-top: auto; padding: 10px 14px 14px; border-top: 1px solid var(--grey); }
-  .checks-view h3 { font-family: var(--display); font-weight: 400; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--grey); margin: 0 0 6px; }
+  .checks-view h3 { font-family: var(--display); font-weight: 400; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #5d5f6e; margin: 0 0 6px; }
   .chk-runs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
   .chk-runs button { width: 22px; height: 22px; border: 0; border-radius: 3px; color: #fff; font-size: 11px; cursor: pointer; padding: 0; }
   .chk-runs .pass { background: var(--verdigris); } .chk-runs .fail { background: var(--madder); } .chk-runs .unknown { background: var(--weld); }
   .chk-runs .partial { opacity: .55; }
   .chk-runs [aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
   .chk-detail-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
-  .chk-where { color: var(--grey); margin-bottom: 12px; }
+  .chk-where { color: #5d5f6e; margin-bottom: 12px; }
   .chk-failure { background: var(--card); border: 1px solid var(--grey); border-left: 3px solid var(--madder); border-radius: 3px; padding: 9px 12px; margin-bottom: 10px; }
   .chk-failure.err { border-left-color: var(--weld); }
   .chk-failure .msg { font-weight: 600; margin-bottom: 6px; overflow-wrap: anywhere; }
   .chk-failure dl { display: grid; grid-template-columns: 72px 1fr; gap: 2px 10px; margin: 0; }
-  .chk-failure dt { color: var(--grey); text-align: right; }
+  .chk-failure dt { color: #5d5f6e; text-align: right; }
   .chk-failure dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .chk-since { margin: 14px 0; padding: 8px 12px; border: 1px dashed var(--grey); border-radius: 3px; }
   .chk-since .new { color: var(--madder); font-weight: 700; } .chk-since .fixed { color: var(--verdigris); font-weight: 700; }
   .chk-cmd { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
   .chk-cmd code { flex: 1; background: #fff; border: 1px solid var(--grey); padding: 4px 8px; border-radius: 3px; font-size: 11.5px; overflow: auto; white-space: nowrap; }
   .chk-error { white-space: pre-wrap; color: var(--madder); background: var(--card); padding: 8px 12px; border-radius: 3px; }
-  .checks-empty { color: var(--grey); padding: 30px; }
+  .checks-empty { color: #5d5f6e; padding: 30px; }
+  .checks-view .quiet { color: #5d5f6e; }
 
   /* a terminal: dark, whatever the dashboard's own palette */
   .term {
@@ -877,9 +883,9 @@
   <section class="checks-view" id="checks-view" aria-label="checks">
     <div class="left">
       <div class="checks-bar">
-        <button type="button" id="checks-run-all">&#9654; all</button>
-        <button type="button" id="checks-run-failed">&#9654; failing only</button>
-        <label><input type="checkbox" id="checks-only-failed"> failing only</label>
+        <button type="button" id="checks-run-all">&#9654; run all</button>
+        <button type="button" id="checks-run-failed">&#9654; rerun failing</button>
+        <label><input type="checkbox" id="checks-only-failed"> show failing only</label>
       </div>
       <div id="checks-tree"></div>
       <div class="chk-history" id="checks-history"></div>
@@ -1677,6 +1683,10 @@ const checks = { data: null, preset: undefined, sel: {}, runIdx: {}, live: {}, s
 const docLines = (d) => String(d).split("\n").map((l) => l.trim()).join("\n");
 const docInline = (d) => docLines(d).replace(/\n/g, " ");
 const hms = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+// a test's assertions in the tree, spelled out: "1 of 94 failed", "114 passed"
+const testCounts = (t) => t.status === "run" ? ""
+  : t.status === "error" ? `threw after ${t.assertions} assertion(s)`
+  : t.failures.length ? `${t.failures.length} of ${t.assertions} failed` : `${t.assertions} passed`;
 
 async function loadChecks() {
   try {
@@ -1789,13 +1799,13 @@ function renderChecks() {
     return `<div class="chk" data-check="${escHtml(c.name)}">
       <div class="chk-head"><span class="gl st-${st}">${CHECK_GLYPH[st]}</span><span class="name">${escHtml(c.name)}</span>
         <span class="c quiet">${r && !r.live ? `${r.counts.tests} test(s) · ${r.counts.assertions} assertions · ${((r["duration-ms"] || 0) / 1000).toFixed(1)} s` : ""}</span></div>
-      <div class="chk-meta">${c.description ? escHtml(c.description) + "<br>" : ""}${meta}</div>
+      <div class="chk-meta">${c.description ? `<span class="desc">${escHtml(c.description)}</span><br>` : ""}${meta}</div>
       ${c.problem ? `<div class="chk-problem">${escHtml(c.problem)}</div>` : ""}
       ${c.observes?.length ? `<div class="chk-chips">observes ${c.observes.map((o) => `<span>${escHtml(o)}</span>`).join("")}</div>` : ""}
       <ul class="chk-tests">${(r?.tests || []).filter((t) => !onlyFailed || t.status !== "pass").map((t) => `
-        <li data-test="${escHtml(t.name)}" aria-selected="${t.name === sel}">
+        <li data-test="${escHtml(t.name)}" data-status="${t.status}" aria-selected="${t.name === sel}">
           <span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span><span class="n">${escHtml(t.name)}${t.doc ? `<span class="doc">${escHtml(docInline(t.doc))}</span>` : ""}</span>
-          <span class="c">${t.at ? `<span class="quiet">${hms(t.at)}</span> ` : ""}${t.status === "run" ? "" : t.failures.length ? t.failures.length + "/" + t.assertions : t.assertions}</span></li>`).join("")}
+          <span class="c">${t.at ? `<span class="quiet">${hms(t.at)}</span> ` : ""}${testCounts(t)}</span></li>`).join("")}
       </ul></div>`;
   }).join("");
 
@@ -1823,7 +1833,7 @@ function renderChecks() {
     const cmd = `zent verify ${checks.data.preset} ${c.name} --only=${t.name}`;
     detail.innerHTML = `
       <div class="chk-detail-head"><span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span>${escHtml(t.name)}</div>
-      ${t.doc ? `<p class="chk-doc">${escHtml(docLines(t.doc))}</p>` : ""}
+      ${t.doc ? `<p class="chk-doc" data-status="${t.status}">${escHtml(docLines(t.doc))}</p>` : ""}
       <div class="chk-where">${t.status === "run" ? "running…" : `${t.failures.length ? t.failures.length + " failing of " : ""}${t.assertions} assertion(s)${escHtml(loc)}`}</div>
       ${t.failures.map((f) => `<div class="chk-failure ${t.status === "error" ? "err" : ""}">
           <div class="msg">${f.context ? `<span class="quiet">${escHtml(f.context)}</span> ` : ""}${escHtml(f.message)}</div>
