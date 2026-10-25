@@ -7,6 +7,8 @@
   --madder:    #a6382c;
   --weld:      #c1892b;
   --grey:      #a5a199;
+  /* muted text still meant to be read - grey is for rules and borders */
+  --muted:     #5d5f6e;
   /* verdigris: the one non-indigo "good" colour - reserved for a
      component actually up and running, so it reads distinctly from
      merely-woven/external (indigo) at a glance, closer to how most
@@ -551,7 +553,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   margin: 0 0 8px;
 }
 
-.empty-loom p { margin: 0 0 14px; color: #5d5f6e; }
+.empty-loom p { margin: 0 0 14px; color: var(--muted); }
 .empty-loom code { background: var(--card); border: 1px solid var(--grey); padding: 1px 5px; }
 
 .picker { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -590,7 +592,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 }
 
 .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; font-size: 10.5px; }
-.legend span { display: flex; align-items: center; gap: 7px; color: #5d5f6e; }
+.legend span { display: flex; align-items: center; gap: 7px; color: var(--muted); }
 .legend i { width: 3px; height: 13px; background: var(--grey); }
 .legend .up i { background: var(--verdigris); }
 .legend .done i { background: var(--indigo); }
@@ -608,12 +610,12 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 .show-stopped {
   display: flex; align-items: center; gap: 6px;
-  margin-top: 8px; font-size: 10.5px; color: #5d5f6e; cursor: pointer;
+  margin-top: 8px; font-size: 10.5px; color: var(--muted); cursor: pointer;
 }
 .show-stopped input { margin: 0; cursor: pointer; }
 
 .tally { display: flex; flex-wrap: wrap; gap: 4px 16px; }
-.tally span { color: #5d5f6e; }
+.tally span { color: var(--muted); }
 .tally b {
   font-family: var(--display);
   font-size: 17px;
@@ -664,12 +666,12 @@ body:not([data-tab="checks"]) .checks-view { display: none; }
   background: var(--linen); color: var(--ink); border-radius: 3px; cursor: pointer;
 }
 .checks-bar button:disabled, .chk-cmd button:disabled { opacity: .45; cursor: default; }
-.checks-bar label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: #5d5f6e; }
+.checks-bar label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: var(--muted); }
 .chk { padding: 12px 14px 6px; }
 .chk-head { display: flex; gap: 8px; align-items: baseline; }
 .chk-head .name { font-weight: 600; }
-.chk-meta { color: #5d5f6e; font-size: 11.5px; margin: 2px 0 4px 22px; }
-.chk-chips { margin: 2px 0 8px 22px; display: flex; flex-wrap: wrap; gap: 4px; color: #5d5f6e; }
+.chk-meta { color: var(--muted); font-size: 11.5px; margin: 2px 0 4px 22px; }
+.chk-chips { margin: 2px 0 8px 22px; display: flex; flex-wrap: wrap; gap: 4px; color: var(--muted); }
 .chk-chips span { border: 1px solid var(--grey); border-radius: 9px; padding: 0 7px; font-size: 10.5px; }
 .gl { display: inline-block; width: 14px; text-align: center; font-weight: 700; }
 .st-pass { color: var(--verdigris); } .st-fail { color: var(--madder); }
@@ -680,36 +682,36 @@ ul.chk-tests li:hover { background: var(--card); }
 ul.chk-tests li[aria-selected="true"] { background: #fff; outline: 1px solid var(--grey); }
 ul.chk-tests li .n { flex: 1; overflow-wrap: anywhere; }
 /* descriptions are read, not glanced at: near the ink, not muted */
-ul.chk-tests li .doc, .chk-meta .desc { color: #33364a; }
+ul.chk-tests li .doc, .chk-meta .desc, .chk-doc { color: #33364a; }
 ul.chk-tests li .doc { display: block; font-size: 11px; line-height: 1.4; margin-top: 1px; }
-.chk-doc { white-space: pre-line; color: #33364a; margin: 0 0 12px; max-width: 80ch; }
+.chk-doc { white-space: pre-line; margin: 0 0 12px; max-width: 80ch; }
 /* a test's description takes its verdict's colour: what holds, what doesn't */
 ul.chk-tests li[data-status="pass"] .doc, .chk-doc[data-status="pass"] { color: var(--verdigris); }
 ul.chk-tests li[data-status="fail"] .doc, .chk-doc[data-status="fail"] { color: var(--madder); }
-ul.chk-tests li .c { color: #5d5f6e; font-size: 11.5px; }
+ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
 .chk-problem { margin: 4px 0 8px 22px; color: var(--madder); }
 .chk-history { margin-top: auto; padding: 10px 14px 14px; border-top: 1px solid var(--grey); }
-.checks-view h3 { font-family: var(--display); font-weight: 400; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #5d5f6e; margin: 0 0 6px; }
+.checks-view h3 { font-family: var(--display); font-weight: 400; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
 .chk-runs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .chk-runs button { width: 22px; height: 22px; border: 0; border-radius: 3px; color: #fff; font-size: 11px; cursor: pointer; padding: 0; }
 .chk-runs .pass { background: var(--verdigris); } .chk-runs .fail { background: var(--madder); } .chk-runs .unknown { background: var(--weld); }
 .chk-runs .partial { opacity: .55; }
 .chk-runs [aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .chk-detail-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
-.chk-where { color: #5d5f6e; margin-bottom: 12px; }
+.chk-where { color: var(--muted); margin-bottom: 12px; }
 .chk-failure { background: var(--card); border: 1px solid var(--grey); border-left: 3px solid var(--madder); border-radius: 3px; padding: 9px 12px; margin-bottom: 10px; }
 .chk-failure.err { border-left-color: var(--weld); }
 .chk-failure .msg { font-weight: 600; margin-bottom: 6px; overflow-wrap: anywhere; }
 .chk-failure dl { display: grid; grid-template-columns: 72px 1fr; gap: 2px 10px; margin: 0; }
-.chk-failure dt { color: #5d5f6e; text-align: right; }
+.chk-failure dt { color: var(--muted); text-align: right; }
 .chk-failure dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .chk-since { margin: 14px 0; padding: 8px 12px; border: 1px dashed var(--grey); border-radius: 3px; }
 .chk-since .new { color: var(--madder); font-weight: 700; } .chk-since .fixed { color: var(--verdigris); font-weight: 700; }
 .chk-cmd { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
 .chk-cmd code { flex: 1; background: #fff; border: 1px solid var(--grey); padding: 4px 8px; border-radius: 3px; font-size: 11.5px; overflow: auto; white-space: nowrap; }
 .chk-error { white-space: pre-wrap; color: var(--madder); background: var(--card); padding: 8px 12px; border-radius: 3px; }
-.checks-empty { color: #5d5f6e; padding: 30px; }
-.checks-view .quiet { color: #5d5f6e; }
+.checks-empty { color: var(--muted); padding: 30px; }
+.checks-view .quiet { color: var(--muted); }
 
 /* a terminal: dark, whatever the dashboard's own palette */
 .term {
