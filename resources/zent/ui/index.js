@@ -31,7 +31,7 @@ const WOVEN = new Set(["up", "done", "external"]);
    it was (a negative delay) rather than restarting it. */
 const MOTION_MS = 1600;
 const seenStatus = {}, changedAt = {}, arrivedAt = {}, tautAt = {};
-let tautKeys = null;
+let tautKeys = null, wasBusy = false;
 const since = (t) => `${Math.round(t - performance.now())}ms`;
 const recent = (t) => performance.now() - (t ?? -Infinity) < MOTION_MS;
 
@@ -40,9 +40,34 @@ function noteChanges(components) {
   for (const [name, c] of Object.entries(components)) {
     const s = STATE_CLASS[c.status] || "queued";
     if (!(name in seenStatus)) { if (primed) arrivedAt[name] = now; }
-    else if (seenStatus[name] !== s) changedAt[name] = now;
+    else if (seenStatus[name] !== s) {
+      changedAt[name] = now;
+      if (s === "failed") toast("failed", name + " failed", c.error, name);
+    }
     seenStatus[name] = s;
   }
+  // a run settling: nothing left starting or stopping, and nothing failed
+  const statuses = Object.values(components).map((c) => c.status);
+  const busy = statuses.some((s) => s === "pending" || s === "deploying" || s === "stopping");
+  if (wasBusy && !busy && view.preset && !statuses.includes("failed")) {
+    const n = statuses.filter((s) => s === "up").length;
+    toast("up", view.preset + " is up", n + (n === 1 ? " component" : " components") + " running");
+  }
+  wasBusy = busy;
+}
+
+/* A toast: what just happened, for a few seconds - a failure longer, and a
+   click on it selects the component. */
+function toast(kind, title, detail, name) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.dataset.kind = kind;
+  el.innerHTML = "<b>" + escHtml(title) + "</b>" +
+    (detail ? "<span>" + escHtml(String(detail).split("\n")[0]) + "</span>" : "");
+  const leave = () => { el.classList.add("leaving"); setTimeout(() => el.remove(), 240); };
+  el.onclick = () => { if (name && view.components[name]) { location.hash = "#graph"; setSelected(name); } leave(); };
+  document.getElementById("toasts").appendChild(el);
+  setTimeout(leave, kind === "failed" ? 9000 : 5000);
 }
 
 /* Layered DAG: a component sits one level right of its deepest dependency.
