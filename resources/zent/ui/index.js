@@ -882,7 +882,7 @@ function renderChecks() {
       ${c.observes?.length || c.writes ? `<div class="chk-chips">observes ${(c.observes || []).map((o) => `<span>${escHtml(o)}</span>`).join("")}${c.writes ? `<span class="writes" title="a scenario: runs only when asked for, never with run all">writes</span>` : ""}</div>` : ""}
       <ul class="chk-tests">${(r?.tests || []).filter((t) => !onlyFailed || t.status !== "pass").map((t) => `
         <li data-test="${escHtml(t.name)}" data-status="${t.status}" aria-selected="${t.name === sel}">
-          <span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span><span class="n">${escHtml(t.name)}${t.kind ? `<span class="kind">${escHtml(t.kind)}</span>` : ""}${t.doc ?`<span class="doc">${escHtml(docInline(t.doc))}</span>` : ""}</span>
+          <span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span><span class="n">${escHtml(t.name)}${t.kind ? `<span class="kind" data-kind="${escHtml(t.kind)}">${escHtml(t.kind)}</span>` : ""}${t.doc ?`<span class="doc">${escHtml(docInline(t.doc))}</span>` : ""}</span>
           <span class="c">${t.at ? `<span class="quiet">${hms(t.at)}</span> ` : ""}${testCounts(t)}</span></li>`).join("")}
       </ul></div>`;
   }).join("");

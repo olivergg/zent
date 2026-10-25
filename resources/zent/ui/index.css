@@ -678,9 +678,15 @@ body:not([data-tab="checks"]) .checks-view { display: none; }
 .chk-chips { margin: 2px 0 8px 22px; display: flex; flex-wrap: wrap; gap: 4px; color: var(--muted); }
 .chk-chips span { border: 1px solid var(--grey); border-radius: 9px; padding: 0 7px; font-size: 10.5px; }
 .chk-chips span.writes { border-color: var(--madder); color: var(--madder); }
-/* what kind of oracle a test is (:zent/kind) */
+/* what kind of oracle a test is (:zent/kind), from the strongest to the weakest - hues of their
+   own, not the status colors; an unknown kind keeps the plain grey badge */
 .chk-tests .kind { margin-left: 6px; border: 1px solid var(--grey); border-radius: 9px; padding: 0 6px;
   font-size: 10px; color: var(--muted); }
+.chk-tests .kind[data-kind="invariant"]     { border-color: #3b4a8f; color: #3b4a8f; background: #eceef7; }
+.chk-tests .kind[data-kind="pseudo-oracle"] { border-color: #4a6b78; color: #4a6b78; background: #ebf1f3; }
+.chk-tests .kind[data-kind="metamorphic"]   { border-color: #6b4a8f; color: #6b4a8f; background: #f1ecf6; }
+.chk-tests .kind[data-kind="business-rule"] { border-color: #8a6a2b; color: #8a6a2b; background: #f6f0e4; }
+.chk-tests .kind[data-kind="heuristic"]     { border-style: dashed; font-style: italic; }
 .gl { display: inline-block; width: 14px; text-align: center; font-weight: 700; }
 .st-pass { color: var(--verdigris); } .st-fail { color: var(--madder); }
 .st-error, .st-unknown { color: var(--weld); } .st-run { color: var(--grey); }
