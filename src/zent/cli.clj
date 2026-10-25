@@ -89,7 +89,8 @@
   (when (daemon/outdated? d (version))
     (binding [*out* *err*]
       (println (format (str "warning: zent serve (pid %d) runs zent %s, this is %s - "
-                            "`zent shutdown && zent serve --detach` moves it here, keeping what runs")
+                            "`zent shutdown && zent serve --detach` moves it here (stopping all but :permanent), "
+                            "then `zent apply <preset>`")
                        (:pid d) (:version d) (version)))))
   d)
 

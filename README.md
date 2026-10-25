@@ -24,7 +24,8 @@ brew tap olivergg/zent https://github.com/olivergg/zent
 brew trust --formula olivergg/zent/zent                  # Homebrew loads a third-party tap only once trusted
 brew install --HEAD zent                                 # pulls jolt in; HEAD until a release is tagged
 brew update && brew upgrade --fetch-HEAD zent            # later, to update; then, with a daemon up:
-zent shutdown && zent serve --detach                     # move it onto the new version, keeping what runs
+zent shutdown && zent serve --detach                     # move it onto the new version - stops all but :permanent
+zent apply <preset>                                      # so bring your preset back up
 ```
 
 Then, from anywhere inside a catalog repo (below):

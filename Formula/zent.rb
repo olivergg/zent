@@ -20,8 +20,8 @@ class Zent < Formula
   def caveats
     <<~EOS
       After `brew upgrade zent`, move a running daemon onto the new version
-      (what it runs keeps running):
-        zent shutdown && zent serve --detach
+      (it stops all but :permanent components, so bring your preset back up):
+        zent shutdown && zent serve --detach && zent apply <preset>
     EOS
   end
 
