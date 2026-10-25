@@ -19,7 +19,10 @@
   deploy time, halfway through bringing a stack up."
   [:map
    [:type [:enum :http-poll]]
-   [:url :string]])
+   [:url :string]
+   ;; how long to wait before failing the deploy (default 60): an app built then started on
+   ;; deploy can take minutes
+   [:timeout-s {:optional true} pos-int?]])
 
 (def Watch
   "Which files, relative to the component's resolved source dir, should

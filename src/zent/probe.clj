@@ -38,4 +38,4 @@
   (or (nil? spec)
       (do (check-type! spec)
           (println (format "[%s] waiting for %s" name (:url spec)))
-          (wait-http-ready! (:url spec)))))
+          (wait-http-ready! (:url spec) :timeout-ms (* 1000 (:timeout-s spec 60))))))
