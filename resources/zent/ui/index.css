@@ -13,6 +13,11 @@
      merely-woven/external (indigo) at a glance, closer to how most
      dashboards use green for healthy. */
   --verdigris: #2a6d45;
+  /* the warp's own greys (index.js drawWarp): a level's hairline, a thread
+     still slack, a :related coupling */
+  --hairline:  #d6d3ca;
+  --slack:     #c9c6bd;
+  --related:   #8d8880;
   /* a one-shot's strip under its card: linen washed in indigo */
   --strip:     color-mix(in srgb, var(--indigo) 10%, var(--card));
   /* the logs terminal: indigo-dyed ink, not a foreign dark theme */

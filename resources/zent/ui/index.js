@@ -397,22 +397,19 @@ function drawWarp() {
 
   // arrowheads - one per thread state, so direction reads even before colour
   // does. Defined once per draw (cheap, and drawWarp already rebuilds the
-  // whole <svg> every render).
-  parts.push(
-    '<defs>' +
-    '<marker id="arrow-taut" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#25316b"/></marker>' +
-    '<marker id="arrow-slack" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#c9c6bd"/></marker>' +
-    '<marker id="arrow-related" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#8d8880"/></marker>' +
-    '<marker id="arrow-in" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#25316b"/></marker>' +
-    '<marker id="arrow-out" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#c1892b"/></marker>' +
-    '</defs>'
-  );
+  // whole <svg> every render). Colours are the theme's (index.css :root),
+  // through style: an SVG presentation attribute doesn't resolve var().
+  const arrow = (id, size, colour) =>
+    `<marker id="arrow-${id}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="${size}" markerHeight="${size}" ` +
+    `orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" style="fill:var(--${colour})"/></marker>`;
+  parts.push("<defs>" + arrow("taut", 7, "indigo") + arrow("slack", 6, "slack") + arrow("related", 8, "related") +
+             arrow("in", 6, "indigo") + arrow("out", 6, "weld") + "</defs>");
 
   // warp: one vertical hairline per level, behind everything
   fabric.querySelectorAll(".level").forEach((col) => {
     const r = col.getBoundingClientRect();
     const x = Math.round(r.left + r.width / 2 - box.left + loom.scrollLeft);
-    parts.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="#d6d3ca" stroke-width="1"/>`);
+    parts.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}" style="stroke:var(--hairline)" stroke-width="1"/>`);
   });
 
   /* The zent itself: dependency threads crossing the warp. A thread is slack
@@ -456,11 +453,11 @@ function drawWarp() {
       ? '<animate attributeName="stroke-dashoffset" values="12;0" dur="700ms" repeatCount="indefinite"/>'
       : "";
     const lit = role === "in" || role === "out";
-    const stroke = role === "in" ? "#25316b" : role === "out" ? "#c1892b" : taut ? "#25316b" : "#c9c6bd";
+    const dye = role === "out" ? "weld" : role === "in" || taut ? "indigo" : "slack";
     const marker = lit ? "arrow-" + role : taut ? "arrow-taut" : "arrow-slack";
     parts.push(
       `<path class="thread" d="${d}" ` +
-      `fill="none" stroke="${stroke}" stroke-width="${lit ? 2.6 : taut ? 1.6 : 1}" ` +
+      `fill="none" style="stroke:var(--${dye})" stroke-width="${lit ? 2.6 : taut ? 1.6 : 1}" ` +
       `stroke-dasharray="${taut || lit ? "5 7" : "3 5"}" opacity="${role === "faded" ? 0.2 : 1}" ` +
       `marker-end="url(#${marker})">${flow}</path>`
     );
@@ -490,7 +487,7 @@ function drawWarp() {
     const bow = Math.min(a.l, b.l) - 26;
     parts.push(
       `<path class="thread" d="M${a.l} ${a.y} C${bow} ${a.y} ${bow} ${b.y} ${b.l} ${b.y}" ` +
-      `fill="none" stroke="#8d8880" stroke-width="1.4" stroke-dasharray="4 4" ` +
+      `fill="none" style="stroke:var(--related)" stroke-width="1.4" stroke-dasharray="4 4" ` +
       `opacity="${focus && to !== focus && from !== focus ? 0.2 : 1}" ` +
       `marker-end="url(#arrow-related)"/>`
     );
@@ -501,7 +498,7 @@ function drawWarp() {
     if (c.status !== "failed" || !at[name]) continue;
     const p = at[name];
     parts.push(
-      `<g stroke="#a6382c" stroke-width="1.3" fill="none" class="fray-mark">` +
+      `<g style="stroke:var(--madder)" stroke-width="1.3" fill="none" class="fray-mark">` +
       `<path d="M${p.r} ${p.y} l13 -9"/><path d="M${p.r} ${p.y} l15 1"/>` +
       `<path d="M${p.r} ${p.y} l12 10"/></g>`
     );
