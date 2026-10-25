@@ -15,9 +15,9 @@ Measured cost of one full scan pass (Jolt, warm):
 
 | repo | watched files | ms/scan |
 |---|---|---|
-| `notifier` (`.java`/`.xml`) | 11 | 3 |
-| `front` (`.ts`/`.tsx`/`.json`) | 16 227 | 352 |
-| `webapp` (`.java`/`.xml`) | 6 931 | 528 |
+| a small Java service (`.java`/`.xml`) | 11 | 3 |
+| a TypeScript front (`.ts`/`.tsx`/`.json`) | 16 227 | 352 |
+| a Java monolith (`.java`/`.xml`) | 6 931 | 528 |
 
 So scanning is only affordable if the watched set is **narrow and explicitly declared per
 component** (watched paths derive from the component's declared sources), not from the repo root.
@@ -73,7 +73,7 @@ deliberately narrow:
 | quarkus apps | `java -jar` | `mvn package` + restart (~30 s), where `mvn quarkus:dev` does it natively in ~1 s |
 | `broker-seed` | manual one-shot | **real gain** - re-seed when an `.avsc` changes |
 | docker-compose | manual | **real gain** - re-converge when the compose file changes |
-| `webapp` | `jbang start.java` | rebuild + restart: slow, but there's no native alternative |
+| `webapp` | `./run.sh` | rebuild + restart: slow, but there's no native alternative |
 
 - **A**: engine mechanism + watching one-shots and docker-compose.
   Useful immediately, cannot do worse than the status quo.

@@ -24,37 +24,37 @@
 (deftest docker-compose-services-cmd-test
   (testing "only the named services, and --wait (unlike the whole-stack form):
             whoever asked for a scoped service is about to depend on it"
-    (is (= (str "docker compose -f /repos/webapp/docker/local-docker-compose.yaml"
+    (is (= (str "docker compose -f /repos/webapp/docker/compose.dev.yaml"
                 " up -d --wait postgres redis smtp sftp")
            (line (commands/docker-compose-services-cmd
                   "/repos/webapp" [:postgres :redis :smtp :sftp]
-                  {:file "docker/local-docker-compose.yaml"})))))
+                  {:file "docker/compose.dev.yaml"})))))
 
   (testing "teardown is rm -sf on those services only - `down` would take the
             whole project, including services another component still uses"
-    (is (= (str "docker compose -f /repos/webapp/docker/local-docker-compose.yaml"
+    (is (= (str "docker compose -f /repos/webapp/docker/compose.dev.yaml"
                 " rm -sf postgres redis")
            (line (commands/docker-compose-services-rm-cmd
                   "/repos/webapp" [:postgres :redis]
-                  {:file "docker/local-docker-compose.yaml"}))))))
+                  {:file "docker/compose.dev.yaml"}))))))
 
 (deftest docker-compose-cmd-opts-test
   (testing "opts: non-root compose file, project name, profiles"
-    (is (= (str "docker compose -f /repos/idp/release/docker/docker-compose.yaml"
-                " -p idp-local --profile mailcatcher up -d --wait")
-           (line (commands/docker-compose-cmd "/repos/idp"
-                                              {:file "release/docker/docker-compose.yaml"
-                                               :project-name "idp-local"
+    (is (= (str "docker compose -f /repos/auth/docker/compose.yaml"
+                " -p auth-local --profile mailcatcher up -d --wait")
+           (line (commands/docker-compose-cmd "/repos/auth"
+                                              {:file "docker/compose.yaml"
+                                               :project-name "auth-local"
                                                :profiles ["mailcatcher"]})))))
 
   (testing "down needs --profile too - a profile-scoped service (mailcatcher)
             is otherwise left running, not torn down (verified against a
             real docker compose down)"
-    (is (= (str "docker compose -f /repos/idp/release/docker/docker-compose.yaml"
-                " -p idp-local --profile mailcatcher down")
-           (line (commands/docker-compose-down-cmd "/repos/idp"
-                                                   {:file "release/docker/docker-compose.yaml"
-                                                    :project-name "idp-local"
+    (is (= (str "docker compose -f /repos/auth/docker/compose.yaml"
+                " -p auth-local --profile mailcatcher down")
+           (line (commands/docker-compose-down-cmd "/repos/auth"
+                                                   {:file "docker/compose.yaml"
+                                                    :project-name "auth-local"
                                                     :profiles ["mailcatcher"]})))))
 
   (testing "nil opts degrade to the plain repo-root form"

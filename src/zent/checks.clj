@@ -3,8 +3,8 @@
   that judge a running stack - one file per check, its deftests the tests. The
   ns attr-map carries what zent needs:
 
-    (ns supportn3o_6504.charge-history
-      {:zent/observes [:oceanv3 :renault-ingestor] :zent/description \"...\"}
+    (ns shop.order-totals
+      {:zent/observes [:orders-api :postgres] :zent/description \"...\"}
       (:require [clojure.test :refer [deftest is]]))
 
   Read-only by default; :zent/writes true marks one that writes (a scenario):

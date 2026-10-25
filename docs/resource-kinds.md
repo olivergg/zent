@@ -32,8 +32,8 @@ All sections record done work.
 They were the *same* mechanism written twice:
 
 ```clojure
-;; catalog.webapp  spawn "jbang start.java [-Denv.profile=local]" in <repo>
-;; catalog.front   spawn "npm run start:nobrowser" in <repo>, with VITE_BACKEND_URL
+;; catalog.webapp  spawn "./run.sh [--profile local]" in <repo>
+;; catalog.front   spawn "npm run dev" in <repo>, with API_URL
 ```
 
 Strip the literals and nothing component-specific is left - it's "spawn a
@@ -51,7 +51,7 @@ a build step. One generic kind covers all three:
 Then `webapp` is a component, not a kind:
 
 ```clojure
-:webapp {:kind :process :repo "webapp" :cmd "jbang start.java" ...}
+:webapp {:kind :process :repo "webapp" :cmd "./run.sh" ...}
 ```
 
 A variant (another command, another checkout via `:workspace-dir`) is then a preset
@@ -71,7 +71,7 @@ kind is what makes the whole list interchangeable:
 
 ```clojure
 ;; catalog
-:webapp {:kind :process :repo "webapp" :cmd "jbang start.java"}
+:webapp {:kind :process :repo "webapp" :cmd "./run.sh"}
 ;; a preset: same component, different mechanism
 :webapp {:kind :external :readiness {:type :http-poll :url "..."}}
 ```
