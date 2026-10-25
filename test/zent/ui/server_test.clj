@@ -151,6 +151,17 @@
       (is (str/includes? (get headers "Content-Type") "javascript"))
       (is (str/includes? body "htmx")))))
 
+(deftest page-style-and-code-test
+  (testing "the page links its own css and js, served uncached so an edit shows on reload"
+    (let [page (:body (server/app {:request-method :get :uri "/"}))]
+      (is (str/includes? page "href=\"/index.css\""))
+      (is (str/includes? page "src=\"/index.js\"")))
+    (doseq [[uri type marker] [["/index.css" "text/css" "--linen"] ["/index.js" "javascript" "\"use strict\""]]]
+      (let [{:keys [status headers body]} (server/app {:request-method :get :uri uri})]
+        (is (= [200 "no-cache"] [status (get headers "Cache-Control")]) uri)
+        (is (str/includes? (get headers "Content-Type") type) uri)
+        (is (str/includes? body marker) uri)))))
+
 (deftest preview-endpoint-test
   (state/set-catalog! catalog)
 

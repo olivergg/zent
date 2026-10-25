@@ -332,6 +332,14 @@
     {:status 200 :headers {"Content-Type" "text/css; charset=utf-8"}
      :body (slurp (io/resource "zent/ui/tokens.css"))}
 
+    ;; the page's own style and code: read on each request, and no-cache, so
+    ;; an edit shows on the next reload
+    (and (= (:request-method req) :get) (#{"/index.css" "/index.js"} (:uri req)))
+    {:status 200
+     :headers {"Content-Type" (if (str/ends-with? (:uri req) ".css") "text/css; charset=utf-8" "text/javascript; charset=utf-8")
+               "Cache-Control" "no-cache"}
+     :body (slurp (io/resource (str "zent/ui" (:uri req))))}
+
     ;; vendored, not CDN-loaded: the dashboard works offline. ansi_up (MIT)
     ;; renders the logs' terminal colours
     (and (= (:request-method req) :get) (#{"/htmx.min.js" "/ansi_up.js"} (:uri req)))

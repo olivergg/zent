@@ -1,0 +1,794 @@
+:root {
+  /* dye-room palette: undyed linen ground, indigo as the woven colour */
+  --linen:     #e9e7e1;
+  --card:      #f3f1eb;
+  --indigo:    #25316b;
+  --ink:       #171b2e;
+  --madder:    #a6382c;
+  --weld:      #c1892b;
+  --grey:      #a5a199;
+  /* verdigris: the one non-indigo "good" colour - reserved for a
+     component actually up and running, so it reads distinctly from
+     merely-woven/external (indigo) at a glance, closer to how most
+     dashboards use green for healthy. */
+  --verdigris: #2f7a4d;
+
+  --display: "Futura", "Avenir Next Condensed", "Century Gothic", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --rail: 330px;
+  --head: 54px;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--linen);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.masthead {
+  height: var(--head);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--ink);
+}
+
+.wordmark {
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+/* what runs and its one big control, as one piece: the preset is a label
+   (state + name), not a button; Stop/Start acts on that very preset. The
+   "am I running, and can I stop/start it from here" answer - everything
+   else (the rail's per-row play/stop) is deliberately quiet by comparison. */
+.run { display: inline-flex; align-items: stretch; border: 1px solid var(--ink); }
+.run[data-state="idle"] { border-color: var(--grey); }
+.run-label { display: flex; flex-direction: column; justify-content: center; padding: 3px 12px; line-height: 1.2; }
+.run-label small {
+  font-family: var(--display); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--grey); display: flex; align-items: center; gap: 5px;
+}
+.run[data-state="live"] .run-label small::before,
+.run[data-state="preview"] .run-label small::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--verdigris);
+}
+.run[data-state="preview"] .run-label small::before { background: none; border: 1px solid var(--verdigris); }
+.preset { font-family: var(--display); letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; }
+.run[data-state="idle"] .preset { display: none; }
+
+.run-toggle {
+  font-family: var(--display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 16px;
+  border: none;
+  border-left: 1px solid var(--ink);
+  cursor: pointer;
+  color: #fff;
+}
+.run-toggle.stop { background: var(--madder); }
+.run-toggle.stop:hover { background: #8a2e24; }
+.run-toggle.play { background: var(--verdigris); }
+.run-toggle.play:hover { background: #256640; }
+.run-toggle:disabled { opacity: 0.5; cursor: default; }
+
+/* a command sent but not yet handled by the daemon (markBusy): the
+   button's glyph gives way to a spinner until the run reflects it */
+[hx-post][data-busy="true"] { position: relative; color: transparent !important; pointer-events: none; opacity: 1 !important; }
+[hx-post][data-busy="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--indigo);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+.run-toggle[data-busy="true"]::after { border-color: #fff; border-right-color: transparent; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.link {
+  margin-left: auto;
+  font-family: var(--display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 10.5px;
+  color: var(--grey);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.link::before {
+  content: "";
+  width: 6px; height: 6px;
+  background: var(--grey);
+}
+
+.link[data-live="true"] { color: var(--indigo); }
+.link[data-live="true"]::before { background: var(--indigo); }
+
+/* a window with its right-hand panel: filled while the side panel shows */
+.rail-toggle {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--ink);
+  line-height: 0;
+  padding: 4px 5px;
+  cursor: pointer;
+}
+.rail-toggle:hover { border-color: var(--ink); }
+.rail-toggle .pane { fill: currentColor; }
+.rail-toggle[aria-pressed="false"] .pane { fill: none; }
+body[data-tab="logs"] .rail-toggle, body[data-tab="checks"] .rail-toggle { display: none; }
+
+/* ------------------------------------------------------------------ shell */
+
+.shell {
+  display: grid;
+  grid-template-columns: 1fr 5px var(--rail);
+  height: calc(100% - var(--head));
+}
+
+.shell[data-rail-collapsed="true"] { grid-template-columns: 1fr 0 0; }
+.shell[data-rail-collapsed="true"] .grip,
+.shell[data-rail-collapsed="true"] .rail { display: none; }
+
+/* the grip sits in its own grid column rather than being positioned over
+   the rail's border, so nothing inside either pane can be under it */
+.grip {
+  cursor: col-resize;
+  background: var(--linen);
+  border-left: 1px solid var(--ink);
+}
+.grip:hover, .grip[data-dragging="true"] { background: var(--indigo); border-left-color: var(--indigo); }
+body[data-resizing="true"] { cursor: col-resize; user-select: none; }
+
+/* ------------------------------------------------------------------ loom */
+
+.loom {
+  position: relative;
+  overflow: auto;
+  padding: 34px 40px 40px;
+  display: flex;
+  /* column: the preview banner (when shown) stacks above .levels rather
+     than beside it - .warp is position:absolute so it never joins this
+     flow either way, so this only ever affects the banner/.levels pair. */
+  flex-direction: column;
+}
+
+/* the warp: hairlines the fabric is woven across */
+.warp { position: absolute; inset: 0; pointer-events: none; }
+
+/* `zoom` rather than `transform: scale()` on purpose: it affects layout,
+   so .loom's own scrollbars keep reaching the whole fabric instead of
+   needing the scroll area resized by hand. Measured rects stay in screen
+   space either way, so drawWarp needs no scale arithmetic. */
+.loom[data-panning="true"] { cursor: grabbing; }
+.loom[data-panning="true"] .node { pointer-events: none; }
+
+/* previewing a preset that isn't running: the whole fabric reads as a
+   sketch, not a report - dashed cards, no health colour (nothing IS
+   healthy yet, this is a plan) - so it can never be mistaken for the
+   live view at a glance. */
+.loom[data-preview="true"] .node {
+  border-style: dashed;
+  background: transparent;
+}
+.loom[data-preview="true"] .node .actions { display: none; }
+/* a strip keeps its tint: transparent, it reads as one more dashed box
+   rather than part of the card above */
+.loom[data-preview="true"] .node.satellite { background: #eceef5; }
+
+/* the `display: flex` below only applies while the banner isn't hidden -
+   the native [hidden] attribute is display:none by default, but an
+   author rule setting `display` on the same element overrides that, so
+   without this guard the (empty, until a preview starts) banner rendered
+   as a visible box even when hidden was set. */
+.preview-banner[hidden] { display: none; }
+.preview-banner {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -34px -40px 20px;
+  padding: 10px 40px;
+  background: var(--ink);
+  color: var(--linen);
+  font-family: var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.preview-banner button {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  background: none;
+  border: 1px solid var(--linen);
+  color: var(--linen);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.preview-banner .plan { flex: 1; opacity: 0.75; text-transform: none; letter-spacing: 0.02em; }
+.preview-banner .plan span[title] { border-bottom: 1px dotted; cursor: help; }
+.preview-banner button:hover { background: var(--linen); color: var(--ink); }
+.preview-banner .play { border-color: var(--verdigris); background: var(--verdigris); }
+
+.levels {
+  position: relative;
+  display: flex;
+  gap: 48px;
+  align-items: flex-start;      /* rows line up across levels, so it reads as a weave */
+  /* auto margins centre a small fabric without clipping a large one the way
+     justify-content: center would once it overflows */
+  margin: auto;
+}
+
+.level { display: flex; flex-direction: column; gap: 16px; width: 230px; flex: none; }
+
+/* a card and the :attached-to one-shots it carries, as strips under it -
+   jobs run against the component, not services of their own */
+.stack { display: flex; flex-direction: column; }
+/* hangs from the card: flush under it, inset, no top border of its own */
+.node.satellite {
+  z-index: 1;
+  width: calc(100% - 20px);
+  margin-left: 10px;
+  border-top: none;
+  padding: 4px 26px 4px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  font-size: 10.5px;
+  background: #eceef5;
+  border-color: #b9bdd3;
+}
+/* a script name breaks between scripts, never mid-name */
+.node.satellite .name { font-size: 11px; letter-spacing: 0.02em; text-transform: none; flex: 1; overflow-wrap: normal; }
+.node.satellite .desc { flex-basis: 100%; padding-left: 14px; color: var(--grey); font-size: 10px; }
+/* what a one-shot reads (:source-env): one dir per row, under its description */
+.node .source-env { display: block; }
+.node.satellite .source-env { flex-basis: 100%; padding-left: 14px; }
+.node.satellite .actions { top: 1px; }
+.node.satellite .fray { flex-basis: 100%; margin-top: 2px; }
+
+/* ----------------------------------------------------------------- nodes */
+
+.node {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  padding: 10px 12px 11px;
+  background: var(--card);
+  border: 1px solid var(--grey);
+  border-left-width: 3px;
+  cursor: pointer;
+  transition: border-color 240ms ease, background 240ms ease, transform 160ms ease;
+}
+
+/* a card and its strips move as one piece */
+.stack:hover > .node { transform: translateX(2px); }
+.node:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+.node .permanent {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--indigo);
+  border: 1px solid var(--indigo);
+  vertical-align: middle;
+}
+
+.node .name {
+  font-family: var(--display);
+  font-size: 13.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* a long name wraps rather than widening the column: the whole graph has
+     to stay visible without scrolling, since "what broke" is the point */
+  overflow-wrap: anywhere;
+}
+
+.node .meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--grey);
+  font-size: 10.5px;
+  margin-top: 3px;
+}
+
+.node .state { color: var(--ink); }
+.node .kind { display: inline-flex; align-items: baseline; gap: 4px; }
+.node .glyph { font-style: normal; font-size: 11px; color: var(--ink); }
+
+/* status: up and external are both verdigris (both mean "confirmed
+   healthy") - the dashed border is what still marks external as "zent
+   didn't start this", not a different colour */
+.node[data-status="up"],
+.node[data-status="external"] { border-color: var(--verdigris); background: #e8f2ec; }
+.node[data-status="up"] .state,
+.node[data-status="external"] .state { color: var(--verdigris); }
+.node[data-status="external"] { border-left-style: dashed; }
+/* done: a one-shot that ran to completion, like a finished k8s Job */
+.node[data-status="done"] { border-color: var(--indigo); background: #e9ebf4; }
+.node[data-status="done"] .state { color: var(--indigo); }
+/* ready: an :on-demand one-shot waiting for its reload - shown, not run */
+.node[data-status="ready"] { border-color: var(--indigo); border-style: dashed; }
+.node[data-status="ready"] .state { color: var(--indigo); font-style: italic; }
+/* stopping: a stop is tearing it down - greyed, the pick running backwards */
+.node[data-status="stopping"] { border-color: var(--grey); opacity: 0.75; }
+.node[data-status="stopping"] .state { color: var(--grey); font-style: italic; }
+.node[data-status="starting"] { border-color: var(--weld); }
+.node[data-status="starting"] .state { color: var(--weld); }
+.node[data-status="failed"]   { border-color: var(--madder); background: #f6eae8; }
+.node[data-status="failed"] .state { color: var(--madder); }
+.node[data-status="off"],
+.node[data-status="stopped"]  { opacity: 0.5; font-style: italic; }
+/* idle: kept warm, still running, but no current preset needs it */
+.node[data-status="idle"] { opacity: 0.6; border-color: var(--grey); border-left-style: dotted; }
+/* off has nothing to restart (its mode is off, not merely torn down) -
+   stopped keeps its reload button (faded like the rest of the card until
+   hovered, same as any other node) so a manual stop is reversible. */
+.node[data-status="off"] .actions { display: none; }
+.node[data-selected="true"]   { box-shadow: 3px 3px 0 var(--ink); }
+
+/* queued: not yet touched, distinct from off - a soft glow rather than a
+   colour, so "about to happen" reads as different from "static/ignored"
+   without borrowing weld/madder/indigo's own meanings. */
+.node[data-status="queued"] { animation: glow 1.8s ease-in-out infinite; }
+@keyframes glow {
+  0%, 100% { background: var(--card); }
+  50%      { background: #ffffff; }
+}
+
+.node .repo {
+  display: block;
+  margin-top: 3px;
+  color: var(--grey);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.node .repo::before { content: "repo: "; }
+.node .repo-link { color: var(--grey); text-decoration: none; border-bottom: 1px dotted var(--grey); }
+.node .repo-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+
+/* one box per container inside the component's own box: a compose
+   component IS several containers, and a single "up" for all of them
+   can't say which one is unhealthy. One per line rather than side by
+   side, so the name and its ports always fit. */
+.node .services {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 5px;
+}
+.node .svc {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 6px;
+  font-size: 10px;
+  color: var(--grey);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--grey);
+  border-left-width: 2px;
+}
+.node .svc-name { overflow-wrap: anywhere; }
+.node .svc::before {
+  content: "";
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--grey);
+  flex: none;
+  align-self: center;
+}
+.node .svc[data-health="ok"]   { border-left-color: var(--verdigris); }
+.node .svc[data-health="ok"]::before   { background: var(--verdigris); }
+.node .svc[data-health="wait"] { border-left-color: var(--weld); }
+.node .svc[data-health="wait"]::before { background: var(--weld); }
+.node .svc[data-health="bad"]  { border-left-color: var(--madder); color: var(--madder); }
+.node .svc[data-health="bad"]::before  { background: var(--madder); }
+
+/* the port is the handle you actually reach the thing by, so it reads as
+   a value, not as more grey prose */
+.node .ports {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.node .ports.own { display: block; margin: 4px 0 0; font-size: 10px; }
+
+/* the branch reads as a label (it's the one thing here you might be
+   surprised by), the path stays quiet background detail */
+.node .branch {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0 5px;
+  font-size: 9.5px;
+  color: var(--indigo);
+  border: 1px solid var(--indigo);
+  border-radius: 2px;
+  /* branch names are long and unbreakable (feature/DARK-1234_foo_bar);
+     without this the badge runs straight out of the card */
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+.node .workdir {
+  display: block;
+  margin-top: 2px;
+  color: var(--grey);
+  font-size: 9.5px;
+  overflow-wrap: anywhere;
+}
+.node .workdir .wt {
+  font-style: normal;
+  color: var(--weld);
+  border-bottom: 1px dotted var(--weld);
+}
+.node .workdir-open {
+  font: inherit;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+  border-bottom: 1px dotted var(--grey);
+}
+.node .workdir-open:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+.node .workdir-open[data-failed="true"] { color: var(--madder); border-bottom-color: var(--madder); }
+
+.node .endpoint {
+  /* block so each link gets its own line, fit-content so the hit area is
+     the text itself and not the whole width of the card */
+  display: block;
+  width: fit-content;
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--verdigris);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.node .endpoint:hover { text-decoration: underline; }
+
+/* the one moving thing: a pick crossing a component while it starts */
+.node[data-status="stopping"]::after,
+.node[data-status="starting"]::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: -1px;
+  height: 2px; width: 34%;
+  background: var(--weld);
+  animation: pick 1150ms ease-in-out infinite;
+}
+
+.node[data-status="stopping"]::after { background: var(--grey); animation-direction: reverse; }
+
+@keyframes pick {
+  0%   { transform: translateX(0); }
+  50%  { transform: translateX(196%); }
+  100% { transform: translateX(0); }
+}
+
+.node .fray {
+  display: block;
+  margin-top: 6px;
+  color: var(--madder);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+
+/* action buttons: quiet until hovered, so the card still reads first as a
+   status card and only second as a set of controls. */
+.node .actions {
+  position: absolute;
+  top: 3px; right: 5px;
+  display: flex;
+  gap: 2px;
+}
+/* .node and .preset-row both host these (reload/stop, play/stop) - shared
+   look, context-specific rest opacity/padding/disabled dimming below */
+.act { background: none; border: none; color: var(--grey);
+       font-size: 11px; line-height: 1; cursor: pointer; }
+.act:hover { color: var(--indigo); }
+.act.stop:hover { color: var(--madder); }
+.act[data-failed="true"] { color: var(--madder); opacity: 1; }
+
+.node .act { padding: 2px 4px; opacity: 0.45; }
+.node:hover .act { opacity: 1; }
+.node .act:disabled { opacity: 0.25; cursor: default; color: var(--grey); }
+
+.empty-loom {
+  position: relative;
+  z-index: 2;
+  max-width: 30rem;
+}
+
+.empty-loom h2 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+}
+
+.empty-loom p { margin: 0 0 14px; color: #5d5f6e; }
+.empty-loom code { background: var(--card); border: 1px solid var(--grey); padding: 1px 5px; }
+
+.picker { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.preset-row {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--grey);
+  padding: 6px 8px;
+}
+.preset-row[data-active="true"] { border-color: var(--verdigris); }
+.preset-name { flex: 1; font-size: 12px; cursor: pointer; }
+.preset-name:hover { color: var(--indigo); }
+.preset-row[data-previewing="true"] .preset-name { color: var(--indigo); font-weight: 500; }
+.preset-row .act { padding: 2px 5px; }
+.preset-row .act:disabled { opacity: 0.35; cursor: default; }
+.preset-row[data-active="true"] .play { color: var(--verdigris); opacity: 0.4; }
+
+/* ------------------------------------------------------------------ rail */
+
+.rail {
+  padding: 22px 20px;
+  overflow: auto;
+}
+
+#rail-run { display: flex; flex-direction: column; gap: 22px; }
+
+.rail h2 {
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--grey);
+  margin: 0 0 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--grey);
+}
+
+.legend { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; font-size: 10.5px; }
+.legend span { display: flex; align-items: center; gap: 7px; color: #5d5f6e; }
+.legend i { width: 3px; height: 13px; background: var(--grey); }
+.legend .up i { background: var(--verdigris); }
+.legend .done i { background: var(--indigo); }
+.legend .idle i { background: transparent; border-left: 3px dotted var(--grey); width: 3px; }
+.legend .starting i { background: var(--weld); }
+.legend .stopping i { background: var(--grey); }
+.legend .failed i { background: var(--madder); }
+/* external is also healthy (verdigris) - the dash is what still marks
+   "not started by us", not a different colour */
+.legend .external i {
+  background: transparent;
+  border-left: 3px dashed var(--verdigris);
+  width: 3px;
+}
+
+.show-stopped {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 8px; font-size: 10.5px; color: #5d5f6e; cursor: pointer;
+}
+.show-stopped input { margin: 0; cursor: pointer; }
+
+.tally { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.tally span { color: #5d5f6e; }
+.tally b {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 500;
+  margin-right: 4px;
+  color: var(--ink);
+}
+.tally .t-up b { color: var(--verdigris); }
+.tally .t-done b { color: var(--indigo); }
+.tally .t-starting b { color: var(--weld); }
+.tally .t-failed b { color: var(--madder); }
+
+.blocked { margin: 10px 0 0; color: var(--madder); }
+
+.facts { display: grid; grid-template-columns: 74px 1fr; gap: 4px 10px; margin: 0; }
+.facts dt { color: var(--grey); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+
+.quiet { color: var(--grey); }
+
+/* ---------------------------------------------------------------- logs */
+
+/* tabs: the graph and the logs share the page, one shown at a time */
+.tabs { display: flex; gap: 2px; }
+.tabs a {
+  color: var(--ink); text-decoration: none; padding: 4px 12px;
+  border: 1px solid transparent; border-radius: 3px;
+}
+.tabs a[aria-current="page"] { border-color: var(--ink); background: var(--card); }
+body[data-tab="logs"] .shell, body[data-tab="checks"] .shell { display: none; }
+body:not([data-tab="logs"]) .logs-view { display: none; }
+body:not([data-tab="checks"]) .checks-view { display: none; }
+
+/* -------------------------------------------------------------- checks */
+
+/* the active preset's checks (zent.checks): a test runner, tree | detail */
+.tab-badge {
+  display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px;
+  background: var(--madder); color: #fff; font-size: 10.5px; text-align: center;
+}
+.tab-badge.ok { background: var(--verdigris); }
+.checks-view { height: calc(100vh - var(--head)); display: grid; grid-template-columns: minmax(360px, 42%) 1fr; }
+.checks-view .left { border-right: 1px solid var(--grey); display: flex; flex-direction: column; overflow: auto; }
+.checks-view .right { overflow: auto; padding: 14px 20px; }
+.checks-bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; background: var(--card); border-bottom: 1px solid var(--grey); position: sticky; top: 0; z-index: 1; }
+.checks-bar button, .chk-cmd button {
+  font: inherit; font-size: 11.5px; padding: 3px 10px; border: 1px solid var(--ink);
+  background: var(--linen); color: var(--ink); border-radius: 3px; cursor: pointer;
+}
+.checks-bar button:disabled, .chk-cmd button:disabled { opacity: .45; cursor: default; }
+.checks-bar label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: #5d5f6e; }
+.chk { padding: 12px 14px 6px; }
+.chk-head { display: flex; gap: 8px; align-items: baseline; }
+.chk-head .name { font-weight: 600; }
+.chk-meta { color: #5d5f6e; font-size: 11.5px; margin: 2px 0 4px 22px; }
+.chk-chips { margin: 2px 0 8px 22px; display: flex; flex-wrap: wrap; gap: 4px; color: #5d5f6e; }
+.chk-chips span { border: 1px solid var(--grey); border-radius: 9px; padding: 0 7px; font-size: 10.5px; }
+.gl { display: inline-block; width: 14px; text-align: center; font-weight: 700; }
+.st-pass { color: var(--verdigris); } .st-fail { color: var(--madder); }
+.st-error, .st-unknown { color: var(--weld); } .st-run { color: var(--grey); }
+ul.chk-tests { list-style: none; margin: 0 0 0 14px; padding: 0; border-left: 1px solid var(--grey); }
+ul.chk-tests li { display: flex; gap: 8px; align-items: baseline; padding: 3px 8px; cursor: pointer; border-radius: 3px; }
+ul.chk-tests li:hover { background: var(--card); }
+ul.chk-tests li[aria-selected="true"] { background: #fff; outline: 1px solid var(--grey); }
+ul.chk-tests li .n { flex: 1; overflow-wrap: anywhere; }
+/* descriptions are read, not glanced at: near the ink, not muted */
+ul.chk-tests li .doc, .chk-meta .desc { color: #33364a; }
+ul.chk-tests li .doc { display: block; font-size: 11px; line-height: 1.4; margin-top: 1px; }
+.chk-doc { white-space: pre-line; color: #33364a; margin: 0 0 12px; max-width: 80ch; }
+/* a test's description takes its verdict's colour: what holds, what doesn't */
+ul.chk-tests li[data-status="pass"] .doc, .chk-doc[data-status="pass"] { color: var(--verdigris); }
+ul.chk-tests li[data-status="fail"] .doc, .chk-doc[data-status="fail"] { color: var(--madder); }
+ul.chk-tests li .c { color: #5d5f6e; font-size: 11.5px; }
+.chk-problem { margin: 4px 0 8px 22px; color: var(--madder); }
+.chk-history { margin-top: auto; padding: 10px 14px 14px; border-top: 1px solid var(--grey); }
+.checks-view h3 { font-family: var(--display); font-weight: 400; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #5d5f6e; margin: 0 0 6px; }
+.chk-runs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.chk-runs button { width: 22px; height: 22px; border: 0; border-radius: 3px; color: #fff; font-size: 11px; cursor: pointer; padding: 0; }
+.chk-runs .pass { background: var(--verdigris); } .chk-runs .fail { background: var(--madder); } .chk-runs .unknown { background: var(--weld); }
+.chk-runs .partial { opacity: .55; }
+.chk-runs [aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
+.chk-detail-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
+.chk-where { color: #5d5f6e; margin-bottom: 12px; }
+.chk-failure { background: var(--card); border: 1px solid var(--grey); border-left: 3px solid var(--madder); border-radius: 3px; padding: 9px 12px; margin-bottom: 10px; }
+.chk-failure.err { border-left-color: var(--weld); }
+.chk-failure .msg { font-weight: 600; margin-bottom: 6px; overflow-wrap: anywhere; }
+.chk-failure dl { display: grid; grid-template-columns: 72px 1fr; gap: 2px 10px; margin: 0; }
+.chk-failure dt { color: #5d5f6e; text-align: right; }
+.chk-failure dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chk-since { margin: 14px 0; padding: 8px 12px; border: 1px dashed var(--grey); border-radius: 3px; }
+.chk-since .new { color: var(--madder); font-weight: 700; } .chk-since .fixed { color: var(--verdigris); font-weight: 700; }
+.chk-cmd { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
+.chk-cmd code { flex: 1; background: #fff; border: 1px solid var(--grey); padding: 4px 8px; border-radius: 3px; font-size: 11.5px; overflow: auto; white-space: nowrap; }
+.chk-error { white-space: pre-wrap; color: var(--madder); background: var(--card); padding: 8px 12px; border-radius: 3px; }
+.checks-empty { color: #5d5f6e; padding: 30px; }
+.checks-view .quiet { color: #5d5f6e; }
+
+/* a terminal: dark, whatever the dashboard's own palette */
+.term {
+  --term-bg: #0d1017; --term-fg: #c9d1d9; --term-dim: #6e7681; --term-rule: #30363d;
+  background: var(--term-bg); color: var(--term-fg);
+  font-family: var(--mono); font-size: 12px; line-height: 1.45;
+  overflow: auto; position: relative;
+}
+.term .ln { display: flex; }
+.term .ln.ctx { border-top: 1px solid var(--term-rule); }
+.term .g {
+  flex: 0 0 18ch; padding: 0 1ch; color: var(--c); text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-right: 2px solid var(--c); user-select: none;
+}
+/* dimmed, not hidden: scrolled into a long block, the name must still say whose it is */
+.term .ln.cont .g { opacity: .35; }
+.term .ts { flex: 0 0 auto; padding-left: 1ch; color: var(--term-dim); user-select: none; display: none; }
+.term[data-times="true"] .ts { display: inline; }
+.term .tx { flex: 1; padding: 0 1ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.term .sep .tx, .term .reload .tx { color: var(--term-dim); }
+.term .quiet { color: var(--term-dim); padding: 6px 1ch; }
+.term .cursor { color: var(--term-dim); padding: 0 1ch; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.open-logs { font: inherit; font-size: 11px; background: none; border: 1px solid var(--grey); cursor: pointer; margin-top: 14px; }
+
+.logs-view {
+  height: calc(100vh - var(--head)); display: flex; flex-direction: column;
+  background: #0d1017;
+}
+/* the pills take the room left and wrap among themselves; the actions stay together */
+#log-pills { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+.logs-bar {
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  background: #161b22; color: #c9d1d9; border-bottom: 1px solid #30363d;
+}
+.pill {
+  font: inherit; font-size: 11.5px; color: #c9d1d9; background: transparent; cursor: pointer;
+  border: 1px solid #30363d; border-radius: 999px; padding: 2px 10px 2px 8px;
+}
+.pill::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                margin-right: 6px; border: 1px solid var(--c); }
+.pill[aria-pressed="true"] { border-color: var(--c); }
+.pill[aria-pressed="true"]::before { background: var(--c); }
+.log-term {
+  font: inherit; font-size: 11.5px; width: 28ch; color: #c9d1d9; background: #0d1017;
+  border: 1px solid #30363d; border-radius: 3px; padding: 2px 6px;
+}
+.log-term[aria-invalid="true"] { border-color: #f85149; }
+.levels-filter { display: inline-flex; }
+.levels-filter button, .log-act {
+  font: inherit; font-size: 11.5px; color: #8b949e; background: transparent; cursor: pointer;
+  border: 1px solid #30363d; padding: 2px 8px;
+}
+.levels-filter button + button { border-left: 0; }
+.levels-filter button[aria-pressed="true"] { color: #c9d1d9; background: #21262d; }
+.levels-filter b { font-weight: normal; color: #6e7681; }
+.log-act { border-radius: 3px; }
+/* a warning's or error's line, flagged - also when not filtering */
+.term .ln.warn .tx { box-shadow: inset 3px 0 #d29922; }
+.term .ln.error .tx { box-shadow: inset 3px 0 #f85149; }
+.term .ln.warn.by-level .tx { color: #e3b341; }
+.term .ln.error.by-level .tx { color: #ff7b72; }
+.term .ln[hidden] { display: none; }
+.logs-bar label { font-size: 11.5px; color: #8b949e; }
+.logs-view .term { flex: 1; padding: 6px 0; }
+.new-lines {
+  position: absolute; right: 18px; bottom: 14px; font: inherit; cursor: pointer;
+  color: #0d1017; background: #c9d1d9; border: 0; border-radius: 999px; padding: 4px 12px;
+}
+.logs-main { flex: 1; position: relative; display: flex; min-height: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; height: auto; }
+  .grip { display: none; }
+  .rail { border-top: 1px solid var(--ink); }
+}
