@@ -37,7 +37,7 @@
   [name from]
   (if from
     [nil from]
-    (let [{:keys [lines offset]} (logs/read-since name 0)]
+    (let [{:keys [lines offset]} (logs/read-last name)]
       [{:c name :l (mapv secrets/redact (take-last backlog-lines lines)) :o offset :b true} offset])))
 
 (defn- step

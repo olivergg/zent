@@ -64,6 +64,18 @@
     (logs/start-run! :api)
     (is (= [] (logs/tail :api 10)))))
 
+(deftest last-lines-read-from-the-end-test
+  (testing "given a log longer than the window, when its last lines are read,
+            then only the window is read - the line it cuts dropped - and the
+            offset still points past the end, for a stream to follow from"
+    (logs/start-run! :big)
+    (logs/append! :big "aaaaaaaaaa\nbbbbbbbbbb\ncccccccccc\ndddd")
+    (with-redefs [logs/tail-window 18]                ; 38 bytes: the window starts on the b line's last b
+      (is (= ["cccccccccc" "dddd"] (logs/tail :big 10)))
+      (is (= {:lines ["cccccccccc" "dddd"] :offset 38 :reset? false} (logs/read-last :big)))))
+  (testing "given a log within the window, then nothing is dropped"
+    (is (= ["aaaaaaaaaa" "bbbbbbbbbb" "cccccccccc" "dddd"] (logs/tail :big 10)))))
+
 (deftest spawn-redirects-to-log-file-test
   (testing "a spawned child's stderr lands in its log file, not on zent's own"
     (let [path (logs/start-run! :child)

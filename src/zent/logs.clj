@@ -63,6 +63,9 @@
     (spit (log-file component) (cond-> text (not (str/ends-with? text "\n")) (str "\n"))
           :append true)))
 
+(defn- bytes-from [f from]
+  (with-open [in (java.io.FileInputStream. f)] (.skip in from) (.readAllBytes in)))
+
 (defn read-since
   "`component`'s complete lines written past byte `offset`:
   {:lines [...] :offset where the next read starts :reset? true when the log
@@ -73,8 +76,7 @@
         len (if (.exists f) (.length f) 0)
         reset? (< len offset)
         from (if reset? 0 offset)
-        bs (when (> len from)
-             (with-open [in (java.io.FileInputStream. f)] (.skip in from) (.readAllBytes in)))
+        bs (when (> len from) (bytes-from f from))
         end (when bs (loop [i (dec (alength bs))] (cond (neg? i) nil (= 10 (aget bs i)) i :else (recur (dec i)))))]
     {:lines (if end (str/split-lines (String. ^bytes bs 0 (int (inc end)) "UTF-8")) [])
      :offset (if end (+ from end 1) from)
@@ -86,12 +88,28 @@
   [line]
   (str/replace line #"\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\))" ""))
 
+(def tail-window
+  "Bytes read from a log's end for its last lines: a log grows to gigabytes
+  (a chatty compose stack), and reading it whole ran the daemon out of memory."
+  (* 1024 1024))
+
+(defn- window-start [f] (max 0 (- (.length f) tail-window)))
+
+(defn read-last
+  "read-since from `component`'s last tail-window bytes, the line the window
+  cuts dropped."
+  [component]
+  (let [from (window-start (io/file (path-of component)))]
+    (cond-> (read-since component from) (pos? from) (update :lines #(vec (rest %))))))
+
 (defn tail
-  "Last `n` lines of `component`'s log, oldest first; empty when there's none."
+  "Last `n` lines of `component`'s log, oldest first, a last unterminated one
+  included; empty when there's none."
   [component n]
-  (let [path (path-of component)
-        content (when (.exists (io/file path)) (slurp path))]
+  (let [f (io/file (path-of component))
+        from (window-start f)
+        content (when (.exists f) (String. ^bytes (bytes-from f from) "UTF-8"))]
     ;; split-lines of "" is [""] - a phantom line
     (if (str/blank? content)
       []
-      (vec (take-last n (str/split-lines content))))))
+      (vec (take-last n (cond->> (str/split-lines content) (pos? from) rest))))))
