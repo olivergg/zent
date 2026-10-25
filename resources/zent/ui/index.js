@@ -46,14 +46,23 @@ function noteChanges(components) {
     }
     seenStatus[name] = s;
   }
-  // a run settling: nothing left starting or stopping, and nothing failed
-  const statuses = Object.values(components).map((c) => c.status);
-  const busy = statuses.some((s) => s === "pending" || s === "deploying" || s === "stopping");
-  if (wasBusy && !busy && view.preset && !statuses.includes("failed")) {
-    const n = statuses.filter((s) => s === "up").length;
+  // a run settling: from starting or stopping to ready
+  const health = healthOf(components);
+  if (wasBusy && health === "ready" && view.preset) {
+    const n = Object.values(components).filter((c) => c.status === "up").length;
     toast("up", view.preset + " is up", n + (n === 1 ? " component" : " components") + " running");
   }
-  wasBusy = busy;
+  wasBusy = health === "starting" || health === "stopping";
+}
+
+/* A run as a whole: failed while one is failed or unready, else starting or
+   stopping while one is on its way, else ready (up, done, external, an
+   on-demand one-shot ready, a kept-warm one idle). */
+function healthOf(components) {
+  const s = new Set(Object.values(components).map((c) => c.status));
+  return s.has("failed") || s.has("unready") ? "failed"
+    : s.has("pending") || s.has("deploying") ? "starting"
+    : s.has("stopping") ? "stopping" : "ready";
 }
 
 /* A toast: what just happened, for a few seconds - a failure longer, and a
@@ -230,8 +239,12 @@ function renderRunToggle() {
   // #summary/#preset-picker/#detail) keeps every processed node fresh.
   // the label beside it says which preset - the button only says what it does
   const state = previewing ? "preview" : view.preset ? "live" : "idle";
-  document.getElementById("run").dataset.state = state;
-  document.getElementById("run-caption").textContent = { preview: "preview", live: "running", idle: "no run" }[state];
+  // live: the run's health on the label's LED (CSS) and in its caption
+  const health = state === "live" ? healthOf(view.components) : null;
+  const run = document.getElementById("run");
+  run.dataset.state = state;
+  if (health) run.dataset.health = health; else delete run.dataset.health;
+  document.getElementById("run-caption").textContent = health || { preview: "preview", idle: "no run" }[state];
   document.getElementById("preset").textContent = previewing || view.preset || "";
   const old = document.getElementById("run-toggle");
   if (previewing) {
