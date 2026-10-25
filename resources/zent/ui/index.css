@@ -387,25 +387,26 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .kind { display: inline-flex; align-items: baseline; gap: 4px; }
 .node .glyph { font-style: normal; font-size: 11px; color: var(--ink); }
 
-/* status: one dye (--c) for the border and the state; the cards it settled
-   on are washed in it and cast its shade. up and external are both
-   verdigris (both mean "confirmed healthy") - the dashed border is what
-   still marks external as "zent didn't start this", not a different colour */
+/* status: one dye (--c), for a card (its border and state; the cards it
+   settled on are washed in it and cast its shade), the legend's swatch and
+   the run's tally. up and external are both verdigris (both mean "confirmed
+   healthy") - the dashed border is what still marks external as "zent
+   didn't start this", not a different colour */
+.node:is([data-status="up"], [data-status="external"]), .legend :is(.up, .external), .tally .t-up { --c: var(--verdigris); }
+.node:is([data-status="done"], [data-status="ready"]), .legend .done, .tally .t-done { --c: var(--indigo); }
+.node[data-status="stopping"], .legend .stopping { --c: var(--grey); }
+.node[data-status="starting"], .legend .starting, .tally .t-starting { --c: var(--weld); }
+.node:is([data-status="failed"], [data-status="unready"]), .legend .failed, .tally :is(.t-failed, .t-unready) { --c: var(--madder); }
 /* the state as text: its dye deepened with ink, readable on the dyed ground */
 .node .state { color: color-mix(in srgb, var(--c, var(--ink)) 65%, var(--ink)); }
-.node[data-status="up"],
-.node[data-status="external"] { --c: var(--verdigris); }
 .node[data-status="external"] { border-left-style: dashed; }
-/* done: a one-shot that ran to completion, like a finished k8s Job */
-.node[data-status="done"] { --c: var(--indigo); }
-/* ready: an :on-demand one-shot waiting for its reload - shown, not run */
-.node[data-status="ready"] { --c: var(--indigo); border-style: dashed; }
+/* done: a one-shot that ran to completion, like a finished k8s Job;
+   ready: an :on-demand one-shot waiting for its reload - shown, not run */
+.node[data-status="ready"] { border-style: dashed; }
 /* stopping: a stop is tearing it down - greyed, the pick running backwards */
-.node[data-status="stopping"] { --c: var(--grey); opacity: 0.75; }
-.node[data-status="starting"] { --c: var(--weld); }
-.node[data-status="failed"] { --c: var(--madder); }
-/* running but its readiness failing: between up and failed */
-.node[data-status="unready"] { --c: var(--madder); border-style: dashed; }
+.node[data-status="stopping"] { opacity: 0.75; }
+/* unready: running but its readiness failing, between up and failed */
+.node[data-status="unready"] { border-style: dashed; }
 .node:is([data-status="up"], [data-status="external"], [data-status="done"],
          [data-status="failed"], [data-status="unready"]) {
   background: color-mix(in srgb, var(--c) 14%, var(--card));
@@ -684,20 +685,10 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; font-size: 10.5px; }
 .legend span { display: flex; align-items: center; gap: 7px; color: var(--muted); }
-.legend i { width: 3px; height: 13px; background: var(--grey); }
-.legend .up i { background: var(--verdigris); }
-.legend .done i { background: var(--indigo); }
-.legend .idle i { background: transparent; border-left: 3px dotted var(--grey); width: 3px; }
-.legend .starting i { background: var(--weld); }
-.legend .stopping i { background: var(--grey); }
-.legend .failed i { background: var(--madder); }
-/* external is also healthy (verdigris) - the dash is what still marks
-   "not started by us", not a different colour */
-.legend .external i {
-  background: transparent;
-  border-left: 3px dashed var(--verdigris);
-  width: 3px;
-}
+.legend i { width: 3px; height: 13px; background: var(--c, var(--grey)); }
+/* external and idle as their cards' borders: dashed, dotted */
+.legend .idle i { background: transparent; border-left: 3px dotted var(--grey); }
+.legend .external i { background: transparent; border-left: 3px dashed var(--c); }
 
 .show-stopped {
   display: flex; align-items: center; gap: 6px;
@@ -712,13 +703,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   font-size: 17px;
   font-weight: 500;
   margin-right: 4px;
-  color: var(--ink);
+  color: var(--c, var(--ink));
 }
-.tally .t-up b { color: var(--verdigris); }
-.tally .t-done b { color: var(--indigo); }
-.tally .t-starting b { color: var(--weld); }
-.tally .t-failed b,
-.tally .t-unready b { color: var(--madder); }
 
 .blocked { margin: 10px 0 0; color: var(--madder); }
 
