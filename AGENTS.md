@@ -83,6 +83,26 @@ name in `zent.*`; a preset needing `:cmd` to do its job.
 - **Cleanup is part of the change.** Drop leftovers, factorize duplicates, keep comments
   and docs concise, in English, saying what isn't obvious from the code.
 
+## Checks
+
+A catalog repo may hold `checks/<preset_munged>/<check>.clj`: clojure.test namespaces judging a
+preset's running stack. The engine discovers, runs and records them; it knows nothing of what
+they assert.
+
+- **Contract.** The ns attr-map carries `:zent/observes` (the components it judges) and
+  `:zent/description`; a test's `:doc` is shown under it. Deps in `checks/deps.edn`, run by
+  `clojure -M` from `checks/` (JVM Clojure, not Jolt: checks talk to JVM services).
+- **Output.** The runner rebinds `clojure.test/report` to write `#zent/check` EDN lines to a log
+  file, never a pipe (output was truncated once). A run without its `:done` line is `:unknown`,
+  never `:pass`; verdicts merge fail > unknown > pass, an `:error` counting as unknown.
+- **Results.** `~/.cache/zent/checks/<preset>/<check>/<started-at>.edn`; "current" is the last
+  full run overlaid by later `--only` runs. `zent verify`, the MCP `verify` tool and the Checks
+  tab go through the same `run!` and the same files.
+- **Read-only, by convention** (not enforced): a check judges, it doesn't act. A scenario that
+  writes is an `:on-demand` one-shot with `:confirm`.
+- The pure parts (`discover`, `parse`, `report`, `current`) are tested without a JVM;
+  `ZENT_TEST_CLOJURE=1` also runs a real check.
+
 ## Prerequisites
 
 | Tool | Why | Install |
