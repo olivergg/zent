@@ -16,6 +16,9 @@
     zent presets                  list presets (* = active, + = yours)
     zent preview <preset>         what a preset would run, and change in what runs now
     zent check                    every preset resolves and validates (a catalog's test)
+    zent verify [<preset> [<check>...]] [--only=<test>,...]
+                                  run a preset's checks (zent.checks) - the daemon's
+                                  preset by default; fails unless all pass
     zent preset save <name> <edn> save a preset of your own (zent.presets),
     zent preset rm <name>         registering it with a running daemon
     zent logs [-f] <component>    a component's output (see zent.logs)
@@ -31,6 +34,7 @@
   keys the user's preset dir (zent.presets/user-dir); :bin is what --detach
   spawns."
   (:require [clojure.string :as str]
+            [zent.checks :as checks]
             [zent.client :as client]
             [zent.daemon :as daemon]
             [zent.engine :as engine]
@@ -235,7 +239,8 @@
         (println "  change nothing")))))
 
 (defn check!
-  "Validates every preset as an apply would; fails if any is refused."
+  "Validates every preset as an apply would, and the presets' checks
+  (zent.checks/problems); fails if any is refused."
   [ctx]
   (let [c (catalog ctx)
         all (sort (keys (:presets c)))
@@ -244,10 +249,43 @@
                             (catch clojure.lang.ExceptionInfo e
                               (println (format "  %s: %s" (name p) (ex-message e)))
                               true)))
-                     all)]
-    (if (seq bad)
-      (fail! (format "%d of %d preset(s) refused" (count bad) (count all)))
-      (println (format "%d preset(s) ok" (count all))))))
+                     all)
+        check-problems (checks/problems c)
+        n-checks (reduce + (map count (vals (:checks c))))]
+    (run! #(println (str "  check " %)) check-problems)
+    (cond
+      (seq bad) (fail! (format "%d of %d preset(s) refused" (count bad) (count all)))
+      (seq check-problems) (fail! (format "%d check problem(s)" (count check-problems)))
+      :else (println (str (format "%d preset(s) ok" (count all))
+                          (when (pos? n-checks) (format ", %d check(s) ok" n-checks)))))))
+
+(defn verify!
+  "Runs `preset`'s checks - the daemon's preset when nil; those named in
+  `check-names` when given, only the `tests` named when given - and prints
+  each result. Fails unless every one passed: :unknown is no pass."
+  [ctx preset check-names tests]
+  (let [c (catalog ctx)
+        preset (or preset (some-> (live) (client/request :get "/api/view") :preset keyword)
+                   (fail! "usage: zent verify <preset> [check...] [--only=test,...] - no daemon to take its preset from"))
+        _ (check-preset! ctx preset)
+        all (get-in c [:checks preset])
+        names (set (map :name all))
+        wanted (if (seq check-names) (set (map keyword check-names)) names)
+        chosen (filterv (comp wanted :name) all)]
+    (when (empty? all) (fail! (format "%s has no checks (checks/%s/)" (name preset) (checks/dir-name preset))))
+    (when-let [unknown (seq (remove names wanted))]
+      (fail! (format "%s: no check %s - its checks: %s" (name preset) (str/join ", " (map name unknown))
+                     (str/join ", " (map (comp name :name) all)))))
+    (let [results (doall (for [{:keys [problem] :as chk} chosen]
+                           (let [r (if problem
+                                     ;; not run: a result judging nothing, :unknown
+                                     (assoc (checks/parse [] 0) :preset preset :check (:name chk) :error problem)
+                                     (checks/run! preset chk tests))]
+                             (run! println (checks/report r))
+                             r)))
+          not-passing (remove #(= :pass (:status %)) results)]
+      (when (seq not-passing)
+        (fail! (format "%d of %d check(s) not passing" (count not-passing) (count results)))))))
 
 (defn save-preset!
   "Validates and saves `text` as the user's preset `preset`, and registers it
@@ -294,8 +332,9 @@
                      (name component)))
       (print-log component (map logs/strip-ansi (logs/tail (keyword component) n))))))
 
-(defn- dispatch [ctx verb args ui?]
+(defn- dispatch [ctx verb args flags]
   (let [[arg arg2] args
+        ui? (flags "--ui")
         need (fn [x what] (or x (fail! (str "usage: zent " verb " " what))))]
     (case verb
       "serve" (serve! ctx nil ui?)
@@ -309,6 +348,8 @@
       "presets" (presets! ctx)
       "preview" (preview! ctx (keyword (need arg "<preset>")))
       "check" (check! ctx)
+      "verify" (verify! ctx (some-> arg keyword) (rest args)
+                        (checks/only (some #(when (str/starts-with? % "--only=") (subs % 7)) flags)))
       "preset" (case arg
                  "save" (save-preset! ctx (keyword (need arg2 "save <name> <edn>"))
                                       (need (nth args 2 nil) "save <name> <edn>"))
@@ -320,7 +361,7 @@
       (if (and verb (contains? (:presets (catalog ctx)) (keyword verb)))
         (apply! ctx (keyword verb))
         (fail! (str (when verb (str "unknown verb or preset: " verb "\n"))
-                    "usage: zent serve|watch|apply|status|stop|reload|reload-code|shutdown|presets|preview|check|preset|logs|attach|mcp|down|version - see zent.cli"))))))
+                    "usage: zent serve|watch|apply|status|stop|reload|reload-code|shutdown|presets|preview|check|verify|preset|logs|attach|mcp|down|version - see zent.cli"))))))
 
 (defn main
   "Runs the `zent` command line `args` against `ctx`."
@@ -330,7 +371,7 @@
     (try
       (if (and (= verb "serve") (flags "--detach"))
         (detach! ctx (flags "--ui"))
-        (dispatch ctx verb operands (flags "--ui")))
+        (dispatch ctx verb operands flags))
       ;; ex-info is how every verb reports a user-facing error (bad preset,
       ;; no daemon, refused config) - anything else is a bug, trace and all
       (catch clojure.lang.ExceptionInfo e

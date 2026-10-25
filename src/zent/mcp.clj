@@ -92,6 +92,14 @@ credentials its catalog entry points at, if it declares any.")
    {:name "reload" :description "Redeploy one running component now."
     :props {:component (prop "string" "component name")} :required ["component"]
     :call (fn [args] (cli/reload! (arg args :component)))}
+   {:name "verify"
+    :description "Run a preset's checks (clojure.test assertions on its running stack, read-only) and report each test, with every failure's message and expected/actual. Fails unless all pass; ? = couldn't judge (an exception, nothing run)."
+    :props {:preset (prop "string" "preset name; omit for the daemon's")
+            :checks {:type "array" :items {:type "string"} :description "check names; omit for all"}
+            :tests {:type "array" :items {:type "string"} :description "only these deftests (e.g. the failing ones)"}}
+    :call (fn [args] (cli/verify! ctx (some-> (arg args :preset :optional? true) keyword)
+                                  (arg args :checks :type :strings :optional? true)
+                                  (arg args :tests :type :strings :optional? true)))}
    {:name "reload_code"
     :description "Reload the daemon's own code (after editing zent), keeping everything it runs."
     :call (fn [_] (cli/reload-code!))}

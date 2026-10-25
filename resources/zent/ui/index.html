@@ -160,7 +160,7 @@
   .rail-toggle:hover { border-color: var(--ink); }
   .rail-toggle .pane { fill: currentColor; }
   .rail-toggle[aria-pressed="false"] .pane { fill: none; }
-  body[data-tab="logs"] .rail-toggle { display: none; }
+  body[data-tab="logs"] .rail-toggle, body[data-tab="checks"] .rail-toggle { display: none; }
 
   /* ------------------------------------------------------------------ shell */
 
@@ -661,8 +661,67 @@
     border: 1px solid transparent; border-radius: 3px;
   }
   .tabs a[aria-current="page"] { border-color: var(--ink); background: var(--card); }
-  body[data-tab="logs"] .shell { display: none; }
+  body[data-tab="logs"] .shell, body[data-tab="checks"] .shell { display: none; }
   body:not([data-tab="logs"]) .logs-view { display: none; }
+  body:not([data-tab="checks"]) .checks-view { display: none; }
+
+  /* -------------------------------------------------------------- checks */
+
+  /* the active preset's checks (zent.checks): a test runner, tree | detail */
+  .tab-badge {
+    display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px;
+    background: var(--madder); color: #fff; font-size: 10.5px; text-align: center;
+  }
+  .tab-badge.ok { background: var(--verdigris); }
+  .checks-view { height: calc(100vh - var(--head)); display: grid; grid-template-columns: minmax(360px, 42%) 1fr; }
+  .checks-view .left { border-right: 1px solid var(--grey); display: flex; flex-direction: column; overflow: auto; }
+  .checks-view .right { overflow: auto; padding: 14px 20px; }
+  .checks-bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; background: var(--card); border-bottom: 1px solid var(--grey); position: sticky; top: 0; z-index: 1; }
+  .checks-bar button, .chk-cmd button {
+    font: inherit; font-size: 11.5px; padding: 3px 10px; border: 1px solid var(--ink);
+    background: var(--linen); color: var(--ink); border-radius: 3px; cursor: pointer;
+  }
+  .checks-bar button:disabled, .chk-cmd button:disabled { opacity: .45; cursor: default; }
+  .checks-bar label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: var(--grey); }
+  .chk { padding: 12px 14px 6px; }
+  .chk-head { display: flex; gap: 8px; align-items: baseline; }
+  .chk-head .name { font-weight: 600; }
+  .chk-meta { color: var(--grey); font-size: 11.5px; margin: 2px 0 4px 22px; }
+  .chk-chips { margin: 2px 0 8px 22px; display: flex; flex-wrap: wrap; gap: 4px; color: var(--grey); }
+  .chk-chips span { border: 1px solid var(--grey); border-radius: 9px; padding: 0 7px; font-size: 10.5px; }
+  .gl { display: inline-block; width: 14px; text-align: center; font-weight: 700; }
+  .st-pass { color: var(--verdigris); } .st-fail { color: var(--madder); }
+  .st-error, .st-unknown { color: var(--weld); } .st-run { color: var(--grey); }
+  ul.chk-tests { list-style: none; margin: 0 0 0 14px; padding: 0; border-left: 1px solid var(--grey); }
+  ul.chk-tests li { display: flex; gap: 8px; align-items: baseline; padding: 3px 8px; cursor: pointer; border-radius: 3px; }
+  ul.chk-tests li:hover { background: var(--card); }
+  ul.chk-tests li[aria-selected="true"] { background: #fff; outline: 1px solid var(--grey); }
+  ul.chk-tests li .n { flex: 1; overflow-wrap: anywhere; }
+  ul.chk-tests li .doc { display: block; color: var(--grey); font-size: 11px; line-height: 1.4; margin-top: 1px; }
+  .chk-doc { white-space: pre-line; color: #5d5f6e; margin: 0 0 12px; max-width: 80ch; }
+  ul.chk-tests li .c { color: var(--grey); font-size: 11.5px; }
+  .chk-problem { margin: 4px 0 8px 22px; color: var(--madder); }
+  .chk-history { margin-top: auto; padding: 10px 14px 14px; border-top: 1px solid var(--grey); }
+  .checks-view h3 { font-family: var(--display); font-weight: 400; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--grey); margin: 0 0 6px; }
+  .chk-runs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chk-runs button { width: 22px; height: 22px; border: 0; border-radius: 3px; color: #fff; font-size: 11px; cursor: pointer; padding: 0; }
+  .chk-runs .pass { background: var(--verdigris); } .chk-runs .fail { background: var(--madder); } .chk-runs .unknown { background: var(--weld); }
+  .chk-runs .partial { opacity: .55; }
+  .chk-runs [aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .chk-detail-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
+  .chk-where { color: var(--grey); margin-bottom: 12px; }
+  .chk-failure { background: var(--card); border: 1px solid var(--grey); border-left: 3px solid var(--madder); border-radius: 3px; padding: 9px 12px; margin-bottom: 10px; }
+  .chk-failure.err { border-left-color: var(--weld); }
+  .chk-failure .msg { font-weight: 600; margin-bottom: 6px; overflow-wrap: anywhere; }
+  .chk-failure dl { display: grid; grid-template-columns: 72px 1fr; gap: 2px 10px; margin: 0; }
+  .chk-failure dt { color: var(--grey); text-align: right; }
+  .chk-failure dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chk-since { margin: 14px 0; padding: 8px 12px; border: 1px dashed var(--grey); border-radius: 3px; }
+  .chk-since .new { color: var(--madder); font-weight: 700; } .chk-since .fixed { color: var(--verdigris); font-weight: 700; }
+  .chk-cmd { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
+  .chk-cmd code { flex: 1; background: #fff; border: 1px solid var(--grey); padding: 4px 8px; border-radius: 3px; font-size: 11.5px; overflow: auto; white-space: nowrap; }
+  .chk-error { white-space: pre-wrap; color: var(--madder); background: var(--card); padding: 8px 12px; border-radius: 3px; }
+  .checks-empty { color: var(--grey); padding: 30px; }
 
   /* a terminal: dark, whatever the dashboard's own palette */
   .term {
@@ -753,6 +812,7 @@
     <nav class="tabs" id="tabs">
       <a href="#graph" data-tab="graph">Graph</a>
       <a href="#logs" data-tab="logs">Logs</a>
+      <a href="#checks" data-tab="checks" id="checks-tab" hidden>Checks<span class="tab-badge" id="checks-badge" hidden></span></a>
     </nav>
     <div class="run" id="run" data-state="idle">
       <span class="run-label"><small id="run-caption">no run</small><span class="preset" id="preset"></span></span>
@@ -813,6 +873,19 @@
       </div>
     </aside>
   </main>
+
+  <section class="checks-view" id="checks-view" aria-label="checks">
+    <div class="left">
+      <div class="checks-bar">
+        <button type="button" id="checks-run-all">&#9654; all</button>
+        <button type="button" id="checks-run-failed">&#9654; failing only</button>
+        <label><input type="checkbox" id="checks-only-failed"> failing only</label>
+      </div>
+      <div id="checks-tree"></div>
+      <div class="chk-history" id="checks-history"></div>
+    </div>
+    <div class="right" id="checks-detail"></div>
+  </section>
 
   <section class="logs-view" id="logs-view" aria-label="logs">
     <div class="logs-bar">
@@ -943,6 +1016,7 @@ function render() {
   if (selected && detailKey !== lastDetailKey) loadDetail(selected);
   lastDetailKey = detailKey;
   renderLogs();
+  checksOnView();
   markBusy();
 }
 
@@ -979,14 +1053,15 @@ function markPreviewing(name) {
     .forEach((row) => { row.dataset.previewing = String(row.querySelector(".preset-name")?.dataset.preset === name); });
 }
 
+const escHtml = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
 /* what applying the previewed preset would do from what runs now (the
    engine's plan-summary); a redeploy's reason is its tooltip */
 function planLine(plan) {
   if (!plan) return "";
-  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const part = (verb, names) => names.length ? verb + " " + names.map(esc).join(", ") : null;
+  const part = (verb, names) => names.length ? verb + " " + names.map(escHtml).join(", ") : null;
   const redeploys = Object.entries(plan.redeploy || {})
-    .map(([n, why]) => '<span title="' + esc(why) + '">' + esc(n) + "</span>");
+    .map(([n, why]) => '<span title="' + escHtml(why) + '">' + escHtml(n) + "</span>");
   const parts = [part("stops", plan.stop), part("keeps warm", plan["keep-warm"]),
                  redeploys.length ? "redeploys " + redeploys.join(", ") : null,
                  part("starts", plan.start)].filter(Boolean);
@@ -1576,23 +1651,217 @@ function writeLogFilter(changes) {
 }
 
 function showTab() {
-  const tab = location.hash.startsWith("#logs") ? "logs" : "graph";
+  const tab = location.hash.startsWith("#logs") ? "logs" : location.hash.startsWith("#checks") ? "checks" : "graph";
   document.body.dataset.tab = tab;
   document.querySelectorAll("#tabs a").forEach((a) => {
     if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   renderLogs();
   if (tab === "logs") readLogFilter();
+  else if (tab === "checks") loadChecks();
   else drawWarp();                                // the loom was hidden: positions are stale
+}
+
+/* ------------------------------------------------------------------------ */
+/* Checks: the active preset's clojure.test checks (zent.checks), shown like
+   an IDE's test runner. GET /api/checks gives each check's results; a run
+   (POST /api/checks/run) streams its output like a log (/api/logs/stream),
+   whose "#zent/check {...}" lines move the tree live - the failures' detail
+   comes with the result, fetched once the run is over.                     */
+/* ------------------------------------------------------------------------ */
+
+const CHECK_GLYPH = { pass: "✓", fail: "✗", error: "!", unknown: "?", run: "…" };
+const checks = { data: null, preset: undefined, sel: {}, runIdx: {}, live: {}, streams: {} };
+
+// a docstring's lines as written (indented continuation lines), for the detail; folded to one for the tree
+const docLines = (d) => String(d).split("\n").map((l) => l.trim()).join("\n");
+const docInline = (d) => docLines(d).replace(/\n/g, " ");
+const hms = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+async function loadChecks() {
+  try {
+    const res = await fetch("/api/checks");
+    if (!res.ok) return;
+    checks.data = await res.json();
+  } catch { return; }
+  for (const c of checks.data.checks) {
+    if (c.running && !checks.streams[c.name]) followCheck(c);
+    // over, and nothing left to read: its result is in the data now
+    if (!c.running && !checks.streams[c.name]) delete checks.live[c.name];
+  }
+  renderChecks();
+  // a run whose stream ended before its result was written: ask again shortly
+  if (checks.data.checks.some((c) => c.running || checks.live[c.name])) setTimeout(loadChecks, 1000);
+}
+
+// the preset changed (a push): its checks are another set
+function checksOnView() {
+  if (view.preset === checks.preset) return;
+  checks.preset = view.preset;
+  checks.sel = {}; checks.runIdx = {};
+  loadChecks();
+}
+
+// What the tree shows: a live run, a run picked in the history, or each test's latest known result
+function shownCheckRun(c) {
+  if (checks.live[c.name]) return checks.live[c.name];
+  const i = checks.runIdx[c.name];
+  return i === undefined ? c.current || c.runs.at(-1) : c.runs[i];
+}
+
+function followCheck(c) {
+  checks.live[c.name] = { tests: [], live: true };
+  const es = new EventSource("/api/logs/stream?" + new URLSearchParams({ c: c.log }));
+  checks.streams[c.name] = es;
+  const end = () => { es.close(); delete checks.streams[c.name]; };
+  es.onmessage = (ev) => {
+    const { l, r } = JSON.parse(ev.data);
+    const live = checks.live[c.name];
+    if (!live) return end();
+    if (r) live.tests = [];
+    for (const text of l) {
+      // EDN, read just enough: the event, the test, a :begin's docstring (EDN string escapes are JSON's)
+      const m = /^#zent\/check \{:event :(\w+)(?:, :test "([^"]*)")?(?:, :doc ("(?:[^"\\]|\\.)*"))?/.exec(text);
+      if (!m) continue;
+      const [, event, name, doc] = m;
+      if (event === "done") { live.done = true; end(); setTimeout(loadChecks, 300); continue; }
+      let t = live.tests.find((x) => x.name === name);
+      if (!t) { t = { name, status: "run", assertions: 0, failures: [] }; live.tests.push(t); }
+      if (doc) { try { t.doc = JSON.parse(doc); } catch { /* shown once the result is fetched */ } }
+      if (event === "pass") t.assertions++;
+      else if (event === "fail") { t.assertions++; t.status = "fail"; }
+      else if (event === "error") t.status = "error";
+      else if (event === "end" && t.status === "run") t.status = "pass";
+      checks.sel[c.name] = name;
+    }
+    renderChecks();
+  };
+  es.onerror = () => { end(); setTimeout(loadChecks, 1000); };
+}
+
+async function runCheck(c, only) {
+  const q = new URLSearchParams({ check: c.name });
+  if (only?.length) q.set("only", only.join(","));
+  const res = await fetch("/api/checks/run?" + q, {
+    method: "POST", headers: { "X-Zent-Token": csrfToken() } });
+  if (!res.ok) { alert(await res.text()); return; }
+  delete checks.runIdx[c.name];
+  followCheck(c);
+  renderChecks();
+}
+
+const checkList = () => checks.data?.checks || [];
+// the check holding the selection, else the first
+const selectedCheck = (list) => list.find((x) => checks.selCheck === x.name) || list[0];
+
+function renderChecks() {
+  const tab = document.getElementById("checks-tab"), badge = document.getElementById("checks-badge");
+  const list = checkList();
+  tab.hidden = !list.length;
+  const bad = list.reduce((n, c) => n + ((c.current || c.runs.at(-1))?.tests || []).filter((t) => t.status !== "pass").length, 0);
+  const running = list.some((c) => checks.live[c.name]);
+  const anyResult = list.some((c) => c.runs.length);
+  badge.hidden = !anyResult && !running;
+  badge.textContent = running ? "…" : bad || "✓";
+  badge.className = "tab-badge" + (bad || running ? "" : " ok");
+  if (document.body.dataset.tab !== "checks") return;
+
+  const tree = document.getElementById("checks-tree"), detail = document.getElementById("checks-detail");
+  const history = document.getElementById("checks-history");
+  if (!list.length) {
+    tree.innerHTML = `<p class="checks-empty">${checks.data?.preset ? "No checks for this preset - checks/&lt;preset&gt;/ in the catalog repo." : "No preset running."}</p>`;
+    detail.innerHTML = history.innerHTML = "";
+    return;
+  }
+  const onlyFailed = document.getElementById("checks-only-failed").checked;
+  document.getElementById("checks-run-all").disabled = running;
+  document.getElementById("checks-run-failed").disabled = running;
+
+  tree.innerHTML = list.map((c) => {
+    const r = shownCheckRun(c);
+    const st = r?.live ? "run" : r?.status || "unknown";
+    const meta = r?.live ? `running ${r.tests.filter((t) => t.status !== "run").length} test(s) done`
+      : !r ? "never run"
+      : `${checks.runIdx[c.name] !== undefined ? "run" : "full run"} ${hms(r["started-at"])}`
+        + (r.only ? " · only " + r.only.join(", ") : "")
+        + (r.overlaid?.length ? " · then " + r.overlaid.map((o) => `${o.only.join(", ")} at ${hms(o["started-at"])}`).join(", ") : "");
+    const sel = checks.sel[c.name];
+    return `<div class="chk" data-check="${escHtml(c.name)}">
+      <div class="chk-head"><span class="gl st-${st}">${CHECK_GLYPH[st]}</span><span class="name">${escHtml(c.name)}</span>
+        <span class="c quiet">${r && !r.live ? `${r.counts.tests} test(s) · ${r.counts.assertions} assertions · ${((r["duration-ms"] || 0) / 1000).toFixed(1)} s` : ""}</span></div>
+      <div class="chk-meta">${c.description ? escHtml(c.description) + "<br>" : ""}${meta}</div>
+      ${c.problem ? `<div class="chk-problem">${escHtml(c.problem)}</div>` : ""}
+      ${c.observes?.length ? `<div class="chk-chips">observes ${c.observes.map((o) => `<span>${escHtml(o)}</span>`).join("")}</div>` : ""}
+      <ul class="chk-tests">${(r?.tests || []).filter((t) => !onlyFailed || t.status !== "pass").map((t) => `
+        <li data-test="${escHtml(t.name)}" aria-selected="${t.name === sel}">
+          <span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span><span class="n">${escHtml(t.name)}${t.doc ? `<span class="doc">${escHtml(docInline(t.doc))}</span>` : ""}</span>
+          <span class="c">${t.at ? `<span class="quiet">${hms(t.at)}</span> ` : ""}${t.status === "run" ? "" : t.failures.length ? t.failures.length + "/" + t.assertions : t.assertions}</span></li>`).join("")}
+      </ul></div>`;
+  }).join("");
+
+  // history and detail
+  const c = selectedCheck(list);
+  const r = shownCheckRun(c);
+  history.innerHTML = c.runs.length ? `<h3>history · ${escHtml(c.name)}</h3><div class="chk-runs">${c.runs.map((x, i) =>
+    `<button type="button" class="${x.status} ${x.only ? "partial" : ""}" data-i="${i}" aria-pressed="${checks.runIdx[c.name] === i}"
+       title="${hms(x["started-at"])} · ${x.status} · ${x.counts.tests} test(s)${x.only ? " · only " + x.only.join(", ") : ""}">${CHECK_GLYPH[x.status]}</button>`).join("")}</div>
+    ${checks.runIdx[c.name] !== undefined ? `<button type="button" class="open-logs" id="checks-latest">back to the latest results</button>` : ""}` : "";
+
+  const t = r && (r.tests.find((x) => x.name === checks.sel[c.name]) || r.tests.find((x) => x.status !== "pass") || r.tests[0]);
+  if (!r || !t) {
+    detail.innerHTML = r?.error ? `<h3>the run couldn't judge</h3><div class="chk-error">${escHtml(r.error)}</div>` : "";
+  } else {
+    checks.sel[c.name] = t.name;
+    // what changed since the full run before the one shown
+    const shownAt = r["started-at"] ?? Infinity;
+    const prev = r.live ? null : [...c.runs].reverse().find((x) => !x.only && x["started-at"] < (t.at ?? shownAt));
+    const before = prev?.tests.find((x) => x.name === t.name);
+    const since = !before ? "" : before.status === t.status ? `unchanged since ${hms(prev["started-at"])} (${CHECK_GLYPH[before.status]} ${before.status})`
+      : t.status === "pass" ? `<span class="fixed">fixed</span> - ${before.status} at ${hms(prev["started-at"])}`
+      : `<span class="new">newly ${t.status === "fail" ? "failing" : t.status}</span> - ${before.status} at ${hms(prev["started-at"])}`;
+    const loc = t.failures[0]?.file ? ` · ${t.failures[0].file}:${t.failures[0].line}` : "";
+    const cmd = `zent verify ${checks.data.preset} ${c.name} --only=${t.name}`;
+    detail.innerHTML = `
+      <div class="chk-detail-head"><span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span>${escHtml(t.name)}</div>
+      ${t.doc ? `<p class="chk-doc">${escHtml(docLines(t.doc))}</p>` : ""}
+      <div class="chk-where">${t.status === "run" ? "running…" : `${t.failures.length ? t.failures.length + " failing of " : ""}${t.assertions} assertion(s)${escHtml(loc)}`}</div>
+      ${t.failures.map((f) => `<div class="chk-failure ${t.status === "error" ? "err" : ""}">
+          <div class="msg">${f.context ? `<span class="quiet">${escHtml(f.context)}</span> ` : ""}${escHtml(f.message)}</div>
+          <dl><dt>expected</dt><dd>${escHtml(f.expected)}</dd><dt>actual</dt><dd>${escHtml(f.actual)}</dd></dl></div>`).join("")}
+      ${r.error ? `<div class="chk-error">${escHtml(r.error)}</div>` : ""}
+      ${since ? `<div class="chk-since"><h3>since the previous full run</h3>${since}</div>` : ""}
+      <div class="chk-cmd"><code>${escHtml(cmd)}</code>
+        <button type="button" id="checks-run-one" ${running ? "disabled" : ""}>&#9654; this test</button>
+        <button type="button" id="checks-copy">copy</button></div>`;
+    document.getElementById("checks-run-one").onclick = () => runCheck(c, [t.name]);
+    document.getElementById("checks-copy").onclick = () => navigator.clipboard?.writeText(cmd);
+  }
+}
+
+function initChecksControls() {
+  document.getElementById("checks-view").addEventListener("click", (e) => {
+    const li = e.target.closest("li[data-test]"), box = e.target.closest(".chk");
+    const run = e.target.closest(".chk-runs button");
+    const current = selectedCheck(checkList());
+    if (li && box) { checks.selCheck = box.dataset.check; checks.sel[box.dataset.check] = li.dataset.test; renderChecks(); }
+    else if (run && current) { checks.runIdx[current.name] = +run.dataset.i; renderChecks(); }
+    else if (e.target.id === "checks-latest" && current) { delete checks.runIdx[current.name]; renderChecks(); }
+  });
+  document.getElementById("checks-only-failed").onchange = renderChecks;
+  // every check of the preset, one after the other would queue on the server: one run each, in parallel
+  document.getElementById("checks-run-all").onclick = () => checkList().forEach((c) => runCheck(c, null));
+  document.getElementById("checks-run-failed").onclick = () => checkList().forEach((c) => {
+    const failing = (shownCheckRun(c)?.tests || []).filter((t) => t.status !== "pass").map((t) => t.name);
+    if (failing.length) runCheck(c, failing);
+  });
 }
 
 /* The token is baked into the page at load (zent.ui.server, a <meta> tag -
    no separate fetch needed) and attached to every htmx-issued write here,
    in one place instead of a per-call header. authorized-write? server-side
    is the actual CSRF defense; this is just how the token gets there. */
-document.body.addEventListener("htmx:configRequest", (e) => {
-  e.detail.headers["X-Zent-Token"] = document.querySelector('meta[name="csrf-token"]')?.content || "";
-});
+function csrfToken() { return document.querySelector('meta[name="csrf-token"]')?.content || ""; }
+document.body.addEventListener("htmx:configRequest", (e) => { e.detail.headers["X-Zent-Token"] = csrfToken(); });
 
 /* Writes are queued: a POST answers {id} at once, the daemon handles the
    command later, and view.done lists that id once it has - in no set order: a
@@ -1847,6 +2116,7 @@ function initLogControls() {
 connect();
 initViewControls();
 initLogControls();
+initChecksControls();
 showTab();
 render();
 addEventListener("resize", () => render());

@@ -271,3 +271,50 @@
       (is (not (allowed? (upgrade {"host" "127.0.0.1:8765"}))))
       (is (not (allowed? (upgrade {"host" "evil.example" "origin" "http://127.0.0.1:8765"}))))
       (is (not (allowed? {:uri "/other" :headers {"host" "127.0.0.1" "origin" "http://127.0.0.1"}}))))))
+
+(defn- post-run
+  "POST /api/checks/run with `query` as Ring passes it: apart from the uri."
+  [query & {:keys [token]}]
+  (let [{:keys [status body]} (server/app {:request-method :post :uri "/api/checks/run" :query-string query
+                                           :headers (cond-> {} token (assoc "x-zent-token" token))})]
+    [status (json/read-str body :key-fn keyword)]))
+
+(deftest checks-endpoints-test
+  (let [dir (str (System/getProperty "java.io.tmpdir") "/zent-server-checks-" (System/nanoTime))
+        result (fn [at only status] (cond-> {:status status :started-at at :preset :full :check :smoke :ns 'full.smoke
+                                             :counts {:tests 1 :assertions 1 :failed 0 :errors 0}
+                                             :tests [{:name "t" :status status :assertions 1 :failures []}]}
+                                      only (assoc :only only)))
+        release (promise)
+        ran (atom [])]
+    (doseq [[at only status] [[1 nil :fail] [2 ["t"] :pass]]]
+      (let [f (java.io.File. (str dir "/full/smoke/" at ".edn"))]
+        (.mkdirs (.getParentFile f))
+        (spit f (pr-str (result at only status)))))
+    (reset! state/catalog (assoc catalog :checks {:full [{:name :smoke :ns 'full.smoke :root "checks"
+                                                          :observes [:db] :description "smoke"}]}))
+    (swap! state/view-state assoc :preset :full)
+    (binding [zent.checks/*dir* dir]
+      (testing "GET /api/checks: the active preset's checks, their runs and each test's latest result"
+        (let [[status body] (get-json "/api/checks")
+              c (first (:checks body))]
+          (is (= 200 status))
+          (is (= ["full" "smoke" ["db"] 2 false "check-full-smoke"]
+                 [(:preset body) (:name c) (:observes c) (count (:runs c)) (:running c) (:log c)]))
+          (is (= [["t" "pass" 2]] (map (juxt :name :status :at) (:tests (:current c)))))))
+      (with-redefs [zent.checks/run! (fn [preset chk tests] (swap! ran conj [preset (:name chk) tests]) @release)]
+        (testing "POST /api/checks/run starts it off the request thread and answers at once"
+          (is (= [200 {:ok true}]
+                 (post-run "check=smoke&only=t" :token "test-token")))
+          (is (true? (:running (first (:checks (second (get-json "/api/checks"))))))))
+        (testing "a second run of the same check is refused while one runs"
+          (is (= 409 (first (post-run "check=smoke" :token "test-token")))))
+        (testing "an unknown check, a bad test name, a missing token: refused"
+          (is (= 404 (first (post-run "check=nope" :token "test-token"))))
+          (is (= 400 (first (post-run "check=smoke&only=x)%20(boom" :token "test-token"))))
+          (is (= 403 (first (post-run "check=smoke")))))
+        (deliver release nil)
+        (testing "once the run is over, the check isn't running any more"
+          (is (some (fn [_] (Thread/sleep 20) (false? (:running (first (:checks (second (get-json "/api/checks")))))))
+                    (range 100)))
+          (is (= [[:full :smoke ["t"]]] @ran)))))))

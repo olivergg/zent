@@ -253,6 +253,8 @@
    [:defaults {:optional true} Defaults]
    [:components [:map-of :keyword [:map [:kind :keyword]]]]
    [:presets [:map-of :keyword [:map-of :keyword [:map-of :keyword :any]]]]
+   ;; found by zent.checks/discover, never written in catalog.edn
+   [:checks {:optional true} [:map-of :keyword [:vector [:map [:name :keyword] [:ns :symbol]]]]]
    [:max-parallel {:optional true} pos-int?]])
 
 (defn validate-catalog!

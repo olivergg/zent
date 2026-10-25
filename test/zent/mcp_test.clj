@@ -63,6 +63,20 @@
 
   (call "delete_preset" {:name "mine"}))
 
+(deftest verify-test
+  (testing "given preset, checks and tests, verify passes them on; a check not passing is a tool error"
+    (let [got (atom nil)]
+      (with-redefs [zent.cli/verify! (fn [_ & args] (reset! got args) (throw (ex-info "1 of 1 check(s) not passing" {})))]
+        (let [{:keys [isError content]} (call "verify" {:preset "full" :checks ["orders"] :tests ["a" "b"]})]
+          (is isError)
+          (is (str/includes? (:text (first content)) "not passing"))
+          (is (= [:full ["orders"] ["a" "b"]] @got))))))
+  (testing "given nothing, the daemon's preset and every check"
+    (let [got (atom nil)]
+      (with-redefs [zent.cli/verify! (fn [_ & args] (reset! got args))]
+        (call "verify" {})
+        (is (= [nil nil nil] @got))))))
+
 (deftest argument-validation-test
   (testing "a missing or mistyped argument is named back to the agent"
     (let [{:keys [isError content]} (call "apply" {})]

@@ -48,11 +48,30 @@ on a PATH entry ahead of Homebrew's.
 ```
 catalog.edn      {:name :acme :defaults {...} :components {...}}  (zent.catalog)
 presets/*.edn    one preset per file, named after it
+checks/          optional: deps.edn ({:paths ["."] ...}) + <preset>/<check>.clj  (zent.checks)
 ```
 
 Plain data, no code and no deps: `zent` runs the catalog repo enclosing the current directory
 (the first parent with a `catalog.edn`, or `$ZENT_CATALOG`) with the engine it was installed
 from. `zent check` validates every preset (a catalog's test).
+
+The one exception is `checks/`: a preset's checks, clojure.test namespaces judging its
+running stack, read-only - each file a check, its deftests the tests, run in a JVM
+`clojure -M` from `checks/` (the [Clojure CLI](https://clojure.org/guides/install_clojure)).
+The directory is the preset's name, munged like a namespace (`my-preset` → `my_preset`), and
+the ns attr-map says what it reads:
+
+```clojure
+(ns my_preset.orders
+  {:zent/observes [:api :db] :zent/description "every order reaches the db"}
+  (:require [clojure.test :refer [deftest is]]))
+```
+
+A result is `:pass`, `:fail` or `:unknown` (it couldn't judge: an exception, nothing run).
+`zent verify [<preset> [<check>...]] [--only=<test>,...]` runs them (MCP: `verify`), the
+dashboard's Checks tab too, live, with each test's latest result and the history; results
+are kept in `~/.cache/zent/checks/`. `zent check` refuses a check whose preset is gone or
+that observes a component its preset doesn't run.
 
 ## Running it
 

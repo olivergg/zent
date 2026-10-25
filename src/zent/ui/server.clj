@@ -10,6 +10,7 @@
             [clojure.string :as str]
             [ring-chez.adapter :as adapter]
             [ring-chez.websocket :as ws]
+            [zent.checks :as checks]
             [zent.compose :as compose]
             [zent.logs :as logs]
             [zent.presets :as presets]
@@ -265,6 +266,53 @@
     (catch Exception e
       (error-response 400 (ex-message e)))))
 
+;; The active preset's checks (zent.checks): read-only, so run straight from
+;; here - on a future, never on the resident loop - one run per check at a time.
+;; Their output streams like a log (/api/logs/stream, checks/log-name).
+
+(defonce ^:private running-checks (atom #{}))
+(def ^:private check-history 20)
+
+(defn- active-checks []
+  (let [preset (some-> (:preset @state/view-state) keyword)]
+    [preset (get-in @state/catalog [:checks preset])]))
+
+(defn- checks-response []
+  (let [[preset checks] (active-checks)]
+    (json-response
+     {:preset preset
+      :checks (for [{cname :name :as c} checks
+                    :let [runs (checks/history preset cname check-history)]]
+                (assoc (select-keys c [:name :description :observes :problem])
+                       :runs runs
+                       :current (checks/current runs)
+                       :running (contains? @running-checks [preset cname])
+                       :log (name (checks/log-name preset cname))))})))
+
+(defn- run-check!
+  "POST /api/checks/run?check=x[&only=a,b]: starts the run and answers at once."
+  [req]
+  (let [[preset checks] (active-checks)
+        wanted (query-param req "check")
+        chk (first (filter #(= wanted (name (:name %))) checks))
+        tests (checks/only (query-param req "only"))
+        k [preset (:name chk)]]
+    (cond
+      (nil? chk) (error-response 404 (format "no check %s in the active preset" wanted))
+      (:problem chk) (error-response 409 (:problem chk))
+      ;; refuses a bad test name before anything starts
+      (not (try (checks/run-cmd chk tests) (catch clojure.lang.ExceptionInfo _ nil)))
+      (error-response 400 "only: test names, comma-separated")
+      (contains? (first (swap-vals! running-checks conj k)) k)
+      (error-response 409 (format "%s is already running" (name (:name chk))))
+      :else
+      (do (future
+            (try (checks/run! preset chk tests)
+                 (catch Exception e
+                   (binding [*out* *err*] (println "check" (name (:name chk)) "failed to run:" (ex-message e))))
+                 (finally (swap! running-checks disj k))))
+          (json-response {:ok true})))))
+
 (defn- resource-page [path]
   {:status 200
    :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -296,6 +344,12 @@
     ;; every write passes here first
     (and (= (:request-method req) :post) (not (authorized-write? req)))
     (forbidden)
+
+    (and (= (:request-method req) :get) (= (:uri req) "/api/checks"))
+    (checks-response)
+
+    (and (= (:request-method req) :post) (= (:uri req) "/api/checks/run"))
+    (run-check! req)
 
     (and (= (:request-method req) :get) (= (:uri req) "/api/view"))
     (json-response (dissoc @state/view-state :events))
