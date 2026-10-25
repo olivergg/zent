@@ -223,15 +223,31 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 /* previewing a preset that isn't running: the whole fabric reads as a
    sketch, not a report - dashed cards, no health colour (nothing IS
    healthy yet, this is a plan) - so it can never be mistaken for the
-   live view at a glance. */
-.loom[data-preview="true"] .node {
+   live view at a glance. Its cards are linen gauze: the live fabric shows
+   through, out of focus, without the two mixing. */
+.loom[data-preview="true"] #levels .node {
   border-style: dashed;
-  background: transparent;
+  background: color-mix(in srgb, var(--card) 80%, transparent);
 }
-.loom[data-preview="true"] .node .actions { display: none; }
+.loom[data-preview="true"] #levels .node .actions { display: none; }
 /* a strip keeps its tint: transparent, it reads as one more dashed box
    rather than part of the card above */
-.loom[data-preview="true"] .node.satellite { background: var(--strip); }
+.loom[data-preview="true"] #levels .node.satellite { background: var(--strip); }
+
+/* ...and the live fabric under it, laid out as it runs but out of focus and
+   faded: what the plan would change, still there. Blur and opacity only -
+   one composited layer; nothing in it takes a click. */
+.levels.ghost {
+  /* centred in the loom's padding box, as the live view sits when shown */
+  position: absolute;
+  inset: 34px 40px 40px;
+  width: fit-content;
+  height: fit-content;
+  filter: blur(4px) saturate(.7);
+  opacity: .32;
+  pointer-events: none;
+}
+.levels.ghost:empty { display: none; }
 
 /* the `display: flex` below only applies while the banner isn't hidden -
    the native [hidden] attribute is display:none by default, but an
@@ -722,17 +738,25 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 }
 .tabs a[aria-current="page"] { border-color: var(--ink); background: var(--card); }
 body[data-tab="logs"] .shell, body[data-tab="checks"] .shell { display: none; }
-/* switching tabs (index.js switchTab): the old one slides out the way you went, the new one in */
-.shell, .logs-view, .checks-view { view-transition-name: tab; }
+/* View Transitions (index.js transit, html[data-vt] while one runs): only
+   what moves is named; the rest of the page swaps in place */
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+/* switching tabs: the old one slides out the way you went, the new one in */
+html:is([data-vt="next"], [data-vt="prev"]) :is(.shell, .logs-view, .checks-view) { view-transition-name: tab; }
 ::view-transition-old(tab) { animation: tab-out-l 200ms cubic-bezier(.55, .06, .68, .19) both; }
 ::view-transition-new(tab) { animation: tab-in-r 360ms cubic-bezier(.215, .61, .355, 1) both; }
-html[data-nav="prev"]::view-transition-old(tab) { animation-name: tab-out-r; }
-html[data-nav="prev"]::view-transition-new(tab) { animation-name: tab-in-l; }
+html[data-vt="prev"]::view-transition-old(tab) { animation-name: tab-out-r; }
+html[data-vt="prev"]::view-transition-new(tab) { animation-name: tab-in-l; }
 @keyframes tab-out-l { to { opacity: 0; transform: translateX(-28px); } }
 @keyframes tab-out-r { to { opacity: 0; transform: translateX(28px); } }
 @keyframes tab-in-r { from { opacity: 0; transform: translateX(28px); } }
 @keyframes tab-in-l { from { opacity: 0; transform: translateX(-28px); } }
+/* live <-> preview: the loom blurs out, the next one comes into focus */
+html[data-vt="morph"] #loom { view-transition-name: loom; }
+::view-transition-old(loom) { animation: loom-out 260ms cubic-bezier(.55, .06, .68, .19) both; }
+::view-transition-new(loom) { animation: loom-in 420ms cubic-bezier(.215, .61, .355, 1) both; }
+@keyframes loom-out { to { opacity: 0; transform: scale(.98); filter: blur(5px); } }
+@keyframes loom-in { from { opacity: 0; transform: scale(1.015); filter: blur(5px); } }
 body:not([data-tab="logs"]) .logs-view { display: none; }
 body:not([data-tab="checks"]) .checks-view { display: none; }
 

@@ -158,22 +158,28 @@ async function previewPreset(name) {
   try {
     const res = await fetch("/api/preview/" + encodeURIComponent(name));
     if (!res.ok) return;
-    previewData = await res.json();
-    previewing = name;
-    renderRun();
-    renderRunToggle();
-    markPreviewing(name);
+    setPreview(name, await res.json());
   } catch {
     /* the click just does nothing - no partial/broken preview state to undo */
   }
 }
 
-function exitPreview() {
-  previewing = null;
-  previewData = null;
-  renderRun();
-  renderRunToggle();
-  markPreviewing(null);
+function exitPreview() { setPreview(null, null); }
+
+// live <-> preview, or one preview to another: the loom blurs out, the next comes into focus
+function setPreview(name, data) {
+  transit("morph", () => { previewing = name; previewData = data; renderRun(); renderRunToggle(); markPreviewing(name); });
+}
+
+/* `update` as a View Transition of `kind` (html's data-vt while it runs, so
+   CSS names and animates only what this kind moves - a name left on, the
+   element would be pulled out of every other transition's snapshot).
+   Composited on the GPU; immediate when motion is reduced or unsupported. */
+function transit(kind, update) {
+  if (!document.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) return update();
+  const root = document.documentElement;
+  root.dataset.vt = kind;
+  document.startViewTransition(update).finished.finally(() => delete root.dataset.vt);
 }
 
 // flags the picker's row of the preset being previewed (null: none)
@@ -245,18 +251,40 @@ function renderRunToggle() {
 
 function renderRun() {
   const host = document.getElementById("levels");
-  const loom = document.getElementById("loom");
-  loom.dataset.preview = String(!!previewing);
+  document.getElementById("loom").dataset.preview = String(!!previewing);
   renderPreviewBanner();
+  if (!previewing) noteChanges(view.components);
 
-  const data = activeData();
-  if (!previewing) noteChanges(data.components);
-  host.innerHTML = "";
   // a preview shows every one of the preset's own components, never
   // filtered by showStopped - nothing in it is "stopped", it just hasn't
   // run yet, so that toggle has no meaning here.
+  const hiddenCount = weave(host, activeData(), showStopped || previewing);
+  // previewing: the live fabric stays under the sketch, out of focus (CSS) - no threads
+  const ghost = document.getElementById("ghost");
+  if (previewing) weave(ghost, view, showStopped); else ghost.replaceChildren();
+
+  if (hiddenCount !== null) {
+    host.innerHTML = hiddenCount
+      ? '<div class="empty-loom"><h2>Nothing shown</h2>' +
+        "<p>" + hiddenCount + " stopped component(s) hidden - " +
+        '<button type="button" class="show-stopped-link">show them</button>.</p></div>'
+      : '<div class="empty-loom"><h2>The loom is empty</h2>' +
+        "<p>Pick a preset from the panel on the right, or bring one up from a terminal with " +
+        "<code>zent &lt;preset&gt;</code> / <code>zent watch &lt;preset&gt;</code>. " +
+        "Components appear here in dependency order as they start.</p></div>";
+    const showLink = host.querySelector(".show-stopped-link");
+    if (showLink) showLink.onclick = () => setShowStopped(true);
+  }
+  drawWarp();
+}
+
+/* Lays `data`'s components out in `host`, level by level - every one when
+   `all`, else not the stopped ones. Returns how many it hid when it laid out
+   none (the caller says why the loom is empty), else null. */
+function weave(host, data, all) {
+  host.replaceChildren();
   const allNames = Object.keys(data.components);
-  const visible = (showStopped || previewing)
+  const visible = all
     ? data.components
     : Object.fromEntries(Object.entries(data.components)
         .filter(([, c]) => c.status !== "down" && c.status !== "off"));
@@ -274,21 +302,7 @@ function renderRun() {
     .map(([name, c]) => [name, { ...c, deps: (c.deps || []).map((d) => hostOf(d, visible) || d)
                                                            .filter((d) => d !== name) }]));
   const levels = levelsOf(layout);
-
-  if (!levels.length) {
-    host.innerHTML = hiddenCount
-      ? '<div class="empty-loom"><h2>Nothing shown</h2>' +
-        "<p>" + hiddenCount + " stopped component(s) hidden - " +
-        '<button type="button" class="show-stopped-link">show them</button>.</p></div>'
-      : '<div class="empty-loom"><h2>The loom is empty</h2>' +
-        "<p>Pick a preset from the panel on the right, or bring one up from a terminal with " +
-        "<code>zent &lt;preset&gt;</code> / <code>zent watch &lt;preset&gt;</code>. " +
-        "Components appear here in dependency order as they start.</p></div>";
-    const showLink = host.querySelector(".show-stopped-link");
-    if (showLink) showLink.onclick = () => setShowStopped(true);
-    drawWarp();
-    return;
-  }
+  if (!levels.length) return hiddenCount;
 
   levels.forEach((names, lvl) => {
     const col = document.createElement("div");
@@ -310,7 +324,7 @@ function renderRun() {
   // innerHTML set by other code (see htmx's docs on manually processing
   // new content).
   htmx.process(host);
-  drawWarp();
+  return null;
 }
 
 /* The one-shot `name` is drawn under, or null: its :attached-to, when that
@@ -359,6 +373,7 @@ function drawWarp() {
   const data = activeData();
   const loom = document.getElementById("loom");
   const svg = document.getElementById("warp");
+  const fabric = document.getElementById("levels");     // not the ghost under a preview
   const box = loom.getBoundingClientRect();
   const w = loom.scrollWidth, h = Math.max(loom.scrollHeight, box.height);
   svg.setAttribute("width", w);
@@ -366,7 +381,7 @@ function drawWarp() {
   svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
 
   const at = {};
-  loom.querySelectorAll(".node").forEach((n) => {
+  fabric.querySelectorAll(".node").forEach((n) => {
     const r = n.getBoundingClientRect();
     at[n.dataset.name] = {
       l: r.left - box.left + loom.scrollLeft,
@@ -394,7 +409,7 @@ function drawWarp() {
   );
 
   // warp: one vertical hairline per level, behind everything
-  loom.querySelectorAll(".level").forEach((col) => {
+  fabric.querySelectorAll(".level").forEach((col) => {
     const r = col.getBoundingClientRect();
     const x = Math.round(r.left + r.width / 2 - box.left + loom.scrollLeft);
     parts.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="#d6d3ca" stroke-width="1"/>`);
@@ -410,10 +425,10 @@ function drawWarp() {
   // a strip already sits on its host: its own dependency threads are hidden,
   // only the ones of components depending on it are drawn - unless it's
   // selected, and even then not the one to its host, which it already hangs from
-  const strips = new Set([...loom.querySelectorAll(".node.satellite")].map((n) => n.dataset.name));
+  const strips = new Set([...fabric.querySelectorAll(".node.satellite")].map((n) => n.dataset.name));
   // the flowing dash is kept to the selected or hovered card's threads: a
   // whole fabric animating keeps the GPU busy for nothing
-  const hovered = loom.querySelector(".node:hover")?.dataset.name;
+  const hovered = fabric.querySelector(".node:hover")?.dataset.name;
   // a hovered, else selected, card's threads stand out - what it waits for
   // in indigo, what waits for it in weld - and every other thread fades back
   const focus = at[hovered] ? hovered : at[selected] ? selected : null;
@@ -421,7 +436,7 @@ function drawWarp() {
   const near = new Set(hovered ? [hovered, ...(data.graph || []).flatMap(([to, from]) =>
     to === hovered ? [from] : from === hovered ? [to] : [])] : []);
   loom.dataset.hovering = String(!!hovered);
-  loom.querySelectorAll(".node").forEach((n) => {
+  fabric.querySelectorAll(".node").forEach((n) => {
     n.dataset.near = String(near.has(n.dataset.name) || near.has(data.components[n.dataset.name]?.["attached-to"]));
   });
   const nowTaut = new Set();
@@ -809,12 +824,11 @@ function writeLogFilter(changes) {
 const TABS = ["graph", "logs", "checks"];
 const tabOf = () => location.hash.startsWith("#logs") ? "logs" : location.hash.startsWith("#checks") ? "checks" : "graph";
 
-// a tab change slides the old tab out the way you went (a View Transition), the new one in
+// a tab change slides the old tab out the way you went, the new one in
 function switchTab() {
   const from = TABS.indexOf(document.body.dataset.tab), to = TABS.indexOf(tabOf());
-  if (from === to || !document.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) return showTab();
-  document.documentElement.dataset.nav = to > from ? "next" : "prev";
-  document.startViewTransition(showTab);
+  if (from === to) return showTab();
+  transit(to > from ? "next" : "prev", showTab);
 }
 
 function showTab() {
