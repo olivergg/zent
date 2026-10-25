@@ -50,17 +50,23 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
   await p.fill('#log-term', ''); await p.dispatchEvent('#log-term', 'input'); await pause(300);
   await click('[data-level="warn"]', 1500);
   await click('[data-level=""]', 300);
+  // 3. judge the running stack: the preset's checks, one failing
+  await click('#checks-tab', 1200);
+  await click('#checks-run-all', 0);
+  await p.waitForSelector('#checks-tree li[data-status="fail"]', { timeout: 60000 });
+  await p.waitForSelector('#checks-run-all:not([disabled])', { timeout: 60000 }); await pause(1200);
+  await click('#checks-tree li[data-status="fail"]', 3000);
   await click('#tabs [data-tab="graph"]', 600);
   await p.keyboard.press('Escape'); await pause(600);
 
-  // 3. preview a switch: what it stops, starts, keeps warm - then make it
+  // 4. preview a switch: what it stops, starts, keeps warm - then make it
   await click('[data-preset="checkout"]', 3000);
   await click('#preview-banner .play', 0);
   await until({ payments: 'external', mailer: 'failed', 'orders-api': 'up' });
   await pause(1500);
   await click(card('mailer') + ' .name', 3000);                      // its branch's build broke
 
-  // 4. switch again: broker isn't needed but :keep-warm, postgres :permanent
+  // 5. switch again: broker isn't needed but :keep-warm, postgres :permanent
   await click(play('browse'), 0);
   await until({ 'catalog-api': 'up', storefront: 'up', broker: 'idle' });
   await pause(1500);

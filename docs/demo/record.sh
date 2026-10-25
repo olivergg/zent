@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Re-records docs/demo.gif: a zent daemon on the pretend catalog (catalog/), in a throwaway
+# Re-records docs/demo.webp: a zent daemon on the pretend catalog (catalog/), in a throwaway
 # $HOME and on its own port - your own daemon and stacks are never touched - driven in headless
-# Chrome (record.js), the video converted to a GIF.
-# Needs: jolt, python3, git, node, ffmpeg, Google Chrome (or CHROME=/path/to/chrome).
+# Chrome (record.js), the video converted to an animated WebP.
+# Needs: jolt, python3, git, node, ffmpeg, img2webp (brew install webp), clojure, Google Chrome (or CHROME=/path/to/chrome).
 set -euo pipefail
 cd "$(dirname "$0")"
 demo=$PWD
@@ -51,9 +51,8 @@ zent serve > serve.log 2>&1 &
 until [ -s "$home/.cache/zent/daemon.edn" ]; do sleep 0.5; done
 
 video=$(node record.js "http://127.0.0.1:$ZENT_PORT/" out)
-ffmpeg -v error -y -ss 0.3 -i "$video" -loop 0 -vf \
-  "fps=6,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
-  ../demo.gif
-# optional: another ~20% off, no visible loss
-if command -v gifsicle >/dev/null; then gifsicle -b -O3 --lossy=30 ../demo.gif; fi
-echo "wrote docs/demo.gif ($(du -h ../demo.gif | cut -f1))"
+# animated WebP, not GIF: the dashboard's motion repaints most of each frame, a quarter the size
+frames=$home/frames && mkdir "$frames"
+ffmpeg -v error -ss 0.3 -i "$video" -vf "fps=8,scale=800:-1:flags=lanczos" "$frames/%04d.png"
+img2webp -loop 0 -lossy -q 60 -m 6 -d 125 "$frames"/*.png -o ../demo.webp >/dev/null
+echo "wrote docs/demo.webp ($(du -h ../demo.webp | cut -f1))"
