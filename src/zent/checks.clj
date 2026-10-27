@@ -12,6 +12,9 @@
   :zent/kind (:invariant, :pseudo-oracle, :metamorphic, :heuristic...) says
   what kind of oracle it is.
 
+  A test may say what it judged, passing or not - shown under it:
+  (clojure.test/do-report {:type :zent/note :note \"63 plug-ins, largest gap 1 min\"}).
+
   A check runs in a JVM `clojure -M` from <catalog>/checks (its deps.edn, with
   :paths [\".\" \"lib\"]): it is the catalog's code, not the engine's - Jolt never
   loads it. clojure.test's own `report` hook prints one EDN event per line, read back
@@ -103,7 +106,8 @@
       shown (fn [x] (cond (string? x) x
                           (instance? Throwable x) (str (.getName (class x)) \": \" (ex-message x)
                                                        (some->> (ex-data x) not-empty pr-str (str \" \")))
-                          :else (some-> x pr-str)))]
+                          :else (some-> x pr-str)))
+      running #(some-> clojure.test/*testing-vars* first meta :name str)]
   (binding [clojure.test/report
             (fn [{t :type :as m}]
               (case t
@@ -113,11 +117,13 @@
                 :end-test-var
                 (emit {:event :end :test (-> m :var meta :name str)})
                 (:pass :fail :error)
-                (emit (cond-> {:event t :test (some-> clojure.test/*testing-vars* first meta :name str)}
+                (emit (cond-> {:event t :test (running)}
                         (not= :pass t)
                         (merge {:message (shown (:message m)) :expected (pr-str (:expected m))
                                 :actual (shown (:actual m)) :file (:file m) :line (:line m)
                                 :context (not-empty (clojure.test/testing-contexts-str))})))
+                :zent/note
+                (emit {:event :note :test (running) :note (shown (:note m))})
                 nil))]
     (clojure.test/test-vars %2$s))
   (emit {:event :done})
@@ -162,6 +168,7 @@
                                      (:doc e) (assoc-in [i :doc] (:doc e))
                                      (:kind e) (assoc-in [i :kind] (:kind e)))
                             :end (assoc-in acc [i :done?] true)
+                            :note (update-in acc [i :notes] (fnil conj []) (:note e))
                             :pass (update-in acc [i :assertions] inc)
                             :fail (-> acc (update-in [i :assertions] inc) (update-in [i :failures] conj detail)
                                       (update-in [i :status] #(if (= :error %) % :fail)))
@@ -196,9 +203,11 @@
             (:assertions counts) (/ (or duration-ms 0) 1000.0))]
    (when only [(str "  only: " (str/join ", " only))])
    (when error (map #(str "  | " %) (str/split-lines error)))
-   (for [{:keys [name status assertions failures doc kind]} tests
+   (for [{:keys [name status assertions failures doc kind notes]} tests
          line (concat [(format "  %s %s%s  %d" (glyph status) name (if kind (str " [" (clojure.core/name kind) "]") "")
                                assertions)]
+                      ;; what the test judged, passing or not
+                      (map #(str "      · " %) (mapcat str/split-lines notes))
                       ;; the why of a test, where it matters: when it doesn't pass
                       (when (and doc (not= :pass status))
                         (map #(str "      # " (str/trim %)) (str/split-lines doc)))

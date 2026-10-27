@@ -1024,6 +1024,7 @@ function renderChecks() {
       <div class="chk-detail-head"><span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span>${escHtml(t.name)}</div>
       ${t.doc ? `<p class="chk-doc" data-status="${t.status}">${escHtml(docLines(t.doc))}</p>` : ""}
       <div class="chk-where">${t.status === "run" ? "running…" : `${t.failures.length ? t.failures.length + " failing of " : ""}${t.assertions} assertion(s)${escHtml(loc)}`}</div>
+      ${t.notes?.length ? `<div class="chk-notes"><h3>what it judged</h3><ul>${t.notes.map((n) => `<li>${escHtml(n)}</li>`).join("")}</ul></div>` : ""}
       ${t.failures.map((f) => `<div class="chk-failure ${t.status === "error" ? "err" : ""}">
           <div class="msg">${f.context ? `<span class="quiet">${escHtml(f.context)}</span> ` : ""}${escHtml(f.message)}</div>
           <dl><dt>expected</dt><dd>${escHtml(f.expected)}</dd><dt>actual</dt><dd>${escHtml(f.actual)}</dd></dl></div>`).join("")}

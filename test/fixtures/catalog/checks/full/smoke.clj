@@ -5,7 +5,9 @@
   (:require [clojure.test :refer [deftest is testing]]
             [fixture.helpers :as h]))
 
-(deftest ^{:doc "One equals one." :zent/kind :invariant} passes (is (= (h/one) 1)) (is true))
+(deftest ^{:doc "One equals one." :zent/kind :invariant} passes
+  (is (= (h/one) 1)) (is true)
+  (clojure.test/do-report {:type :zent/note :note "2 assertions"}))
 
 (deftest ^{:doc "One equals two,\n  on two lines."} fails (testing "ctx" (is (= 1 2) [:label "x"])))
 

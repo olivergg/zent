@@ -102,7 +102,9 @@ they assert.
 - **Read-only, by convention** (not enforced): a check judges, it doesn't act. One that writes
   says `:zent/writes true`: `verify` without check names skips it, naming it runs it, the
   dashboard confirms first and its "run all" leaves it out. A deftest's `:zent/kind` reaches
-  the result (`:begin` event) and the display; zent gives it no meaning.
+  the result (`:begin` event) and the display; zent gives it no meaning. A
+  `(do-report {:type :zent/note :note s})` from a test is a `:note` event, kept in the test's `:notes` and
+  shown under it, passing or not.
 - The pure parts (`discover`, `parse`, `report`, `current`) are tested without a JVM;
   `ZENT_TEST_CLOJURE=1` also runs a real check.
 

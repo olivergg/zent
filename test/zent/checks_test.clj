@@ -108,6 +108,14 @@
   (testing "given a test that failed then died, the failure stands"
     (is (= [:pass :fail] (map :status (:tests (checks/parse (take 7 real-run) 1)))))
     (is (= :fail (:status (checks/parse (take 7 real-run) 1)))))
+  (testing "given notes, each under its test, in order - on a passing test too"
+    (is (= [["passes" ["63 plug-ins" "largest gap 1 min"]] ["fails" nil]]
+           (map (juxt :name :notes)
+                (:tests (checks/parse (concat (take 2 real-run)
+                                              ["#zent/check {:event :note, :test \"passes\", :note \"63 plug-ins\"}"
+                                               "#zent/check {:event :note, :test \"passes\", :note \"largest gap 1 min\"}"]
+                                              (drop 2 (take 8 real-run)))
+                                      0))))))
   (testing "given a run that printed nothing (ns didn't load), :unknown with its exit"
     (is (= {:status :unknown :exit 1 :incomplete true :tests []
             :counts {:tests 0 :assertions 0 :failed 0 :errors 0}}
@@ -128,6 +136,16 @@
             "      expected: nil"
             "        actual: clojure.lang.ExceptionInfo: kaput"]
            (checks/report (assoc (checks/parse real-run 0) :preset :full :check :smoke :duration-ms 1234)))))
+  (testing "given a passing test's notes, they show under it, a line each"
+    (is (= ["✓ full/smoke  pass - 1 test(s), 1 assertion(s), 0.0 s"
+            "  ✓ passes [invariant]  1"
+            "      · 63 plug-ins"
+            "      · largest gap 1 min"
+            "      · on two lines"]
+           (checks/report {:preset :full :check :smoke :status :pass
+                           :counts {:tests 1 :assertions 1 :failed 0 :errors 0}
+                           :tests [{:name "passes" :status :pass :assertions 1 :kind :invariant :doc "One."
+                                    :failures [] :notes ["63 plug-ins" "largest gap 1 min\non two lines"]}]}))))
   (testing "given a run that couldn't start, its stderr and the tests it was limited to"
     (is (= ["? full/smoke  unknown - 0 test(s), 0 assertion(s), 0.0 s" "  only: fails" "  | Syntax error"]
            (checks/report (assoc (checks/parse [] 1) :preset :full :check :smoke :only ["fails"]
@@ -167,7 +185,8 @@
       (is (= [["passes" :pass "One equals one." :invariant] ["fails" :fail "One equals two,\n  on two lines." nil]
               ["throws" :error nil nil]]
              (map (juxt :name :status :doc :kind) (:tests r))))
-      (is (= "clojure.lang.ExceptionInfo: kaput" (-> r :tests (nth 2) :failures first :actual))))))
+      (is (= "clojure.lang.ExceptionInfo: kaput" (-> r :tests (nth 2) :failures first :actual)))
+      (is (= [["2 assertions"] nil nil] (map :notes (:tests r))) "a :zent/note reported by the test"))))
 
 (deftest verify-test
   (let [ctx {:catalog #(catalog/load-dir fixture) :preset-dir (tmp-dir)}

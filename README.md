@@ -72,7 +72,9 @@ A check is read-only; one that writes (a scenario: it acts, then asserts) says
 `:zent/writes true` in its attr-map, and runs only when named (`zent verify <preset> <check>`,
 the dashboard asking first) - never with the preset's other checks. A deftest's
 `:zent/kind` (`:invariant`, `:pseudo-oracle`, `:metamorphic`, `:heuristic`, ...) says what
-kind of oracle it is, shown next to it.
+kind of oracle it is, shown next to it. A test may also say what it judged, passing or not -
+`(clojure.test/do-report {:type :zent/note :note "63 plug-ins, largest gap 1 min"})`, shown
+under it in `zent verify` and the Checks tab.
 
 Code several checks share goes in `checks/lib/`, on the `:paths` (`lib/acme/db.clj` is
 `acme.db`); discovery skips it.
