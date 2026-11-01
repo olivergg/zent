@@ -16,6 +16,7 @@
             [zent.presets :as presets]
             [zent.schema :as schema]
             [zent.secrets :as secrets]
+            [zent.source :as source]
             [zent.ui.logstream :as logstream]
             [zent.ui.render :as render]
             [zent.ui.state :as state]))
@@ -232,11 +233,15 @@
       (json-response
        {:preset preset-name
         ;; :source-env too: what a one-shot will read is the point of looking first
-        :components (with-cards (into {} (map (fn [[k c]]
-                                                [k (cond-> (assoc c :preview? true)
-                                                     (:source-env (resolved k))
-                                                     (assoc :source-env (state/source-env-view (resolved k))))]))
-                                      (:components preview)))
+        ;; and each checkout's git, read now (no fetch, in parallel): a wrong branch, a delay or uncommitted
+        ;; files show before applying, when they're cheap to fix
+        :components (with-cards (into {} (pmap (fn [[k c]]
+                                                 (let [cfg (resolved k)]
+                                                   [k (cond-> (assoc c :preview? true :preview-of (name preset-name))
+                                                        (:source-env cfg) (assoc :source-env (state/source-env-view cfg))
+                                                        (:repo cfg) (assoc :source (source/describe cfg)
+                                                                           :git (source/git-status (source/checkout-dir cfg))))]))
+                                               (:components preview))))
         :graph (:graph preview)
         :informational (:informational preview)
         :plan (when-let [f @state/planner] (f preset-name))}))
@@ -407,8 +412,12 @@
     ;; a component's git checkout, not what runs: done here, at once (zent.source/rebase!) - the card
     ;; then shows ≠ reload
     (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/rebase/"))
-    (let [n (subs (:uri req) (count "/api/rebase/"))]
-      (if-let [{:keys [ok message]} (state/rebase! (keyword n))]
+    (let [n (subs (:uri req) (count "/api/rebase/"))
+          ;; from a preview: the component as that preset resolves it, not as the applied one does
+          previewed (some->> (:query-string req) (re-find #"(?:^|&)preset=([^&]+)") second
+                             (#(java.net.URLDecoder/decode ^String % "UTF-8")) keyword)]
+      (if-let [{:keys [ok message]} (state/rebase! (keyword n)
+                                                   (when previewed (get (compose/resolve-preset @state/catalog previewed) (keyword n))))]
         (if ok (json-response {:ok true :message message}) (error-response 409 message))
         (error-response 404 (str n ": no checkout in the preset"))))
 

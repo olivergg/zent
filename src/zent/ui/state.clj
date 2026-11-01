@@ -240,9 +240,10 @@
 
 (defn rebase!
   "zent.source/rebase! on `k`'s checkout, then re-reads its :git (the card shows ≠ reload: the disk moved
-  on from what runs). nil when `k` has no repo in the preset."
-  [k]
-  (let [cfg (get @described k)]
+  on from what runs). `cfg`: `k` as a previewed preset resolves it, else the applied one's. nil when `k`
+  has no repo there."
+  [k & [cfg]]
+  (let [cfg (or cfg (get @described k))]
     (when (:repo cfg)
       (let [r (source/rebase! (source/checkout-dir cfg) (boolean (:worktree (source/describe cfg))))]
         (try (set-git! k cfg) (catch Exception e (println (format "[%s] git refresh failed: %s" k (ex-message e)))))

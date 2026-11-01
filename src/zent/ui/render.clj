@@ -115,7 +115,7 @@
   :branch - without one, the main clone runs as it is, whatever its branch; :wt? in its own worktree;
   :lose? commits that worktree's next deploy (reset --hard) drops; :stale? running, but the disk moved
   on from the commit deployed. Its counts are never nil: 0 when git didn't tell."
-  [{:keys [git source wanted-branch deployed-sha status]}]
+  [{:keys [git source wanted-branch deployed-sha status preview-of]}]
   (when-let [{:keys [branch sha base ahead] :as git} (when git (merge-with #(or %2 %1) {:behind 0 :ahead 0 :dirty 0} git))]
     (let [wt? (boolean (:worktree source))]
       (assoc git
@@ -125,7 +125,8 @@
              :wt? wt?
              :lose? (boolean (and wt? (pos? ahead)))
              :stale? (boolean (and deployed-sha sha (running? status) (not= deployed-sha sha)))
-             :deployed-sha deployed-sha))))
+             :deployed-sha deployed-sha
+             :preview-of preview-of))))
 
 (defn short-branch
   "A branch as a card can show it: no feature/, bug/... prefix, cut in the middle - a ticket number
@@ -171,12 +172,12 @@
   (red when not the preset's :branch, dashed in a worktree), where the code comes from (origin: a
   worktree reset on deploy; local: the clone as it is), then each count with its word - each piece
   with its fact on hover."
-  [cname {:keys [branch sha base behind ahead pushed dirty wanted-branch default? off? wt? lose? stale?] :as chip} now]
+  [cname {:keys [branch sha base behind ahead pushed dirty wanted-branch default? off? wt? lose? stale? preview-of] :as chip} now]
   (let [facts (git-facts chip now)
         span (fn [cls fact body] (str "<span class=\"" cls "\" title=\"" (str/replace (esc (facts fact fact)) "\n" "&#10;") "\">" body "</span>"))
         rebase (when (and (pos? behind) (not (source/rebase-refusal chip wt?)))
                  (str "<button type=\"button\" class=\"act rebase\" title=\"Fetch, then rebase " (esc branch) " onto origin/"
-                      (esc base) " if nothing conflicts\" hx-post=\"/api/rebase/" (esc (name cname))
+                      (esc base) " if nothing conflicts\" hx-post=\"/api/rebase/" (esc (name cname)) (when preview-of (str "?preset=" (esc preview-of)))
                       "\" hx-swap=\"none\" hx-disabled-elt=\"this\" hx-confirm=\""
                       (esc (str "Rebase " branch " onto origin/" base "?"
                                 (when pushed (str " It is on origin: push --force-with-lease afterwards."))))
@@ -241,7 +242,13 @@
        "<span class=\"permanent\" title=\"Permanent: stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">&#8734;</span>")
      "</span>"
      (facts c cd-title)
-     (when chip (git-row cname chip (System/currentTimeMillis)))
+     (if chip
+       (git-row cname chip (System/currentTimeMillis))
+       ;; a preview's :branch never deployed: its worktree doesn't exist yet
+       (when (and (:preview? c) (:worktree source) (:wanted-branch c))
+         (str "<span class=\"git\"><span class=\"branch wt\" title=\"" (esc (:wanted-branch c)) "\">&#9095; "
+              (esc (short-branch (:wanted-branch c))) "</span><span class=\"from origin\" title=\"its worktree is created at apply, from origin/"
+              (esc (:wanted-branch c)) "\">&#10227; origin, created at apply</span></span>")))
      (service-rows c)
      (source-env-rows source-env)
      (when (and (links-visible? status) (seq links))

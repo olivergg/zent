@@ -274,6 +274,14 @@
       (is (str/includes? (card {}) "hx-post=\"/api/rebase/svc\""))
       (is (str/includes? (card {}) "hx-confirm=\"Rebase feature/z onto origin/main? It is on origin: push --force-with-lease afterwards.\""))
       (is (not (str/includes? (card {:dirty 1}) "act rebase")) "uncommitted files: no button")))
+  (testing "in a preview: the rebase names its preset, a :branch never deployed shows its worktree to come"
+    (is (str/includes? (render/component-card :svc {:kind :process :status :off :preview? true :preview-of "mine"
+                                                    :source {:dir "/w/svc"}
+                                                    :git {:sha "abc" :branch "feature/z" :base "main" :behind 2}})
+                       "hx-post=\"/api/rebase/svc?preset=mine\""))
+    (is (str/includes? (render/component-card :svc {:kind :process :status :off :preview? true :wanted-branch "feature/new"
+                                                    :source {:dir "/wt/svc" :worktree "/wt/svc"}})
+                       "&#10227; origin, created at apply")))
   (testing "on the default branch, clean and up to date: no row, the facts still on `cd`'s hover"
     (let [html (render/component-card :svc {:kind :process :status :up :source {:dir "/w/svc"}
                                             :git {:sha "abc" :branch "main" :base "main" :behind 0 :ahead 0 :dirty 0}})]

@@ -178,6 +178,13 @@ async function previewPreset(name) {
 
 function exitPreview() { setPreview(null, null); }
 
+// the previewed preset read again in place (a rebase from it moved a checkout)
+async function refreshPreview() {
+  if (!previewing) return;
+  const res = await fetch("/api/preview/" + encodeURIComponent(previewing));
+  if (res.ok) { previewData = await res.json(); renderRun(); }
+}
+
 // live <-> preview, or one preview to another: the loom blurs out, the next comes into focus
 function setPreview(name, data) {
   transit("morph", () => { previewing = name; previewData = data; renderRun(); renderRunToggle(); markPreviewing(name); });
@@ -1161,7 +1168,8 @@ document.body.addEventListener("htmx:afterRequest", (e) => {
   try { reply = JSON.parse(e.detail.xhr.responseText); id = reply.id; } catch { /* not a queued write */ }
   // a rebase answers at once, done or refused: say which, the undo command included
   if (path.startsWith("/api/rebase/") && reply) {
-    const name = path.slice("/api/rebase/".length);
+    const name = path.slice("/api/rebase/".length).split("?")[0];
+    if (e.detail.successful) refreshPreview();
     toast(e.detail.successful ? "up" : "failed", (e.detail.successful ? "rebased " : "not rebased: ") + name,
           reply.message || reply.error, name);
   }
