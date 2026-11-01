@@ -176,8 +176,8 @@
           (is (= (str "git -C " wt " status") (:hint (ex-data e))))
           (is (= head (git! wt "rev-parse" "HEAD"))))))
     (testing "given one prune can't read, then kept, saying why"
-      (let [entry {:path "/wt/x" :clone clone :dirty 0 :unreachable nil}]
-        (is (= {:removed [] :kept [[entry "can't tell what it holds"]]} (branch/prune! [entry] {})))))))
+      (let [entry {:path "/wt/x" :clone clone :repo "clone" :dirty 0 :unreachable nil}]
+        (is (= {:removed [] :kept [[entry "can't tell what it holds"]]} (branch/prune! [entry] {} #{"clone"})))))))
 
 (deftest worktrees-prune-test
   (let [{:keys [clone]} (repos)
@@ -193,8 +193,13 @@
         (testing "given three worktrees, then each with its clone, commit and what's at risk"
           (is (= [["clone" 0] ["clone" 1] ["clone" 0]] (map (juxt :repo :dirty) entries)) "the repo: its clone's dir")
           (is (every? :head entries)))
+        (testing "given another catalog's repos, then all kept, clean and unused or not"
+          (let [{:keys [removed kept]} (branch/prune! entries {} #{"elsewhere"})]
+            (is (empty? removed))
+            (is (= #{"repo clone isn't in this catalog"} (set (map second kept))))
+            (is (every? #(.exists (java.io.File. ^String (:path %))) entries))))
         (testing "given one used by a preset and one dirty, then prune removes only the third"
-          (let [{:keys [removed kept]} (branch/prune! entries {used #{:mine}})]
+          (let [{:keys [removed kept]} (branch/prune! entries {used #{:mine}} #{"clone"})]
             (is (= [(branch/worktree-path "repo" "a")] (map :path removed)))
             (is (= #{"used by mine" "1 uncommitted file(s)"} (set (map second kept))))
             (is (not (.exists (java.io.File. (branch/worktree-path "repo" "a")))))

@@ -134,12 +134,14 @@
            (when clone (at-risk path)))))
 
 (defn prune!
-  "Removes the `entries` (worktrees') no preset uses - `users`: {path #{preset}} - and that hold
-  nothing at-risk would lose, through the main clone's `git worktree remove`, then `worktree prune`;
-  a local test's ref (test-ref) at its HEAD goes with it. {:removed [entry] :kept [[entry why]]}."
-  [entries users]
-  (reduce (fn [acc {:keys [path clone dirty unreachable] :as e}]
+  "Removes the `entries` (worktrees') of `repos` - the root is the machine's, another catalog's stay -
+  no preset uses - `users`: {path #{preset}} - and that hold nothing at-risk would lose, through the
+  main clone's `git worktree remove`, then `worktree prune`; a local test's ref (test-ref) at its HEAD
+  goes with it. {:removed [entry] :kept [[entry why]]}."
+  [entries users repos]
+  (reduce (fn [acc {:keys [path clone repo dirty unreachable] :as e}]
             (let [why (cond (nil? clone) "not a git worktree"
+                            (not (contains? repos repo)) (str "repo " repo " isn't in this catalog")
                             (seq (get users path)) (str "used by " (str/join ", " (map name (sort (get users path)))))
                             (not (and dirty unreachable)) "can't tell what it holds"
                             (pos? dirty) (str dirty " uncommitted file(s)")

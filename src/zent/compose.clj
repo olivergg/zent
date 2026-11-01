@@ -142,6 +142,11 @@
     (doto (into {} (map (fn [[k cfg]] [k (pin-sources k cfg resolved components defaults)])) resolved)
       refuse-split-worktrees!)))
 
+(defn catalog-repos
+  "The repos `catalog`'s components run or read, a :source-env's included."
+  [catalog]
+  (set (keep :repo (mapcat #(cons % (vals (:source-env %))) (vals (:components catalog))))))
+
 (defn worktree-users
   "{:users {worktree-path #{preset}} :unresolved #{preset}}: the worktrees each of `catalog`'s presets
   runs from, a :source-env's included, and the presets that don't resolve - which may use any."

@@ -189,6 +189,12 @@
     (testing "a :source-env carries its source's :from"
       (is (= :local (get-in (resolve [:seed :api {:branch "x" :from :local}]) [:seed :source-env "API" :from]))))))
 
+(deftest catalog-repos-test
+  (testing "the components' repos, and those their :source-env reads directly"
+    (is (= #{"db" "api" "ui"} (compose/catalog-repos catalog)))
+    (is (= #{"seed" "tools"}
+           (compose/catalog-repos {:components {:s {:repo "seed" :source-env {"T" {:repo "tools"} "D" {:component :x}}}}})))))
+
 (deftest worktree-users-test
   (testing "given presets on branches, then each worktree with the presets using it, a broken preset named apart"
     (let [cat (-> catalog

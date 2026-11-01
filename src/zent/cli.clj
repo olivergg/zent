@@ -74,8 +74,9 @@
    {:verb "worktrees" :group "Everyday" :args "[prune]"
     :doc "list zent's :branch worktrees; prune removes the unused, clean ones"
     :more ["Each with its repo, branch, commit, uncommitted files, commits on no branch, and the"
-           "presets running it. prune keeps any a preset uses, a component runs from or that holds work,"
-           "saying why; it refuses to run when a preset doesn't resolve or no daemon answers for the session."]
+           "presets running it. prune keeps any of a repo not in this catalog, a preset uses, a component"
+           "runs from or that holds work, saying why; it refuses to run when a preset doesn't resolve or no"
+           "daemon answers for the session."]
     :see ["pull"]}
    {:verb "stop" :group "Everyday" :args "[<component>...]"
     :doc "stop just these, or all but :permanent components"
@@ -345,7 +346,8 @@
   "Lists zent's worktrees (zent.branch/worktrees) and the presets using each; with `prune?`, removes
   the ones branch/prune! may, unless prune-refusal says it can't tell."
   [ctx prune?]
-  (let [{:keys [users unresolved]} (compose/worktree-users (catalog ctx))
+  (let [c (catalog ctx)
+        {:keys [users unresolved]} (compose/worktree-users c)
         entries (branch/worktrees)
         presets #(str/join "," (map name (sort (get users (:path %)))))]
     (cond
@@ -354,7 +356,7 @@
                (when-let [why (prune-refusal unresolved (:handles (session/read-session session/default-path)) d)]
                  (fail! why))
                (let [running (when d (running-worktrees (:components (client/request d :get "/api/view"))))
-                     {:keys [removed kept]} (branch/prune! entries (merge-with into users running))]
+                     {:keys [removed kept]} (branch/prune! entries (merge-with into users running) (compose/catalog-repos c))]
                  (doseq [{:keys [path]} removed] (println "removed" path))
                  (doseq [[{:keys [path]} why] kept] (println "kept   " path "-" why))))
       :else (do (println (format "%-24s %-30s %-8s %5s %9s  %s" "REPO" "BRANCH" "HEAD" "DIRTY" "NO-BRANCH" "PRESETS / PATH"))
