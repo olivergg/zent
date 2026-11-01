@@ -183,6 +183,14 @@
       (is ok message)
       (is (= (git! clone "rev-parse" "origin/master") (git! clone "merge-base" "HEAD" "origin/master")))
       (is (= "feature" (git! clone "rev-parse" "--abbrev-ref" "HEAD")))))
+  (testing "given other branches on origin, then only the default one is fetched, nothing pruned"
+    (let [clone (repos "g.txt")
+          other (str (.getParent (File. clone)) "/other")]
+      (git! other "push" "--quiet" "origin" "master:gone") (git! clone "fetch" "--quiet" "origin")
+      (git! other "push" "--quiet" "origin" "master:new") (git! other "push" "--quiet" "origin" "--delete" "gone")
+      (is (:ok (source/rebase! clone false)))
+      (is (not (clojure.string/blank? (git! clone "rev-parse" "--verify" "-q" "origin/gone"))) "not pruned")
+      (is (not (zero? (:exit (zent.shell/sh! ["git" "-C" clone "rev-parse" "--verify" "-q" "origin/new"])))) "not fetched")))
   (testing "given a conflict, then nothing moves"
     (let [clone (repos "f.txt")
           before (git! clone "rev-parse" "HEAD")

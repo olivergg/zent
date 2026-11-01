@@ -138,14 +138,16 @@
         (not (pos? (or behind 0))) (str "already on origin/" base)))
 
 (defn rebase!
-  "Fetches origin, then rebases `dir`'s branch onto origin/<default branch> - only when rebase-refusal
-  has nothing against it and merge-tree sees no conflict; a rebase that stops anyway is aborted.
-  {:ok true :message} or {:ok false :message}: what happened, or why not."
+  "Fetches origin's default branch - that one only, no prune: no other origin/* ref moves - then rebases
+  `dir`'s branch onto it, only when rebase-refusal has nothing against it and merge-tree sees no
+  conflict; a rebase that stops anyway is aborted. {:ok true :message} or {:ok false :message}: what
+  happened, or why not."
   [dir worktree?]
-  (let [fetch (shell/sh! ["git" "-C" dir "fetch" "--quiet" "origin"])
+  (let [fetch (when-let [base (:base (git-status dir))]
+                (shell/sh! ["git" "-C" dir "fetch" "--quiet" "--no-prune" "origin" base]))
         {:keys [branch base behind pushed] :as st} (git-status dir)
         onto (str "origin/" base)
-        why (cond (not (zero? (:exit fetch))) (str "git fetch failed: " (str/trim (str (:err fetch))))
+        why (cond (and fetch (not (zero? (:exit fetch)))) (str "git fetch failed: " (str/trim (str (:err fetch))))
                   (nil? st) (str dir " isn't a checkout")
                   :else (or (rebase-refusal st worktree?)
                             (when-not (zero? (:exit (shell/sh! ["git" "-C" dir "merge-tree" "--write-tree" "--quiet" onto "HEAD"])))
