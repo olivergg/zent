@@ -1155,10 +1155,11 @@ function markBusy() {
   for (const [id, name] of rebases) {
     if (!done.has(id)) continue;
     rebases.delete(id);
-    const error = view["command-errors"]?.[id];
-    if (!error) refreshPreview();
-    toast(error ? "failed" : "up", (error ? "not rebased: " : "rebased ") + name,
-          error || view["command-messages"]?.[id], name);
+    const message = view["command-messages"]?.[id];
+    if (message) { refreshPreview(); toast("up", "rebased " + name, message, name); continue; }
+    // neither means no job ran it: a shutdown took it, or a daemon older than :job
+    toast("failed", "not rebased: " + name,
+          view["command-errors"]?.[id] || "the daemon didn't run it - restart it and try again", name);
   }
   document.querySelectorAll("[hx-post]").forEach((b) => {
     b.dataset.busy = String(pending.has(b.getAttribute("hx-post")));

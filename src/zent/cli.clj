@@ -306,14 +306,20 @@
     (check-components! d [component])
     (run-command! d (str "/api/pull/" (name component)))))
 
+(defn rebase-message
+  "What rebase command `id` (its key in `view`) did, or throws why not: done with neither message nor
+  error means no job ran it - a shutdown took it, or a daemon older than :job."
+  [view id]
+  (or (get-in view [:command-messages id])
+      (fail! (or (get-in view [:command-errors id])
+                 "the daemon didn't run it - `zent shutdown`, then `zent apply <preset>`, and try again"))))
+
 (defn rebase! [component]
   (let [d (daemon!)]
     (check-components! d [component])
     (let [queued (client/request d :post (str "/api/rebase/" (name component)))
-          view (client/await! d queued print-change)
-          id (keyword (str (:id queued)))]
-      (when-let [error (get-in view [:command-errors id])] (fail! error))
-      (println (get-in view [:command-messages id])))))
+          view (client/await! d queued print-change)]
+      (println (rebase-message view (keyword (str (:id queued))))))))
 
 (defn prune-refusal
   "Why `worktrees prune` can't tell what's unused, or nil: `unresolved` presets may use any worktree,

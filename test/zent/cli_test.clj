@@ -11,6 +11,15 @@
 
 (defn- run [& args] (with-out-str (cli/main ctx args)))
 
+(deftest rebase-message-test
+  (testing "given a message, then it; given an error, then it's thrown"
+    (is (= "rebased, undo: x" (cli/rebase-message {:command-messages {:7 "rebased, undo: x"}} :7)))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"2 uncommitted"
+                          (cli/rebase-message {:command-errors {:7 "2 uncommitted"}} :7))))
+  (testing "given neither - handled, but no job ran it - then a failure saying so, not a blank success"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"the daemon didn't run it"
+                          (cli/rebase-message {:done [7]} :7)))))
+
 (deftest prune-refusal-test
   (let [handles [{:kind :pid :component :api}]]
     (testing "given a preset that doesn't resolve, then refused, naming it, daemon or not"
