@@ -9,7 +9,7 @@
     (let [html (render/component-card :seed {:kind :one-shot :status :ready :attached-to :db
                                              :source-env {"SCHEMA" {:dir "/w/api/db" :branch "feature/x"}}})]
       (is (str/includes? html "title=\"SCHEMA\""))
-      (is (str/includes? html "<span class=\"branch\">feature/x</span>"))
+      (is (str/includes? html "<span class=\"branch\" title=\"feature/x\">feature/x</span>"))
       (is (str/includes? html "data-dir=\"/w/api/db\"")))))
 
 (deftest component-card-status-label-test
@@ -113,17 +113,27 @@
       (is (str/includes? html "data-health=\"\"")))))
 
 (deftest component-card-source-test
-  (testing "a pinned branch shows a worktree badge; the workdir path is
-            home-tildified for display but the raw path stays in the title
-            for copyCd"
+  (testing "a pinned branch is marked as a worktree; the dir, home-tildified, and the
+            `cd` a click copies are on hover"
     (let [dir (str (System/getenv "HOME") "/workspace/svc")
           html (render/component-card :svc {:kind :process :status :up
                                               :source {:dir dir
                                                         :branch "feature/x" :worktree "/x"}})]
-      (is (str/includes? html "<span class=\"branch\">feature/x</span>"))
+      (is (str/includes? html "<span class=\"branch wt\" title=\"feature/x"))
       (is (str/includes? html "~/workspace/svc"))
-      (is (str/includes? html (str "Copy `cd " dir "`")))
-      (is (str/includes? html "worktree</em>")))))
+      (is (str/includes? html (str "Copy `cd " dir "`")))))
+
+  (testing "main/master go without saying"
+    (is (not (str/includes? (render/component-card :svc {:kind :process :status :up :source {:dir "/w/svc" :branch "main"}})
+                            "class=\"branch")))))
+
+(deftest component-card-clock-test
+  (testing "moving: a clock index.js ticks from :since; settled: how long the last start took"
+    (is (str/includes? (render/component-card :svc {:kind :process :status :deploying :since 1234}) "data-since=\"1234\""))
+    (is (str/includes? (render/component-card :svc {:kind :process :status :up :since 1234 :took 65000}) ">1m05s</span>"))
+    (is (not (str/includes? (render/component-card :svc {:kind :process :status :up :since 1234}) "clock"))))
+  (testing "durations"
+    (is (= ["850ms" "42s" "3m05s" "1h02m"] (map render/duration [850 42000 185000 3720000])))))
 
 (deftest run-summary-test
   (testing "no components at all"

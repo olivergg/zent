@@ -13,7 +13,8 @@ function activeData() { return previewing ? previewData : view; }
 // A stopped/off component clutters the
 // loom (it's not part of the current run, just left tracked/torn-down), so
 // it's hidden by default; persisted like the rail width/zoom below.
-let showStopped = localStorage.getItem("zent.showStopped") === "true";
+// on unless turned off: a stopped component of the preset is part of the picture
+let showStopped = localStorage.getItem("zent.showStopped") !== "false";
 
 // the wrapper's own data-status (CSS/layout only now - the label text
 // itself is server-rendered, see zent.ui.render's state-label).
@@ -22,6 +23,8 @@ const STATE_CLASS = {
   failed: "failed", external: "external", off: "off", down: "stopped", ready: "ready", unready: "unready"
 };
 const WOVEN = new Set(["up", "done", "external"]);
+// what isn't settled yet: blocking (madder) or on its way (weld) - a thread from it, a one-shot that never folds
+const UNSETTLED = { failed: "bad", unready: "bad", starting: "wait", queued: "wait" };
 
 /* Motion follows what the stack does, live view only: a card that joins
    rises in, column by column; one that changes status is dyed its new
@@ -288,19 +291,21 @@ function renderRun() {
     const showLink = host.querySelector(".show-stopped-link");
     if (showLink) showLink.onclick = () => setShowStopped(true);
   }
+  tickClocks();
   drawWarp();
 }
 
-/* Lays `data`'s components out in `host`, level by level - every one when
-   `all`, else not the stopped ones. Returns how many it hid when it laid out
-   none (the caller says why the loom is empty), else null. */
+/* Lays `data`'s components out in `host`, level by level - the preset's stopped
+   ones too when `all`. Returns how many it hid when it laid out none (the
+   caller says why the loom is empty), else null. */
 function weave(host, data, all) {
   host.replaceChildren();
   const allNames = Object.keys(data.components);
-  const visible = all
-    ? data.components
-    : Object.fromEntries(Object.entries(data.components)
-        .filter(([, c]) => c.status !== "down" && c.status !== "off"));
+  // an earlier preset's components stay in the view: stopped, they're off the picture
+  // (:members, zent.ui.state/own-components; a preview has none - all its own)
+  const members = new Set(data.members?.length ? data.members : allNames);
+  const visible = Object.fromEntries(Object.entries(data.components)
+    .filter(([name, c]) => (c.status !== "down" && c.status !== "off") || (all && members.has(name))));
   const hiddenCount = allNames.length - Object.keys(visible).length;
 
   // :attached-to one-shots ride under their host's card when it's shown, so
@@ -326,7 +331,15 @@ function weave(host, data, all) {
       stack.className = "stack";
       stack.style.setProperty("--lvl", lvl);
       stack.appendChild(nodeEl(name, data.components[name], false));
-      for (const s of (strips[name] || []).sort()) stack.appendChild(nodeEl(s, data.components[s], true));
+      const own = (strips[name] || []).sort();
+      if (own.length) {
+        // folded: one summary line, plus whatever is running or failed - that one always shows
+        const open = openStrips.has(name);
+        stack.appendChild(stripsFold(name, own, data.components, open));
+        for (const s of own) {
+          if (open || UNSETTLED[STATE_CLASS[data.components[s].status]]) stack.appendChild(nodeEl(s, data.components[s], true));
+        }
+      }
       col.appendChild(stack);
     }
     host.appendChild(col);
@@ -338,6 +351,49 @@ function weave(host, data, all) {
   // new content).
   htmx.process(host);
   return null;
+}
+
+/* The clocks of what's moving (zent.ui.render/clock), ticked between pushes - same format as its duration. */
+function duration(ms) {
+  const s = Math.floor(ms / 1000), pad = (n) => String(n).padStart(2, "0");
+  return ms < 1000 ? ms + "ms" : s < 60 ? s + "s" : s < 3600 ? `${Math.floor(s / 60)}m${pad(s % 60)}s`
+    : `${Math.floor(s / 3600)}h${pad(Math.floor(s / 60) % 60)}m`;
+}
+function tickClocks() {
+  for (const el of document.querySelectorAll(".clock[data-since]")) {
+    el.textContent = duration(Math.max(0, Date.now() - Number(el.dataset.since)));
+  }
+}
+setInterval(tickClocks, 1000);
+
+/* A host's one-shots, folded by default: the hosts unfolded, in localStorage. */
+const openStrips = new Set(JSON.parse(localStorage.getItem("zent.openStrips") || "[]"));
+// a one-shot's state in the summary, most urgent first - the line takes the dye of the first present
+const STRIP_TALLY = { failed: "failed", unready: "unready", starting: "running", queued: "queued",
+                      ready: "on demand", done: "done", stopped: "not run", off: "not run" };
+
+/* The line a host's one-shots fold into: how many, and how many per state. */
+function stripsFold(host, names, components, open) {
+  const counts = {};
+  for (const n of names) { const s = STATE_CLASS[components[n].status] || "queued"; counts[s] = (counts[s] || 0) + 1; }
+  const parts = new Map();
+  for (const [s, label] of Object.entries(STRIP_TALLY)) if (counts[s]) parts.set(label, (parts.get(label) || 0) + counts[s]);
+  const el = document.createElement("button");
+  el.type = "button";
+  el.className = "strips-fold";
+  el.dataset.status = Object.keys(STRIP_TALLY).find((s) => counts[s]) || "done";
+  el.setAttribute("aria-expanded", String(open));
+  el.dataset.holds = names.join(",");
+  el.onmouseenter = el.onmouseleave = () => drawWarp();
+  el.title = (open ? "Fold" : "Show") + " the one-shots: " + names.join(", ");
+  el.innerHTML = `<span class="fold-mark">${open ? "▾" : "▸"}</span>↓ ${names.length}` +
+    [...parts].map(([label, n]) => ` <span class="fold-part">· ${n} ${label}</span>`).join("");
+  el.onclick = () => {
+    if (openStrips.has(host)) openStrips.delete(host); else openStrips.add(host);
+    localStorage.setItem("zent.openStrips", JSON.stringify([...openStrips]));
+    renderRun();
+  };
+  return el;
 }
 
 /* The one-shot `name` is drawn under, or null: its :attached-to, when that
@@ -393,16 +449,23 @@ function drawWarp() {
   svg.setAttribute("height", h);
   svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
 
-  const at = {};
-  fabric.querySelectorAll(".node").forEach((n) => {
-    const r = n.getBoundingClientRect();
-    at[n.dataset.name] = {
+  const place = (el) => {
+    const r = el.getBoundingClientRect();
+    return {
       l: r.left - box.left + loom.scrollLeft,
       r: r.right - box.left + loom.scrollLeft,
       cx: r.left + r.width / 2 - box.left + loom.scrollLeft,
       y: r.top - box.top + loom.scrollTop + r.height / 2,
       bottom: r.bottom - box.top + loom.scrollTop
     };
+  };
+  const at = {};
+  fabric.querySelectorAll(".node").forEach((n) => { at[n.dataset.name] = place(n); });
+  // a folded one-shot has no card: its threads end on the line it folds into
+  const folded = new Set();
+  fabric.querySelectorAll(".strips-fold").forEach((f) => {
+    const p = place(f);
+    for (const n of f.dataset.holds.split(",")) if (!at[n]) { at[n] = p; folded.add(n); }
   });
 
   const parts = [];
@@ -416,7 +479,8 @@ function drawWarp() {
     `<marker id="arrow-${id}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="${size}" markerHeight="${size}" ` +
     `orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" style="fill:var(--${colour})"/></marker>`;
   parts.push("<defs>" + arrow("taut", 7, "indigo") + arrow("slack", 6, "slack") + arrow("related", 8, "related") +
-             arrow("in", 6, "indigo") + arrow("out", 6, "weld") + "</defs>");
+             arrow("in", 6, "indigo") + arrow("out", 6, "weld") + arrow("wait", 6, "weld") + arrow("bad", 7, "madder") +
+             "</defs>");
 
   // warp: one vertical hairline per level, behind everything
   fabric.querySelectorAll(".level").forEach((col) => {
@@ -435,13 +499,16 @@ function drawWarp() {
   // a strip already sits on its host: its own dependency threads are hidden,
   // only the ones of components depending on it are drawn - unless it's
   // selected, and even then not the one to its host, which it already hangs from
-  const strips = new Set([...fabric.querySelectorAll(".node.satellite")].map((n) => n.dataset.name));
+  const strips = new Set([...fabric.querySelectorAll(".node.satellite")].map((n) => n.dataset.name).concat([...folded]));
   // the flowing dash is kept to the selected or hovered card's threads: a
   // whole fabric animating keeps the GPU busy for nothing
   const hovered = fabric.querySelector(".node:hover")?.dataset.name;
   // a hovered, else selected, card's threads stand out - what it waits for
-  // in indigo, what waits for it in weld - and every other thread fades back
+  // in indigo, what waits for it in weld - and every other thread fades back;
+  // a hovered fold line stands for every one-shot it holds
   const focus = at[hovered] ? hovered : at[selected] ? selected : null;
+  const fold = fabric.querySelector(".strips-fold:hover");
+  const focused = new Set(fold ? fold.dataset.holds.split(",") : focus ? [focus] : []);
   // hovering also steps back every card but it, its neighbours and their strips
   const near = new Set(hovered ? [hovered, ...(data.graph || []).flatMap(([to, from]) =>
     to === hovered ? [from] : from === hovered ? [to] : [])] : []);
@@ -452,27 +519,30 @@ function drawWarp() {
   const nowTaut = new Set();
   for (const [to, from] of data.graph || []) {
     const a = at[from], b = at[to];
-    if (!a || !b || (strips.has(to) && (to !== focus || data.components[to]["attached-to"] === from))) continue;
+    if (!a || !b || (strips.has(to) && (!focused.has(to) || data.components[to]["attached-to"] === from))) continue;
     const taut = WOVEN.has(data.components[from]?.status) && WOVEN.has(data.components[to]?.status);
     const key = from + ">" + to;
     if (taut && !previewing) {
       nowTaut.add(key);
       if (tautKeys && !tautKeys.has(key)) tautAt[key] = performance.now();
     }
-    const role = !focus ? null : to === focus ? "in" : from === focus ? "out" : "faded";
+    const role = !focused.size ? null : focused.has(to) ? "in" : focused.has(from) ? "out" : "faded";
+    // a slack thread says why, from its dependency's side
+    const state = taut ? "taut" : UNSETTLED[STATE_CLASS[data.components[from]?.status]] || "slack";
     const mid = a.r + (b.l - a.r) / 2;
     const d = `M${a.r} ${a.y} C${mid} ${a.y} ${mid} ${b.y} ${b.l} ${b.y}`;
-    const flow = taut && !reduceMotion && [focus, hovered].some((n) => n && (n === to || n === from))
+    const flow = !reduceMotion && (state === "wait" || taut && (focused.has(to) || focused.has(from)))
       ? '<animate attributeName="stroke-dashoffset" values="12;0" dur="700ms" repeatCount="indefinite"/>'
       : "";
     const lit = role === "in" || role === "out";
-    const dye = role === "out" ? "weld" : role === "in" || taut ? "indigo" : "slack";
-    const marker = lit ? "arrow-" + role : taut ? "arrow-taut" : "arrow-slack";
+    const dye = role === "out" ? "weld" : role === "in" ? "indigo" : { taut: "indigo", bad: "madder", wait: "weld", slack: "slack" }[state];
+    const marker = lit ? "arrow-" + role : "arrow-" + state;
     parts.push(
       `<path class="thread" d="${d}" ` +
-      `fill="none" style="stroke:var(--${dye})" stroke-width="${lit ? 2.6 : taut ? 1.6 : 1}" ` +
-      `stroke-dasharray="${taut || lit ? "5 7" : "3 5"}" opacity="${role === "faded" ? 0.2 : 1}" ` +
-      `marker-end="url(#${marker})">${flow}</path>`
+      `fill="none" style="stroke:var(--${dye})" stroke-width="${lit ? 2.6 : state === "slack" ? 1 : 1.6}" ` +
+      `stroke-dasharray="${state === "slack" && !lit ? "3 5" : "5 7"}" opacity="${role === "faded" ? 0.2 : 1}" ` +
+      `marker-end="url(#${marker})"><title>${escHtml(to)} waits for ${escHtml(from)} ` +
+      `(${escHtml(data.components[from]?.status || "?")})</title>${flow}</path>`
     );
     if (taut && recent(tautAt[key])) {
       parts.push(`<path class="shuttle" d="${d}" style="animation-delay:${since(tautAt[key])}"/>`);

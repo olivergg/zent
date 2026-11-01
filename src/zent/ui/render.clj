@@ -38,6 +38,24 @@
   ([status] (get state-label status (name status)))
   ([kind status] (or (when (= :one-shot kind) (one-shot-label status)) (label-of status))))
 
+(defn duration
+  "Milliseconds as a short clock: 850ms, 42s, 3m05s, 1h02m."
+  [ms]
+  (let [s (quot ms 1000)]
+    (cond (< ms 1000) (str ms "ms")
+          (< s 60) (str s "s")
+          (< s 3600) (format "%dm%02ds" (quot s 60) (mod s 60))
+          :else (format "%dh%02dm" (quot s 3600) (mod (quot s 60) 60)))))
+
+(defn- clock
+  "Next to a state: how long it has lasted while moving (index.js ticks it from data-since), else how long the
+  last start took."
+  [{:keys [status since took]}]
+  (cond
+    (and since (#{:pending :deploying :stopping} status))
+    (str "<span class=\"clock\" data-since=\"" since "\" title=\"Time in this state\"></span>")
+    took (str "<span class=\"clock\" title=\"Time its last start took\">" (duration took) "</span>")))
+
 (defn- script-name
   "`./scripts/seed-db.sh` -> seed-db: a strip names the scripts it
   runs - the command only, an argument path mustn't stand in for it."
@@ -86,48 +104,55 @@
 (defn- can-stop? [status] (contains? #{:up :deploying :idle :unready} status))
 (defn- links-visible? [status] (contains? #{:up :external :deploying} status))
 
-(defn- workdir
-  "A checkout as shown: its branch, its dir (a click copies `cd <dir>`), whether it's a worktree."
+(defn- checkout
+  "A checkout in one line, the details on hover: its branch (not main/master; dashed in a worktree), then
+  `cd` - its dir, a click copies `cd <dir>`."
   [{:keys [branch dir worktree]}]
-  (str (when branch (str "<span class=\"branch\">" (esc branch) "</span>"))
-       "<span class=\"workdir\">"
-       "<button type=\"button\" class=\"workdir-open\" data-dir=\"" (esc dir) "\" title=\"Copy `cd " (esc dir) "`\">"
-       (esc (tildify dir)) "</button>"
-       (when worktree " <em class=\"wt\">worktree</em>")
-       "</span>"))
+  (str (when (and branch (not (#{"main" "master"} branch)))
+         (str "<span class=\"branch" (when worktree " wt") "\" title=\"" (esc branch)
+              (when worktree " - its own worktree, reset to origin on each deploy") "\">" (esc branch) "</span>"))
+       (when dir
+         (str "<button type=\"button\" class=\"workdir-open\" data-dir=\"" (esc dir) "\" title=\""
+              (esc (tildify dir)) "&#10;Copy `cd " (esc dir) "`\">cd</button>"))))
 
 (defn- source-env-rows
   "What a :source-env component reads: one row per var (its name the tooltip)."
   [source-env]
-  (apply str (map (fn [[var src]] (str "<span class=\"source-env\" title=\"" (esc var) "\">" (workdir src) "</span>"))
+  (apply str (map (fn [[var src]] (str "<span class=\"source-env\" title=\"" (esc var) "\">" (checkout src) "</span>"))
                   (sort-by key source-env))))
+
+(defn- facts
+  "A card's one line of facts, the details on hover: the kind as its glyph, its checkout, ↗ (the repo), its
+  own port - then the state."
+  [{:keys [kind status repo repo-url port services service-status source] :as c}]
+  (str "<span class=\"meta\">"
+       "<i class=\"glyph\" title=\"" (esc (name kind)) "\">" (esc (get kind-glyph kind "·")) "</i>"
+       (checkout source)
+       (when repo
+         (if repo-url
+           (str "<a class=\"repo-link\" href=\"" (esc repo-url) "\" target=\"_blank\" rel=\"noopener\" title=\"" (esc repo) "\">&#8599;</a>")
+           (str "<span class=\"repo-link\" title=\"" (esc repo) "\">&#8599;</span>")))
+       (when (and port (not (or (seq service-status) (seq services))))
+         (str "<span class=\"ports own\">:" (esc port) "</span>"))
+       "<span class=\"state\">" (esc (label-of kind status)) (clock c) "</span></span>"))
 
 (defn- card-body
   "A full card's content - everything but the error and the actions."
-  [cname {:keys [kind status repo repo-url port services service-status source source-env links permanent] :as c}]
-  (let [show-links? (links-visible? status)]
-    (str
-     "<span class=\"name\">" (esc (name cname)) "</span>"
-     (when permanent
-       "<span class=\"permanent\" title=\"Stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">permanent</span>")
-     "<span class=\"meta\"><span class=\"kind\"><i class=\"glyph\">" (esc (get kind-glyph kind "·"))
-     "</i>" (esc (name kind)) "</span>"
-     "<span class=\"state\">" (esc (label-of kind status)) "</span></span>"
-     (when repo
-       (str "<span class=\"repo\">"
-            (if repo-url
-              (str "<a class=\"repo-link\" href=\"" (esc repo-url) "\" target=\"_blank\" rel=\"noopener\">" (esc repo) "</a>")
-              (esc repo))
-            "</span>"))
-     (service-rows c)
-     (when (and port (not (or (seq service-status) (seq services))))
-       (str "<span class=\"ports own\">:" (esc port) "</span>"))
-     (when source (workdir source))
-     (source-env-rows source-env)
-     (when show-links?
-       (apply str (map (fn [{:keys [url label]}]
-                          (str "<a class=\"endpoint\" href=\"" (esc url) "\" target=\"_blank\" rel=\"noopener\">" (esc label) "</a>"))
-                        links))))))
+  [cname {:keys [status source-env links permanent] :as c}]
+  (str
+   "<span class=\"head\"><span class=\"name\">" (esc (name cname)) "</span>"
+   (when permanent
+     "<span class=\"permanent\" title=\"Permanent: stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">&#8734;</span>")
+   "</span>"
+   (facts c)
+   (service-rows c)
+   (source-env-rows source-env)
+   (when (and (links-visible? status) (seq links))
+     (str "<span class=\"endpoints\">"
+          (apply str (map (fn [{:keys [url label]}]
+                             (str "<a class=\"endpoint\" href=\"" (esc url) "\" target=\"_blank\" rel=\"noopener\">" (esc label) "</a>"))
+                           links))
+          "</span>"))))
 
 (defn component-card
   "The inner markup of one node card; the client owns the wrapper <div>
@@ -144,7 +169,7 @@
        (str "<i class=\"glyph\">" (esc (get kind-glyph kind "·")) "</i>"
             "<span class=\"name\" title=\"" (esc (name cname)) "\">"
             (esc (if (seq scripts) (str/join " → " (map script-name scripts)) (name cname))) "</span>"
-            "<span class=\"state\">" (esc (label-of kind status)) "</span>"
+            "<span class=\"state\">" (esc (label-of kind status)) (clock c) "</span>"
             (when description (str "<span class=\"desc\">" (esc description) "</span>"))
             (source-env-rows source-env))
        (card-body cname c))

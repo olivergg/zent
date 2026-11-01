@@ -213,6 +213,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 /* the warp: hairlines the fabric is woven across */
 .warp { position: absolute; inset: 0; pointer-events: none; }
+/* a thread names its two ends on hover */
+.warp .thread { pointer-events: stroke; }
 /* a thread just pulled taut: one shuttle crossing it, dependency to
    dependent - a single dash (--len: the path's length, set by drawWarp),
    parked off the path at rest */
@@ -330,12 +332,40 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   background: var(--strip);
   border-color: var(--c, color-mix(in srgb, var(--indigo) 28%, var(--card)));
 }
+/* a host's one-shots folded into one line, dyed by the most urgent of them */
+.strips-fold {
+  z-index: 1;
+  width: calc(100% - 20px);
+  margin-left: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 10.5px;
+  text-align: left;
+  color: color-mix(in srgb, var(--c, var(--indigo)) 70%, var(--ink));
+  background: color-mix(in srgb, var(--c, var(--indigo)) 10%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--c, var(--indigo)) 35%, var(--card));
+  border-top: none;
+  border-left: 3px solid var(--c, var(--indigo));
+  cursor: pointer;
+}
+.strips-fold:hover { background: color-mix(in srgb, var(--c, var(--indigo)) 18%, var(--card)); }
+.strips-fold[aria-expanded="true"] { border-bottom-style: dashed; }
+.strips-fold .fold-mark { width: 10px; }
+.strips-fold .fold-part { white-space: nowrap; }
+.strips-fold[data-status="ready"] { border-left-style: dashed; }
+.strips-fold:is([data-status="starting"], [data-status="queued"]) { --c: var(--weld); }
+.strips-fold:is([data-status="failed"], [data-status="unready"]) { --c: var(--madder); }
+.strips-fold:is([data-status="stopped"], [data-status="off"]) { --c: var(--grey); }
+
 /* a script name breaks between scripts, never mid-name */
 .node.satellite .name { font-size: 11px; letter-spacing: 0.02em; text-transform: none; flex: 1; overflow-wrap: normal; }
 /* read on an indigo-washed strip: a shade deeper than muted */
 .node.satellite .desc { flex-basis: 100%; padding-left: 14px; color: color-mix(in srgb, var(--muted) 80%, var(--ink)); font-size: 10px; }
-/* what a one-shot reads (:source-env): one dir per row, under its description */
-.node .source-env { display: block; }
+/* what a one-shot reads (:source-env): one checkout per row, under its description */
+.node .source-env { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; }
 .node.satellite .source-env { flex-basis: 100%; padding-left: 14px; }
 .node.satellite .actions { top: 1px; }
 .node.satellite .fray { flex-basis: 100%; margin-top: 2px; }
@@ -367,16 +397,12 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 :focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
 .logs-view :focus-visible { outline-color: var(--term-fg); }
 
+/* ∞ on the name's band */
 .node .permanent {
-  display: inline-block;
-  margin-left: 6px;
   padding: 0 4px;
   font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--indigo);
-  border: 1px solid var(--indigo);
-  vertical-align: middle;
+  color: #fff;
+  border: 1px solid #ffffffa0;
 }
 
 .node .name {
@@ -389,16 +415,18 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   overflow-wrap: anywhere;
 }
 
+/* one line of facts, the details on hover; the state closes it */
 .node .meta {
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   color: var(--muted);
   font-size: 10.5px;
-  margin-top: 3px;
+  margin-top: 4px;
 }
-
-.node .kind { display: inline-flex; align-items: baseline; gap: 4px; }
+.node .meta .state { margin-left: auto; flex: none; }
+.node .clock { margin-left: 5px; opacity: .75; font-variant-numeric: tabular-nums; }
 .node .glyph { font-style: normal; font-size: 11px; color: var(--ink); }
 
 /* status: one dye (--c), for a card (its border and state; the cards it
@@ -423,7 +451,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node[data-status="unready"] { border-style: dashed; }
 .node:is([data-status="up"], [data-status="external"], [data-status="done"],
          [data-status="failed"], [data-status="unready"]) {
-  background: color-mix(in srgb, var(--c) 14%, var(--card));
+  /* the band carries the dye now: the body only a hint of it */
+  background: color-mix(in srgb, var(--c) 6%, var(--card));
   box-shadow: 0 12px 22px -14px var(--c);
 }
 .node:is([data-status="ready"], [data-status="stopping"], [data-status="unready"]) .state { font-style: italic; }
@@ -476,33 +505,23 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   to   { box-shadow: 0 0 0 12px transparent; }
 }
 
-.node .repo {
-  display: block;
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 10px;
-  overflow-wrap: anywhere;
-}
-.node .repo::before { content: "repo: "; }
-.node .repo-link { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--grey); }
-.node .repo-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+.node .repo-link { flex: none; color: var(--muted); text-decoration: none; font-size: 11px; }
+.node .repo-link:hover { color: var(--indigo); }
 
-/* one box per container inside the component's own box: a compose
-   component IS several containers, and a single "up" for all of them
-   can't say which one is unhealthy. One per line rather than side by
-   side, so the name and its ports always fit. */
+/* one chip per container: a compose component IS several containers, and a
+   single "up" for all of them can't say which one is unhealthy */
 .node .services {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 3px;
   margin-top: 5px;
 }
 .node .svc {
   display: flex;
   align-items: baseline;
-  gap: 5px;
-  padding: 2px 6px;
-  font-size: 10px;
+  gap: 4px;
+  padding: 0 4px;
+  font-size: 9.5px;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.55);
   border: 1px solid var(--grey);
@@ -527,61 +546,44 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 /* the port is the handle you actually reach the thing by, so it reads as
    a value, not as more grey prose */
 .node .ports {
-  margin-left: auto;
   font-family: var(--mono);
   color: var(--ink);
   white-space: nowrap;
 }
-.node .ports.own { display: block; margin: 4px 0 0; font-size: 10px; }
+.node .ports.own { flex: none; font-size: 10px; }
 
-/* the branch reads as a label (it's the one thing here you might be
-   surprised by), the path stays quiet background detail */
+/* a checkout in one line: the branch as a label (the one thing here you might be surprised by), cut, its
+   full name on hover - dashed in its own worktree; then `cd` */
 .node .branch {
-  display: inline-block;
-  margin-top: 4px;
+  min-width: 0;
   padding: 0 5px;
   font-size: 9.5px;
   color: var(--indigo);
   border: 1px solid var(--indigo);
   border-radius: 2px;
-  /* branch names are long and unbreakable (feature/DARK-1234_foo_bar);
-     without this the badge runs straight out of the card */
-  max-width: 100%;
-  box-sizing: border-box;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.node .workdir {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 9.5px;
-  overflow-wrap: anywhere;
-}
-.node .workdir .wt {
-  font-style: normal;
-  color: var(--weld);
-  border-bottom: 1px dotted var(--weld);
-}
+.node .branch.wt { border-style: dashed; }
 .node .workdir-open {
+  flex: none;
+  padding: 0 3px;
   font: inherit;
-  padding: 0;
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: var(--muted);
   background: none;
-  border: none;
-  color: inherit;
+  border: 1px solid var(--grey);
   cursor: pointer;
-  text-align: left;
-  overflow-wrap: anywhere;
-  border-bottom: 1px dotted var(--grey);
 }
-.node .workdir-open:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
-.node .workdir-open[data-failed="true"] { color: var(--madder); border-bottom-color: var(--madder); }
+.node .workdir-open:hover { color: var(--indigo); border-color: var(--indigo); }
+.node .workdir-open[data-failed="true"] { color: var(--madder); border-color: var(--madder); }
 
+.node .endpoints { display: flex; flex-wrap: wrap; gap: 0 10px; margin-top: 4px; }
 .node .endpoint {
-  /* block so each link gets its own line, fit-content so the hit area is
-     the text itself and not the whole width of the card */
-  display: block;
+  /* the hit area is the text itself */
   width: fit-content;
-  margin-top: 4px;
   font-size: 10.5px;
   font-family: var(--mono);
   color: var(--verdigris);
@@ -638,6 +640,27 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .act[data-failed="true"] { color: var(--madder); opacity: 1; }
 
 .node .act { padding: 2px 4px; }
+
+/* the name on a band dyed with the state: the card reads at a glance, the body stays quiet */
+.node > .head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -10px -12px 0;
+  padding: 5px 46px 4px 10px;
+  color: #fff;
+  background: var(--c, var(--grey));
+}
+/* weld is too light for white text: ink on it */
+.node[data-status="starting"] > .head { color: var(--ink); }
+.node[data-status="starting"] > .head .permanent { color: var(--ink); border-color: var(--ink); }
+.node:is([data-status="ready"], [data-status="unready"], [data-status="external"]) > .head {
+  background: repeating-linear-gradient(135deg, var(--c) 0 7px, color-mix(in srgb, var(--c) 80%, #fff) 7px 14px);
+}
+/* the actions sit on the band */
+.node:not(.satellite) > .actions .act { color: #ffffffc0; }
+.node:not(.satellite) > .actions .act:hover { color: #fff; }
+.node[data-status="starting"]:not(.satellite) > .actions .act { color: var(--ink); }
 .node .act:disabled { opacity: 0.25; cursor: default; }
 
 .empty-loom {

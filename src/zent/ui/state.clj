@@ -18,6 +18,7 @@
    :informational [] ;; [[name related-name] ...] - declared, not orchestrated
    :preset nil
    :started-at nil
+   :members []       ;; the preset's own components - :components also keeps earlier presets'
    :handled 0        ;; highest control command :id the engine has processed
    :done #{}         ;; the recent ones it has - in no set order: a deploy is a job
    :events []        ;; status transitions, oldest first - never pushed (await-events)
@@ -27,13 +28,23 @@
 
 (def ^:private max-events 500)
 
+(defn- stamp
+  "Component `c` with :since (when it entered its status) and :took (how long its last start ran, :deploying
+  to whatever came next), carried over from `b`, its state before."
+  [at b c]
+  (cond
+    (= (:status c) (:status b)) (merge c (select-keys b [:since :took]))
+    (= :deploying (:status b)) (cond-> (assoc c :since at) (:since b) (assoc :took (- at (:since b))))
+    :else (cond-> (assoc c :since at) (and (:took b) (not= :deploying (:status c))) (assoc :took (:took b)))))
+
 (defn record-transitions
   "`after` with each component status that differs from `before` appended
   to :events, numbered and timestamped: the order things happened in, which
-  a client comparing snapshots loses."
-  [before after]
+  a client comparing snapshots loses. Each component is stamped (`stamp`)."
+  ([before after] (record-transitions (System/currentTimeMillis) before after))
+  ([at before after]
   (let [was (update-vals (:components before) :status)
-        at (System/currentTimeMillis)
+        after (update after :components #(into {} (for [[k c] %] [k (stamp at (get-in before [:components k]) c)])))
         changes (for [[k {:keys [status]}] (:components after)
                       :when (not= status (get was k))]
                   [k (get was k) status])]
@@ -47,7 +58,21 @@
                           (assoc :event-seq n)
                           (update :events (fnil conj []) {:seq n :at at :component k :from from :to to}))))
                   after changes)
-          (update :events #(vec (take-last max-events %)))))))
+          (update :events #(vec (take-last max-events %))))))))
+
+(defn own-components
+  "The preset's own components: :members, else - before the first apply after a code reload - the graph's ends."
+  [{:keys [members graph]}]
+  (set (or (seq members) (flatten graph))))
+
+(defn shown-components
+  "What the dashboard shows of :components (which keeps earlier presets'): the preset's own, plus whatever
+  still runs outside it."
+  [{:keys [components] :as state}]
+  (let [own (own-components state)]
+    (if (empty? own)
+      components
+      (into {} (filter (fn [[k c]] (or (own k) (not (#{:down :off} (:status c))))) components)))))
 
 (defn- swap-view!
   "swap! on view-state, recording the status transitions `f` makes."
@@ -121,6 +146,8 @@
   [state preset-name resolved & [{:keys [repo-url-template]}]]
   (-> state
       (assoc :preset preset-name :started-at (System/currentTimeMillis))
+      ;; :components keeps what earlier presets ran: these are this one's own
+      (assoc :members (vec (keys resolved)))
       (assoc :graph (vec (for [[k cfg] resolved dep (:deps cfg)] [k dep])))
       ;; :related - declared couplings zent doesn't orchestrate, drawn apart
       ;; from :graph
