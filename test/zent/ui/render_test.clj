@@ -316,3 +316,10 @@
                                      "<li class=\"behind\">&#8595; behind: a 2 main</li></ul>")))))
     (testing "a clone on a feature branch, unpushed commits in it: nothing to do, no line"
       (is (not (str/includes? (render/run-summary {:a (c {:branch "feature/a" :ahead 3})}) "git-summary"))))))
+
+(deftest skipped-test
+  (testing "given an apply skipped a one-shot, then it reads skipped with why, not queued"
+    (let [html (render/component-card :replay {:kind :one-shot :status :skipped
+                                               :error "skipped: alerte failed - reload it once that's fixed"})]
+      (is (str/includes? html ">skipped<"))
+      (is (str/includes? html "skipped: alerte failed")))))

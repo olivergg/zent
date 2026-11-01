@@ -24,11 +24,11 @@
   the kind."
   {:pending "pending" :deploying "starting" :up "up"
    :done "done" :idle "idle" :stopping "stopping" :failed "failed" :external "up" :off "off" :down "stopped"
-   :ready "ready" :unready "unready"})
+   :ready "ready" :unready "unready" :skipped "skipped"})
 
 (def ^:private error-shown?
   "Statuses whose :error is shown - only while in them: a stale error must not linger after recovery."
-  #{:failed :unready})
+  #{:failed :unready :skipped})
 
 (def ^:private one-shot-label
   "A job's own wording where a service's would mislead - nothing to stop."
@@ -318,7 +318,7 @@
             "hx-post=\"/api/stop/" (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\">&#9632;</button>"))
      "</span>")))
 
-(def ^:private summary-order ["up" "done" "ready" "idle" "starting" "stopping" "pending" "unready" "failed" "off" "stopped"])
+(def ^:private summary-order ["up" "done" "ready" "idle" "starting" "stopping" "pending" "unready" "skipped" "failed" "off" "stopped"])
 
 (defn- git-summary
   "What the chips ask of you, one line each, with the components' names: not the preset's :branch,

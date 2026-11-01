@@ -357,7 +357,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .strips-fold .fold-part { white-space: nowrap; }
 .strips-fold[data-status="ready"] { border-left-style: dashed; }
 .strips-fold:is([data-status="starting"], [data-status="queued"]) { --c: var(--weld); }
-.strips-fold:is([data-status="failed"], [data-status="unready"]) { --c: var(--madder); }
+.strips-fold:is([data-status="failed"], [data-status="unready"], [data-status="skipped"]) { --c: var(--madder); }
 .strips-fold:is([data-status="stopped"], [data-status="off"]) { --c: var(--grey); }
 
 /* a script name breaks between scripts, never mid-name */
@@ -438,7 +438,10 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node:is([data-status="done"], [data-status="ready"]), .legend .done, .tally .t-done { --c: var(--indigo); }
 .node[data-status="stopping"], .legend .stopping { --c: var(--grey); }
 .node[data-status="starting"], .legend .starting, .tally .t-starting { --c: var(--weld); }
-.node:is([data-status="failed"], [data-status="unready"]), .legend .failed, .tally :is(.t-failed, .t-unready) { --c: var(--madder); }
+.node:is([data-status="failed"], [data-status="unready"], [data-status="skipped"]), .legend .failed,
+.tally :is(.t-failed, .t-unready, .t-skipped) { --c: var(--madder); }
+/* skipped: an apply left it out, a dependency having failed - dashed, nothing ran */
+.node[data-status="skipped"] { border-style: dashed; }
 /* the state as text: its dye deepened with ink, readable on the dyed ground */
 .node .state { color: color-mix(in srgb, var(--c, var(--ink)) 65%, var(--ink)); }
 .node[data-status="external"] { border-left-style: dashed; }
@@ -718,7 +721,14 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .preset-row[data-active="true"] .act { color: var(--card); }
 .preset-name { flex: 1; font-size: 12px; cursor: pointer; }
 .preset-name:hover { color: var(--indigo); }
-.preset-row[data-previewing="true"] .preset-name { color: var(--indigo); font-weight: 500; }
+/* the previewed one: filled too, in indigo (the applied one keeps its green, outlined when previewed) */
+.preset-row[data-previewing="true"] { background: var(--indigo); border-color: var(--indigo); color: var(--card); }
+.preset-row[data-previewing="true"] .preset-name { color: var(--card); font-weight: 600; }
+.preset-row[data-previewing="true"] .preset-name::after { content: "preview"; margin-left: 8px; font-size: 9px; font-weight: 400;
+  letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.75; }
+.preset-row[data-previewing="true"] .act { color: var(--card); }
+.preset-row[data-active="true"][data-previewing="true"] { background: var(--verdigris); outline: 2px solid var(--indigo); }
+.preset-row[data-active="true"][data-previewing="true"] .preset-name::after { content: "applied \00B7  preview"; }
 .preset-row .act { padding: 2px 5px; }
 .preset-row .act:disabled { opacity: 0.35; cursor: default; }
 .preset-row[data-active="true"] .play { opacity: 0.5; }

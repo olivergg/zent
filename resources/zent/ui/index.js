@@ -20,11 +20,12 @@ let showStopped = localStorage.getItem("zent.showStopped") !== "false";
 // itself is server-rendered, see zent.ui.render's state-label).
 const STATE_CLASS = {
   pending: "queued", deploying: "starting", up: "up", done: "done", idle: "idle", stopping: "stopping",
-  failed: "failed", external: "external", off: "off", down: "stopped", ready: "ready", unready: "unready"
+  failed: "failed", external: "external", off: "off", down: "stopped", ready: "ready", unready: "unready",
+  skipped: "skipped"
 };
 const WOVEN = new Set(["up", "done", "external"]);
 // what isn't settled yet: blocking (madder) or on its way (weld) - a thread from it, a one-shot that never folds
-const UNSETTLED = { failed: "bad", unready: "bad", starting: "wait", queued: "wait" };
+const UNSETTLED = { failed: "bad", unready: "bad", skipped: "bad", starting: "wait", queued: "wait" };
 
 /* Motion follows what the stack does, live view only: a card that joins
    rises in, column by column; one that changes status is dyed its new
@@ -376,7 +377,7 @@ setInterval(tickClocks, 1000);
 /* A host's one-shots, folded by default: the hosts unfolded, in localStorage. */
 const openStrips = new Set(JSON.parse(localStorage.getItem("zent.openStrips") || "[]"));
 // a one-shot's state in the summary, most urgent first - the line takes the dye of the first present
-const STRIP_TALLY = { failed: "failed", unready: "unready", starting: "running", queued: "queued",
+const STRIP_TALLY = { failed: "failed", unready: "unready", skipped: "skipped", starting: "running", queued: "queued",
                       ready: "on demand", done: "done", stopped: "not run", off: "not run" };
 
 /* The line a host's one-shots fold into: how many, and how many per state. */

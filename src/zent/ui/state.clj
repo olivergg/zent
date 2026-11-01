@@ -318,6 +318,13 @@
            (:services handle) (assoc :services (:services handle))
            (:service-status handle) (assoc :service-status (:service-status handle)))))
 
+(defn observe-skipped!
+  "An apply skipped `name`: `failed` (its deps) didn't come up, so nothing runs it - shown as such,
+  not left looking queued."
+  [name failed]
+  (swap-view! mark-status name :skipped {:error (str "skipped: " (str/join ", " (map clojure.core/name failed))
+                                                     " failed - reload it once that's fixed")}))
+
 (defn observe-deploy-failed! [name ex]
   (swap-view! mark-status name :failed {:error (ex-message ex)}))
 

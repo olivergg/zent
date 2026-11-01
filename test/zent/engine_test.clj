@@ -268,6 +268,17 @@
       (is (= #{:a :c} (set @calls)) "deployed concurrently, so in no set order")
       (is (= [[:c :h]] @started))))
 
+  (testing "and the skip is reported (serve!'s :on-skipped), naming the dependency that failed"
+    (let [skipped (atom [])
+          hook @#'zent.engine/on-skipped-hook
+          before @hook]
+      (reset! hook (fn [n failed] (swap! skipped conj [n (vec failed)])))
+      (try (deploy-into! (collect (atom [])) [[:a {}] [:b {:deps [:a]}]] (fn [n _] (throw (ex-info "a broke" {})))
+                         (str (System/getProperty "java.io.tmpdir") "/zent-deploy-into-test.edn"))
+           (catch Exception _))
+      (reset! hook before)
+      (is (= [[:b [:a]]] @skipped))))
+
   (testing "given a chain a <- b <- c with :a failing, then the skip is transitive"
     (let [calls (atom [])]
       (is (thrown? Exception

@@ -28,13 +28,14 @@
   `zent reload-code` (zent.reload) reloads the :code-prefixes namespaces
   (default zent.*); :catalog-fn, if given, is re-read after a clean reload.
   Callbacks default to vars, not fn values, so a code reload reaches them."
-  [catalog & {:keys [deploy-fn control on-handled on-stopping on-stop on-seeded on-check code-prefixes catalog-fn]
+  [catalog & {:keys [deploy-fn control on-handled on-stopping on-stop on-skipped on-seeded on-check code-prefixes catalog-fn]
              :or {code-prefixes ["zent."]
                   deploy-fn #'engine/deploy-component!
                   control state/control
                   on-handled #'state/observe-handled!
                   on-stopping #'state/observe-stopping!
                   on-stop #'state/observe-manual-stop!
+                  on-skipped #'state/observe-skipped!
                   on-seeded #'state/observe-deploy-ok!
                   on-check #'state/observe-liveness-check!}
              :as opts}]
@@ -57,6 +58,7 @@
                        :on-handled on-handled
                        :on-stopping on-stopping
                        :on-stop on-stop
+                       :on-skipped on-skipped
                        :on-seeded on-seeded
                        :on-check on-check
                        ;; a branch switched on disk shows without re-applying

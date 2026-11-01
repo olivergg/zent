@@ -133,6 +133,9 @@
     (dotimes [_ n] (.put q :slot))
     (fn [f] (let [slot (.take q)] (try (f) (finally (.put q slot)))))))
 
+;; serve!'s :on-skipped - deploy-into! runs on job threads, deep under the loop: a hook, not an argument
+(defonce ^:private on-skipped-hook (atom (constantly nil)))
+
 (defn- deploy-into!
   "Deploys `ordered` ([name cfg] pairs in dependency order), each as soon as
   its in-scope :deps are up, up to `max-parallel` at once - calling (on-up
@@ -161,10 +164,12 @@
                                    ;; Throwable: whatever escapes leaves the promise
                                    ;; undelivered, every dependent waiting on it forever
                                    (try
-                                     (if (every? #(deref (up? %)) (filter up? (:deps cfg)))
-                                       (with-slot #(deploy! name cfg))
-                                       (do (println (format "[%s] skipped - a dependency failed" name))
-                                           false))
+                                     (let [failed (remove #(deref (up? %)) (filter up? (:deps cfg)))]
+                                       (if (empty? failed)
+                                         (with-slot #(deploy! name cfg))
+                                         (do (println (format "[%s] skipped - %s failed" name (str/join ", " (map clojure.core/name failed))))
+                                             (@on-skipped-hook name failed)
+                                             false)))
                                      (catch Throwable e (swap! errors assoc name e) false)))))
                       ordered)]
     (run! deref workers)
@@ -527,6 +532,8 @@
     :on-stopping    - (fn [name]) as a stop (a :stop, or a switch dropping
                       it) starts tearing a component down.
     :on-stop        - (fn [name]) called once a :stop lands.
+    :on-skipped     - (fn [name failed-deps]) when an apply skips a component:
+                      a dependency of it failed - nothing will run it.
     :on-seeded      - (fn [name cfg handle]) called once per component
                       adopt-session! finds still running at start.
     :on-check       - (fn [name cfg verdict]) on a liveness transition, verdict
@@ -548,7 +555,7 @@
     :on-refresh     - (fn []) every :refresh-ms (default 5s) in the loop, e.g.
                       to re-read what's checked out on disk; errors logged."
   [catalog & {:keys [poll-ms quiet-ms max-ms session-path deploy-fn on-resolved
-                     control on-handled on-stopping on-stop on-seeded on-check initial-preset
+                     control on-handled on-stopping on-stop on-skipped on-seeded on-check initial-preset
                      catalog-ref on-ready reload-code liveness-ms planner on-refresh refresh-ms]
              :or {poll-ms watch/default-poll-ms quiet-ms 200 max-ms 10000 liveness-ms 30000 refresh-ms 5000
                   session-path session/default-path
@@ -559,6 +566,7 @@
                   on-stop (constantly nil)
                   on-seeded (constantly nil)
                   on-check (constantly nil)}}]
+  (reset! on-skipped-hook (or on-skipped (constantly nil)))
   (let [catalog-ref (or catalog-ref (atom catalog))
         st (new-state)
         jobs (java.util.concurrent.LinkedBlockingQueue.)
