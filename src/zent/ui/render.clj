@@ -115,14 +115,15 @@
   :branch - without one, the main clone runs as it is, whatever its branch; :wt? in its own worktree;
   :lose? commits that worktree's next deploy (reset --hard) drops; :stale? running, but the disk moved
   on from the commit deployed. Its counts are never nil: 0 when git didn't tell."
-  [{:keys [git source wanted-branch deployed-sha status preview-of]}]
+  [{:keys [git source wanted-branch wanted-local deployed-sha status preview-of]}]
   (when-let [{:keys [branch sha base ahead] :as git}
-             (when git (cond-> (merge-with #(or %2 %1) {:behind 0 :ahead 0 :dirty 0} git)
+             (when git (cond-> (merge-with #(or %2 %1) {:behind 0 :ahead 0 :dirty 0 :pull 0} git)
                          ;; a worktree is detached at origin/<branch>: the branch is the preset's
                          (and (:worktree source) (nil? (:branch git))) (assoc :branch wanted-branch)))]
     (let [wt? (boolean (:worktree source))]
       (assoc git
              :wanted-branch wanted-branch
+             :wanted-local wanted-local
              :default? (and (not wanted-branch) (contains? (if base #{base} #{"main" "master"}) branch))
              :off? (boolean (and wanted-branch (not= wanted-branch branch)))
              :wt? wt?
@@ -141,13 +142,22 @@
 (defn- git-facts
   "A chip's facts, one sentence each (nil when there's nothing to say): the `cd` hover lists them all,
   each piece of the git row shows its own."
-  [{:keys [wanted-branch branch sha base behind ahead pushed dirty fetched-at deployed-sha off? wt? lose? stale?] :as chip} now]
+  [{:keys [wanted-branch wanted-local branch sha base behind ahead pushed dirty pull fetched-at deployed-sha off? wt? lose? stale?] :as chip} now]
   {:branch (str (or branch (str "detached at " (short-sha sha))) "\n"
-                (cond off? (str "the preset wants " wanted-branch " - not this one")
-                      wanted-branch "the preset's :branch"
+                (cond (and off? wanted-local) (str "the preset's :local wants " wanted-branch " checked out here: the deploy"
+                                                   " refuses until you git checkout it")
+                      off? (str "the preset wants " wanted-branch " - not this one")
+                      wanted-local "the preset's :branch, :local: your clone runs it"
+                      wanted-branch "the preset's :branch: origin's, in a worktree"
                       :else "no :branch in the preset: runs whatever this clone has checked out"))
    :from (if wt?
-           (str "runs origin/" branch ": its own worktree, reset to it on each deploy - push to run a change")
+           (str "runs origin/" branch " in its own worktree, detached - push to run a change. An apply syncs it,"
+                " a reload keeps its commit"
+                (if (pos? pull)
+                  (str "; origin has " pull " more commit(s)"
+                       (if fetched-at (str " as of the last fetch, " (duration (max 0 (- now fetched-at))) " ago") "")
+                       ": pull to run them")
+                  ""))
            "runs your local clone as it is, uncommitted changes included")
    :behind (when (pos? behind)
              (str behind " commit(s) on origin/" base " not in this checkout - "
@@ -170,21 +180,27 @@
        (map #(str/replace (esc %) "\n" "&#10;"))
        (str/join "&#10;")))
 
+(defn- git-button
+  "A git action on the card: posts to `path`, asking `confirm` first when given."
+  [title path confirm label]
+  (str "<button type=\"button\" class=\"act git-act\" title=\"" (esc title) "\" hx-post=\"" (esc path)
+       "\" hx-swap=\"none\" hx-disabled-elt=\"this\"" (when confirm (str " hx-confirm=\"" (esc confirm) "\"")) ">"
+       label "</button>"))
+
 (defn- git-row
   "The chip, a section of its own - nil when it has nothing to say: the branch unless the default one
   (red when not the preset's :branch, dashed in a worktree), where the code comes from (origin: a
   worktree reset on deploy; local: the clone as it is), then each count with its word - each piece
   with its fact on hover."
-  [cname {:keys [branch sha base behind ahead pushed dirty wanted-branch default? off? wt? lose? stale? preview-of] :as chip} now]
+  [cname {:keys [branch sha base behind ahead pushed dirty pull wanted-branch default? off? wt? lose? stale? preview-of] :as chip} now]
   (let [facts (git-facts chip now)
         span (fn [cls fact body] (str "<span class=\"" cls "\" title=\"" (str/replace (esc (facts fact fact)) "\n" "&#10;") "\">" body "</span>"))
         rebase (when (and (pos? behind) (not (source/rebase-refusal chip wt?)))
-                 (str "<button type=\"button\" class=\"act rebase\" title=\"Fetch, then rebase " (esc branch) " onto origin/"
-                      (esc base) " if nothing conflicts\" hx-post=\"/api/rebase/" (esc (name cname)) (when preview-of (str "?preset=" (esc preview-of)))
-                      "\" hx-swap=\"none\" hx-disabled-elt=\"this\" hx-confirm=\""
-                      (esc (str "Rebase " branch " onto origin/" base "?"
-                                (when pushed (str " It is on origin: push --force-with-lease afterwards."))))
-                      "\">rebase</button>"))
+                 (git-button (str "Fetch, then rebase " branch " onto origin/" base " if nothing conflicts")
+                             (str "/api/rebase/" (name cname) (when preview-of (str "?preset=" preview-of)))
+                             (str "Rebase " branch " onto origin/" base "?"
+                                  (when pushed " It is on origin: push --force-with-lease afterwards."))
+                             "rebase"))
         counts (str (when (pos? behind) (str (span "behind" :behind (str "&#8595;" behind " " (esc base))) rebase))
                     (when (pos? ahead)
                       (if lose?
@@ -199,7 +215,12 @@
                         (str "&#9095; " (esc (if branch (short-branch branch) (short-sha sha)))))
                   (when off? (span "want" (str "the preset wants " wanted-branch ", this is " branch)
                                    (str "&#8800; " (esc (short-branch wanted-branch)))))
-                  (span (if wt? "from origin" "from local") :from (if wt? "&#10227; origin" "&#9998; local"))))
+                  (cond (pos? pull) (span "from origin moved" :from (str "&#10227; origin +" pull))
+                        wt? (span "from origin" :from "&#10227; origin")
+                        :else (span "from local" :from "&#9998; local"))
+                  (when (and (pos? pull) (not preview-of))
+                    (git-button (str "Sync the worktree to origin/" branch ", then redeploy")
+                                (str "/api/pull/" (name cname)) nil "pull"))))
            counts "</span>"))))
 
 (defn- checkout

@@ -82,7 +82,7 @@
             (fn [{:keys [component repo] :as ref}]
               (let [source (cond component (or (get resolved component) (merge defaults (get components component)))
                                  repo (assoc defaults :repo repo))
-                    coords (select-keys source [:repo :branch :workspace-dir :org])]
+                    coords (select-keys source [:repo :branch :local :workspace-dir :org])]
                 (when-not (:repo coords)
                   (throw (ex-info (format "%s: :source-env %s has no :repo" k (or component "entry"))
                                   {:component k :source component})))

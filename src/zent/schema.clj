@@ -52,6 +52,8 @@
    [:readiness {:optional true} Readiness]
    [:watch {:optional true} Watch]
    [:branch {:optional true} git-ref]
+   ;; with :branch: run the main clone, which must have it checked out (zent.source/resolve-source)
+   [:local {:optional true} :boolean]
    [:workspace-dir {:optional true} :string]
    [:org {:optional true} :string]
    ;; NOT :deps: doesn't order anything or gate readiness. A declared fact
@@ -203,13 +205,13 @@
   branch/image/port/context - nothing that decides what code runs (:cmd,
   :env, :scripts, :repo, :workspace-dir...), since that could reach around
   every allowlist here, e.g. a :cmd running kubectl against prod."
-  #{:mode :kind :deps :branch :port :image :context :namespace
+  #{:mode :kind :deps :branch :local :port :image :context :namespace
     :services :exclude :profiles :permanent :keep-warm :use-secret-env})
 
 (def secret-safe-overrides
   "All any preset may set on a component that reads secrets: nothing that
   changes what runs with them, which could print them into a log."
-  #{:mode :kind :deps :branch :use-secret-env})
+  #{:mode :kind :deps :branch :local :use-secret-env})
 
 (defn check-secret-contexts!
   "Refuses reading secrets (:use-secret-env) from a context the catalog's

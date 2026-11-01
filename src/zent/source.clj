@@ -27,9 +27,9 @@
 
 (defn resolve-source
   ([repo] (resolve-source repo {}))
-  ([repo {:keys [workspace-dir branch org]}]
-   ;; a :branch runs from its own worktree, reset to origin/<branch> on every
-   ;; call (zent.branch); the main clone is only ever read
+  ([repo {:keys [workspace-dir branch local org]}]
+   ;; a :branch runs origin/<branch> from its own worktree (zent.branch); with :local, the main clone
+   ;; as it is, which must have it checked out - zent never switches it; the main clone is only read
    (let [dir (main-clone-dir repo workspace-dir)]
      (cond
        (not (.isDirectory (java.io.File. dir)))
@@ -41,24 +41,23 @@
 
        (not branch) dir
 
-       (main-clone-on? dir branch)
-       (do (println (str repo "@" branch " is checked out in " dir " - running from it, as it is"))
-           dir)
+       (not local) (branch/resolve-worktree dir repo branch)
 
-       :else (branch/resolve-worktree dir repo branch)))))
+       (main-clone-on? dir branch) dir
+
+       :else (throw (ex-info (str repo ": :local runs " dir " as it is, which must have " branch " checked out - it has "
+                                  (or (current-branch dir) "no branch"))
+                             {:dir dir :hint (str "git -C " dir " checkout " branch)}))))))
 
 (defn checkout-dir
-  "The dir a component runs from - its worktree when :branch is pinned (unless
-  the main clone has that branch checked out), else the main clone - WITHOUT
+  "The dir a component runs from - its worktree for a :branch, the main clone
+  without one or with :local - WITHOUT
   resolve-source's side effects (creating, fetching and hard-resetting
   worktrees): what a liveness check or a display reads."
-  [{:keys [repo branch workspace-dir]}]
-  (let [main (main-clone-dir repo workspace-dir)]
-    ;; resolve-source's rule: the main clone when it has the branch checked out - a detached worktree
-    ;; doesn't hold the branch, so the main clone may have it even when one exists
-    (if (and branch (not (main-clone-on? main branch)))
-      (branch/worktree-path repo branch)
-      main)))
+  [{:keys [repo branch local workspace-dir]}]
+  (if (and branch (not local))
+    (branch/worktree-path repo branch)
+    (main-clone-dir repo workspace-dir)))
 
 (defn- git
   "`git -C dir args`'s trimmed stdout, nil on failure. --no-optional-locks: a
@@ -116,13 +115,22 @@
                             (rev-count dir "HEAD" "--not" "--remotes=origin")))
         fetched-at (assoc :fetched-at fetched-at)))))
 
+(defn checkout-git
+  "git-status of the dir `cfg` runs from; for a :branch worktree (detached at origin/<branch>), also
+  :pull - commits origin/<branch> has that it doesn't, as of the last fetch."
+  [{:keys [branch local] :as cfg}]
+  (let [dir (checkout-dir cfg)]
+    (when-let [st (git-status dir)]
+      (cond-> st
+        (and branch (not local)) (assoc :pull (rev-count dir (str "HEAD..origin/" branch)))))))
+
 (defn rebase-refusal
   "Why `st` (git-status's) can't be rebased onto its default branch here - nil when it can: a branch
   of its own, nothing uncommitted, behind. `worktree?`: zent resets it to origin on each deploy, a
   local rebase there would be undone."
   [{:keys [branch base dirty behind]} worktree?]
-  (cond worktree? (str "its own worktree runs origin/" (or branch "<branch>") ", reset on each deploy: rebase it"
-                       " where you work on it, then push it (--force-with-lease)")
+  (cond worktree? (str "its own worktree runs origin/" (or branch "<branch>") ": rebase the branch where you work on"
+                       " it, push it (--force-with-lease), then pull")
         (not branch) "detached HEAD: no branch to rebase"
         (not base) "no origin/HEAD, origin/master or origin/main to rebase onto"
         (= branch base) (str "on " base " itself")

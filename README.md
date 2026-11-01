@@ -94,6 +94,7 @@ that observes a component its preset doesn't run.
 | pick a stack | `zent presets`, `zent preview <preset>`, `zent apply <preset>` | `list_presets`, `preview`, `apply` |
 | see what runs | `zent status` (dashboard: `zent serve --detach --ui`) | `status` |
 | iterate on a component | `zent reload <c>`, then `zent logs [-f] <c>` | `reload`, `logs` |
+| run what's new on a `:branch`'s origin | `zent pull <c>` (or the card's `pull`) | - |
 | catch a clone's branch up with origin's default one | `zent rebase <c>` (or the card's `rebase`), then `zent reload <c>` | - |
 | stop some / all but `:permanent` | `zent stop <c>...` / `zent stop` | `stop` |
 | judge the running stack | `zent verify [<preset> [<check>...]]` | `verify` |
@@ -167,8 +168,10 @@ A preset is a vector of component names; a map right after a name overrides it:
                       :url "http://localhost:8080/health/readiness"}}]
 ```
 
-A `:branch` already checked out in the main clone runs from the main clone, as it is. Otherwise
-its worktree is detached at origin's commit: zent never moves or holds a local branch.
+A `:branch` runs origin's code, from a worktree detached at `origin/<branch>`: an apply that
+(re)deploys it syncs it, `zent pull <c>` too, a reload keeps its commit. Add `:local true` to run
+your main clone as it is instead - refused unless it has that branch checked out. zent never moves,
+holds or switches a local branch.
 
 A tool reading other repos gets their dirs through `:source-env` (`:one-shot`, `:process`,
 `:quarkus-app`; plain values go in `:env`). Each var is set to a component's checkout as the

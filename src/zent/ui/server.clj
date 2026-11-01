@@ -240,7 +240,7 @@
                                                    [k (cond-> (assoc c :preview? true :preview-of (name preset-name))
                                                         (:source-env cfg) (assoc :source-env (state/source-env-view cfg))
                                                         (:repo cfg) (assoc :source (source/describe cfg)
-                                                                           :git (source/git-status (source/checkout-dir cfg))))]))
+                                                                           :git (source/checkout-git cfg)))]))
                                                (:components preview))))
         :graph (:graph preview)
         :informational (:informational preview)
@@ -427,6 +427,9 @@
     ;; (zent.client/await!).
     (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/trigger/"))
     (component-command :reload (subs (:uri req) (count "/api/trigger/")))
+
+    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/pull/"))
+    (component-command :pull (subs (:uri req) (count "/api/pull/")))
 
     (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/stop/"))
     (component-command :stop (subs (:uri req) (count "/api/stop/")))

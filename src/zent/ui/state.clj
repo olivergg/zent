@@ -165,6 +165,7 @@
                                          :repo (:repo cfg)
                                          ;; the preset's :branch, against the one on disk (:git)
                                          :wanted-branch (:branch cfg)
+                                         :wanted-local (:local cfg)
                                          :permanent (:permanent cfg)
                                          :attached-to (:attached-to cfg)
                                          :scripts (:scripts cfg)
@@ -227,7 +228,7 @@
   "Sets `k`'s :git (zent.source/git-status) - only when it changed: no push otherwise."
   [k cfg]
   (when (:repo cfg)
-    (let [g (source/git-status (source/checkout-dir cfg))]
+    (let [g (source/checkout-git cfg)]
       (when (not= g (get-in @view-state [:components k :git]))
         (swap! view-state assoc-shown k :git g)))))
 
@@ -290,7 +291,7 @@
   [name cfg]
   (when (and (:repo cfg) (not= :external (:kind cfg)))
     (try
-      (let [g (source/git-status (source/checkout-dir cfg))]
+      (let [g (source/checkout-git cfg)]
         (swap! view-state #(-> % (assoc-shown name :deployed-sha (:sha g)) (assoc-shown name :git g))))
       (catch Exception e (println (format "[%s] deployed commit not read: %s" name (ex-message e)))))))
 

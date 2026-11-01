@@ -36,15 +36,25 @@
         (is (= worktree-dir
                (source/resolve-source "another-repo" {:workspace-dir root :branch "feature/foo"})))))))
 
-(deftest resolve-source-branch-checked-out-in-main-clone-test
-  (testing "given the main clone has the branch checked out, then it runs from the
-            main clone as it is - no worktree, which git would refuse anyway"
-    (let [root (str (System/getProperty "java.io.tmpdir") "/zent-source-test-main-" (System/currentTimeMillis))
-          repo-dir (str root "/some-repo")]
-      (.mkdirs (File. repo-dir))
-      (with-redefs [zent.shell/sh! (fn [_] {:exit 0 :out "feature/foo\n" :err ""})
+(deftest resolve-source-local-test
+  (let [root (str (System/getProperty "java.io.tmpdir") "/zent-source-test-main-" (System/currentTimeMillis))
+        repo-dir (str root "/some-repo")
+        on (fn [b] (fn [_] {:exit 0 :out (str b "\n") :err ""}))]
+    (.mkdirs (File. repo-dir))
+    (testing "given :local and the main clone on the branch, then the main clone as it is - no worktree"
+      (with-redefs [zent.shell/sh! (on "feature/foo")
                     branch/resolve-worktree (fn [& _] (throw (ex-info "must not be called" {})))]
-        (is (= repo-dir (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo"})))))))
+        (is (= repo-dir (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo" :local true})))))
+    (testing "given :local and the main clone elsewhere, then it refuses, saying how to fix it - zent never switches it"
+      (with-redefs [zent.shell/sh! (on "main")]
+        (let [e (try (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo" :local true}) nil
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (re-find #"must have feature/foo checked out - it has main" (ex-message e)))
+          (is (= (str "git -C " repo-dir " checkout feature/foo") (:hint (ex-data e)))))))
+    (testing "given no :local, then origin's worktree - even when the main clone is on the branch"
+      (with-redefs [zent.shell/sh! (on "feature/foo")
+                    branch/resolve-worktree (fn [_ _ b] (str "/wt/" b))]
+        (is (= "/wt/feature/foo" (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo"})))))))
 
 (deftest resolve-source-not-found-test
   (testing "fails loudly with the clone hint when the repo isn't checked out"
@@ -76,11 +86,10 @@
           (is (= (branch/worktree-path "some-repo" "feature/x") (:worktree d)))
           (is (= (:worktree d) (:dir d))))))
 
-    (testing "given the pinned branch is the one checked out in the main clone, then it
-              reads the main clone - git refuses that branch a worktree"
+    (testing "given :local, then it reads the main clone"
       (with-redefs [zent.shell/sh! (fn [_] {:exit 0 :out "feature/x\n" :err ""})]
         (is (= {:workdir repo-dir :dir repo-dir :branch "feature/x"}
-               (source/describe {:repo "some-repo" :workspace-dir root :branch "feature/x"})))))
+               (source/describe {:repo "some-repo" :workspace-dir root :branch "feature/x" :local true})))))
 
     (testing "a detached HEAD or a non-repo directory reports no branch rather
               than the literal string git prints"

@@ -146,10 +146,10 @@ What a catalog's components themselves need is listed in that catalog's repo.
   streamed content arrives (the Logs tab looks empty). For that, start Chrome with
   `--remote-debugging-port` and read the page's state over the DevTools protocol
   (`Runtime.evaluate`, e.g. `document.querySelectorAll('.ln').length`).
-- `:branch` runs from a worktree in `~/.cache/zent/worktrees/`, detached at `origin/<branch>`
-  and reset to it on each deploy, so the branch must be pushed - unless the main clone has it
-  checked out: then it runs from the main clone, as it is. No local branch is moved or held:
-  the main clone can check `<branch>` out at any time, its unpushed commits are safe.
+- `:branch` runs origin's code: a worktree in `~/.cache/zent/worktrees/`, detached at
+  `origin/<branch>` (the branch must be pushed), synced by an apply that (re)deploys it or a
+  `zent pull` - a reload keeps its commit. `:branch` + `:local true` runs the main clone as it
+  is instead, refused unless it has `<branch>` checked out. Nothing moves or holds a local branch.
 - State: `~/.cache/zent/` (session, logs, `serve.log`, worktrees), user presets in
   `~/.config/zent/presets/`.
 - Never run a bare `zent down` to clean up: the session also tracks stacks you started.

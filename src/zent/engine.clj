@@ -18,6 +18,7 @@
   generic kinds (zent.kinds); a catalog is data (zent.catalog)."
   (:require [clojure.set :as set]
             [clojure.string :as str]
+            [zent.branch :as branch]
             [zent.compose :as compose]
             [zent.lifecycle :as lifecycle]
             [zent.logs :as logs]
@@ -511,7 +512,10 @@
                         :apply  {:preset kw-or-nil} - see switch-preset!;
                                  nil stops everything but permanent ones.
                         :reload {:name kw} - re-applies now, regardless of
-                                 :watch/due?; restarts one stopped earlier.
+                                 :watch/due?; restarts one stopped earlier. A
+                                 :branch worktree stays at its commit.
+                        :pull   {:name kw} - a :reload that first syncs its
+                                 worktree to origin/<branch>.
                         :stop   {:name kw} - tears down and drops from the
                                  watched set (a later file change can't
                                  bring it back).
@@ -574,20 +578,22 @@
         _ (some-> planner (reset! #(plan-summary (plan @catalog-ref % @st))))
         persist! (fn [] (session/save! session-path (or initial-preset :serve) (seq (:handles @st))))
         ;; a reload runs the catalog as it is now (current-cfg), not as applied
-        reload-one! (fn [name]
-                      (if-let [cfg (and (not (get-in @st [:active name])) (get-in @st [:parked name]))]
-                        (let [cfg (current-cfg @catalog-ref name cfg)]
-                          (println (format "[%s] restarting" name))
-                          (swap! st #(-> % (update :parked dissoc name) (assoc-in [:active name] cfg)))
-                          (deploy-into! (partial put-handle! st) [[name (assoc cfg ::run-now true)]] deploy-fn session-path))
-                        (when-let [cfg (some->> (get-in @st [:active name]) (current-cfg @catalog-ref name))]
-                          (swap! st assoc-in [:active name] cfg)
-                          (let [{:keys [ok handle error]} (reload! name cfg deploy-fn (get-in @st [:handles name]))]
-                            ;; thrown so the command reports it (`zent reload` exits non-zero), as a
-                            ;; parked one's deploy-into! does; submit! catches it, the loop runs on
-                            (if ok
-                              (put-handle! st name handle)
-                              (throw (ex-info (format "%s: reload failed: %s" (clojure.core/name name) error) {})))))))
+        ;; a reload restarts what's on disk; only a pull (sync? true) brings a worktree to origin
+        reload-one! (fn [name & [sync?]]
+                      (binding [branch/*sync* (boolean sync?)]
+                        (if-let [cfg (and (not (get-in @st [:active name])) (get-in @st [:parked name]))]
+                          (let [cfg (current-cfg @catalog-ref name cfg)]
+                            (println (format "[%s] restarting" name))
+                            (swap! st #(-> % (update :parked dissoc name) (assoc-in [:active name] cfg)))
+                            (deploy-into! (partial put-handle! st) [[name (assoc cfg ::run-now true)]] deploy-fn session-path))
+                          (when-let [cfg (some->> (get-in @st [:active name]) (current-cfg @catalog-ref name))]
+                            (swap! st assoc-in [:active name] cfg)
+                            (let [{:keys [ok handle error]} (reload! name cfg deploy-fn (get-in @st [:handles name]))]
+                              ;; thrown so the command reports it (`zent reload` exits non-zero), as a
+                              ;; parked one's deploy-into! does; submit! catches it, the loop runs on
+                              (if ok
+                                (put-handle! st name handle)
+                                (throw (ex-info (format "%s: reload failed: %s" (clojure.core/name name) error) {}))))))))
         ;; queues `run` as a job over `names` (::all for an apply), reporting
         ;; `commands` handled - with :error if it threw - once it's done
         submit! (fn [names commands run]
@@ -663,6 +669,8 @@
                              (submit! #{::all} [c] #(apply! preset)))
                            (doseq [{:keys [name] :as c} (:reload by-action)]
                              (submit! #{name} [c] #(reload-one! name)))
+                           (doseq [{:keys [name] :as c} (:pull by-action)]
+                             (submit! #{name} [c] #(reload-one! name true)))
                            (let [cur-keys (set (keys (:active @st)))
                                  ;; a fresh scan baseline only for names a job just added
                                  new-targets (watch-targets (select-keys (:active @st) (set/difference cur-keys known-keys)))
@@ -705,7 +713,7 @@
                                                         (assoc acc name t)))
                                                     {} rescanned)]
                              ;; done here and now: stops, and anything else not a job's
-                             (when-let [inline (seq (remove (comp (cond-> #{:apply :reload} reload-code (conj :reload-code))
+                             (when-let [inline (seq (remove (comp (cond-> #{:apply :reload :pull} reload-code (conj :reload-code))
                                                                   :action)
                                                             (concat now-stops (remove #(= :stop (:action %)) commands))))]
                                (on-handled (vec inline)))

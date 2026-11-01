@@ -580,10 +580,12 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .git .from.local { background: var(--muted); }
 /* a preview's :branch with no checkout yet: apply creates its worktree - worth a look before applying */
 .node .git .from.pending { background: var(--weld); color: var(--ink); }
+/* origin moved past the worktree's commit: a pull brings it */
+.node .git .from.moved { background: var(--weld); color: var(--ink); }
 .node .git .behind, .node .git .stale { color: var(--weld); }
-/* behind, nothing to stop it: a rebase a click away (zent.source/rebase!) */
-.node .git .act.rebase { padding: 0 4px; font: inherit; color: var(--weld); border: 1px solid var(--weld); border-radius: 2px; cursor: pointer; }
-.node .git .act.rebase:hover { color: var(--card); background: var(--weld); }
+/* a rebase (behind, nothing to stop it) or a pull (origin moved) a click away */
+.node .git .act.git-act { padding: 0 4px; font: inherit; color: var(--weld); border: 1px solid var(--weld); border-radius: 2px; cursor: pointer; }
+.node .git .act.git-act:hover { color: var(--card); background: var(--weld); }
 .node .git .ahead, .node .git .dirty { color: var(--muted); }
 .node .git .lose, .git-summary :is(.off, .lose) { color: var(--madder); }
 .node .workdir-open {

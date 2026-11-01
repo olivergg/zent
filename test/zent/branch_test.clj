@@ -58,3 +58,21 @@
           (branch/resolve-worktree clone "repo" "feature")
           (is (= "HEAD" (git! wt "rev-parse" "--abbrev-ref" "HEAD")))
           (is (= local (git! clone "rev-parse" "feature"))))))))
+
+(deftest resolve-worktree-no-sync-test
+  (testing "given *sync* false (a reload), then an existing worktree keeps its commit though origin moved"
+    (let [root (str (System/getProperty "java.io.tmpdir") "/zent-worktree-nosync-" (System/nanoTime))
+          origin (str root "/origin.git") clone (str root "/clone") wt (str root "/wt")]
+      (.mkdirs (java.io.File. root))
+      (git! root "init" "--quiet" "--bare" "--initial-branch=master" origin)
+      (git! root "clone" "--quiet" origin clone)
+      (spit (str clone "/f.txt") "base") (git! clone "add" ".") (git! clone "commit" "--quiet" "-m" "base")
+      (git! clone "push" "--quiet" "origin" "master")
+      (with-redefs [branch/worktree-path (fn [_ _] wt)]
+        (branch/resolve-worktree clone "repo" "master")
+        (let [before (git! wt "rev-parse" "HEAD")]
+          (commit! clone "moved") (git! clone "push" "--quiet" "origin" "master")
+          (binding [branch/*sync* false] (branch/resolve-worktree clone "repo" "master"))
+          (is (= before (git! wt "rev-parse" "HEAD")))
+          (branch/resolve-worktree clone "repo" "master")
+          (is (= (git! clone "rev-parse" "origin/master") (git! wt "rev-parse" "HEAD")) "an apply or a pull syncs it"))))))
