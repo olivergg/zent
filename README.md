@@ -167,8 +167,8 @@ A preset is a vector of component names; a map right after a name overrides it:
                       :url "http://localhost:8080/health/readiness"}}]
 ```
 
-A `:branch` already checked out in the main clone runs from the main clone, as it is (git
-refuses it a worktree).
+A `:branch` already checked out in the main clone runs from the main clone, as it is. Otherwise
+its worktree is detached at origin's commit: zent never moves or holds a local branch.
 
 A tool reading other repos gets their dirs through `:source-env` (`:one-shot`, `:process`,
 `:quarkus-app`; plain values go in `:env`). Each var is set to a component's checkout as the

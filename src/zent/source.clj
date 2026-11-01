@@ -53,12 +53,11 @@
   resolve-source's side effects (creating, fetching and hard-resetting
   worktrees): what a liveness check or a display reads."
   [{:keys [repo branch workspace-dir]}]
-  (let [main (main-clone-dir repo workspace-dir)
-        worktree (when branch (branch/worktree-path repo branch))]
-    ;; an existing worktree means git keeps the branch out of the main clone:
-    ;; no git call on that common path
-    (if (and worktree (or (.isDirectory (java.io.File. worktree)) (not (main-clone-on? main branch))))
-      worktree
+  (let [main (main-clone-dir repo workspace-dir)]
+    ;; resolve-source's rule: the main clone when it has the branch checked out - a detached worktree
+    ;; doesn't hold the branch, so the main clone may have it even when one exists
+    (if (and branch (not (main-clone-on? main branch)))
+      (branch/worktree-path repo branch)
       main)))
 
 (defn- git
@@ -122,7 +121,7 @@
   of its own, nothing uncommitted, behind. `worktree?`: zent resets it to origin on each deploy, a
   local rebase there would be undone."
   [{:keys [branch base dirty behind]} worktree?]
-  (cond worktree? (str "its own worktree runs origin/" branch ", reset on each deploy: rebase " branch
+  (cond worktree? (str "its own worktree runs origin/" (or branch "<branch>") ", reset on each deploy: rebase it"
                        " where you work on it, then push it (--force-with-lease)")
         (not branch) "detached HEAD: no branch to rebase"
         (not base) "no origin/HEAD, origin/master or origin/main to rebase onto"

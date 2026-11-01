@@ -116,7 +116,10 @@
   :lose? commits that worktree's next deploy (reset --hard) drops; :stale? running, but the disk moved
   on from the commit deployed. Its counts are never nil: 0 when git didn't tell."
   [{:keys [git source wanted-branch deployed-sha status preview-of]}]
-  (when-let [{:keys [branch sha base ahead] :as git} (when git (merge-with #(or %2 %1) {:behind 0 :ahead 0 :dirty 0} git))]
+  (when-let [{:keys [branch sha base ahead] :as git}
+             (when git (cond-> (merge-with #(or %2 %1) {:behind 0 :ahead 0 :dirty 0} git)
+                         ;; a worktree is detached at origin/<branch>: the branch is the preset's
+                         (and (:worktree source) (nil? (:branch git))) (assoc :branch wanted-branch)))]
     (let [wt? (boolean (:worktree source))]
       (assoc git
              :wanted-branch wanted-branch

@@ -1,7 +1,8 @@
 (ns zent.branch
   "Per-branch git worktrees, under
   ~/.cache/zent/worktrees/, synced to origin/<branch> - so a branch must be
-  pushed. The main clone is never fetched or reset."
+  pushed. Detached at that commit: no local branch is ever moved or held, so
+  the main clone stays free to check <branch> out, its unpushed commits safe."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [zent.shell :as shell]))
@@ -27,14 +28,18 @@
   creation throws; a failed fetch (offline) keeps the worktree as it is."
   [main-clone-dir repo-name branch]
   (locking (repo-lock main-clone-dir)
-    (let [worktree-dir (worktree-path repo-name branch)]
-      (when-not (.exists (io/file worktree-dir))
-        (println (str "Creating worktree for " repo-name "@" branch " -> " worktree-dir))
-        (shell/sh-or-throw! ["git" "-C" main-clone-dir "worktree" "add" worktree-dir branch]))
-      (println (str "Syncing worktree " worktree-dir " to origin/" branch))
-      ;; reset only after a successful fetch
-      (let [{:keys [exit err]} (shell/sh! ["git" "-C" worktree-dir "fetch" "origin" branch])]
-        (if (zero? exit)
-          (shell/sh-or-throw! ["git" "-C" worktree-dir "reset" "--hard" (str "origin/" branch)])
-          (println (str "fetch of origin/" branch " failed, keeping " worktree-dir " as is: " (str/trim (str err))))))
+    (let [worktree-dir (worktree-path repo-name branch)
+          origin (str "origin/" branch)
+          ;; the worktrees share the main clone's refs: fetching there updates origin/<branch> for both
+          fetched? (zero? (:exit (shell/sh! ["git" "-C" main-clone-dir "fetch" "origin" branch])))]
+      (if (.exists (io/file worktree-dir))
+        (if fetched?
+          (do (println (str "Syncing worktree " worktree-dir " to " origin))
+              ;; detach first: one made before worktrees were detached still holds <branch>, which reset
+              ;; --hard would move
+              (shell/sh-or-throw! ["git" "-C" worktree-dir "checkout" "--quiet" "--detach"])
+              (shell/sh-or-throw! ["git" "-C" worktree-dir "reset" "--quiet" "--hard" origin]))
+          (println (str "fetch of " origin " failed, keeping " worktree-dir " as is")))
+        (do (println (str "Creating worktree for " repo-name "@" branch " -> " worktree-dir " (detached at " origin ")"))
+            (shell/sh-or-throw! ["git" "-C" main-clone-dir "worktree" "add" "--detach" worktree-dir origin])))
       worktree-dir)))
