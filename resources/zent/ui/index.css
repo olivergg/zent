@@ -578,6 +578,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .git .from { padding: 0 4px; border-radius: 2px; color: var(--card); }
 .node .git .from.origin { background: var(--indigo); }
 .node .git .from.local { background: var(--muted); }
+/* a preview's :branch with no checkout yet: apply creates its worktree - worth a look before applying */
+.node .git .from.pending { background: var(--weld); color: var(--ink); }
 .node .git .behind, .node .git .stale { color: var(--weld); }
 /* behind, nothing to stop it: a rebase a click away (zent.source/rebase!) */
 .node .git .act.rebase { padding: 0 4px; font: inherit; color: var(--weld); border: 1px solid var(--weld); border-radius: 2px; cursor: pointer; }

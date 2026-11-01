@@ -247,8 +247,8 @@
        ;; a preview's :branch never deployed: its worktree doesn't exist yet
        (when (and (:preview? c) (:worktree source) (:wanted-branch c))
          (str "<span class=\"git\"><span class=\"branch wt\" title=\"" (esc (:wanted-branch c)) "\">&#9095; "
-              (esc (short-branch (:wanted-branch c))) "</span><span class=\"from origin\" title=\"its worktree is created at apply, from origin/"
-              (esc (:wanted-branch c)) "\">&#10227; origin, created at apply</span></span>")))
+              (esc (short-branch (:wanted-branch c))) "</span><span class=\"from origin pending\" title=\"not checked out anywhere yet: apply creates its worktree from origin/"
+              (esc (:wanted-branch c)) " - what's pushed there, nothing local\">&#9888; created at apply from origin</span></span>")))
      (service-rows c)
      (source-env-rows source-env)
      (when (and (links-visible? status) (seq links))
