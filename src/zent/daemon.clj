@@ -18,6 +18,12 @@
 
 (defn clear! [path] (io/delete-file path true))
 
+(defn reset-log!
+  "Empties the serve log at `path` - created, its dir too: nothing has made ~/.cache/zent on a first run."
+  [path]
+  (io/make-parents path)
+  (spit path ""))
+
 (defn live
   "The card at `path` if its process is still the one that wrote it, else
   nil - a stale card is removed on the way."

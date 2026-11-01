@@ -6,6 +6,16 @@
 
 (def ^:private path (str (System/getProperty "java.io.tmpdir") "/zent-daemon-test.edn"))
 
+(deftest reset-log-test
+  (let [log (str (System/getProperty "java.io.tmpdir") "/zent-reset-log-" (System/nanoTime) "/cache/serve.log")]
+    (testing "given no such dir (a first run), then the log is created, its dir too"
+      (daemon/reset-log! log)
+      (is (= "" (slurp log))))
+    (testing "given a log with content, then it's emptied"
+      (spit log "old run")
+      (daemon/reset-log! log)
+      (is (= "" (slurp log))))))
+
 (deftest register-and-live-test
   (try
     (testing "given no card, then there's no daemon"

@@ -222,7 +222,7 @@
   closing this terminal must not take the daemon with it."
   [ctx ui?]
   (refuse-if-running!)
-  (spit daemon/log-path "")
+  (daemon/reset-log! daemon/log-path)
   (let [proc (shell/spawn! (cond-> ["nohup" (:bin ctx) "serve"] ui? (conj "--ui"))
                            :log-file daemon/log-path)
         deadline (+ (System/currentTimeMillis) detach-timeout-ms)]
