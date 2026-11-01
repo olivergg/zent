@@ -7,7 +7,10 @@
   CPU is a % of one core (100 = one core busy), like `top` and `docker stats`. A process tree's is
   its cumulative CPU time over the wall time since the last sample: `ps`'s own %cpu is a decaying
   average on macOS and a lifetime one on Linux, used only for the first sample."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [zent.commands :as commands]
+            [zent.lifecycle :refer [pid-of]]
+            [zent.shell :as shell]))
 
 (defn- lines [s] (remove str/blank? (str/split-lines (str s))))
 
@@ -120,14 +123,7 @@
   "The compose file a handle's containers carry in their config_files label, or nil."
   [{:keys [repo-dir compose-opts] :as handle}]
   (when (and (map? handle) repo-dir compose-opts)
-    (str repo-dir "/" (or (:file compose-opts) "docker-compose.yaml"))))
-
-(defn pid-of
-  "A local process handle's pid: the live Process a deploy returns, or the {:kind :pid} the session
-  persisted (an adopted one); nil for any other handle."
-  [handle]
-  (cond (instance? Process handle) (.pid ^Process handle)
-        (and (map? handle) (= :pid (:kind handle))) (:pid handle)))
+    (commands/compose-file repo-dir compose-opts)))
 
 (defn containers-of
   "`containers` (parse-docker-ps) a handle owns: its file's, and only its :services when it lists
@@ -201,22 +197,10 @@
 ;; the one action
 ;; ---------------------------------------------------------------------------
 
-(defn out-of
-  "`cmd`'s stdout under LC_ALL=C, nil when it failed, couldn't run (docker down: no container usage)
-  or outlived `timeout-ms` (default 5s: a frozen docker - colima - mustn't pile up hung `docker
-  stats`). Through a file: a full pipe nobody reads yet would block it."
-  [cmd & [timeout-ms]]
-  (let [f (java.io.File/createTempFile "zent-usage" ".out")]
-    (try (let [pb (doto (ProcessBuilder. ^java.util.List (mapv str cmd))
-                    (.redirectOutput f)
-                    (.redirectError java.lang.ProcessBuilder$Redirect/DISCARD))
-               _ (.put (.environment pb) "LC_ALL" "C")
-               p (.start pb)]
-           (if (.waitFor p (long (or timeout-ms 5000)) java.util.concurrent.TimeUnit/MILLISECONDS)
-             (when (zero? (.exitValue p)) (slurp f))
-             (do (.destroyForcibly p) nil)))
-         (catch Exception _ nil)
-         (finally (.delete f)))))
+(defn- out-of
+  "`cmd`'s stdout, nil when docker's down or frozen (colima): 5s, so hung `docker stats` don't pile up."
+  [cmd]
+  (shell/sh-timeout! cmd 5000 :env {"LC_ALL" "C"}))
 
 (defn sample!
   "One sample of `handles` ({name handle}) after `last` (the previous sample!'s result, or nil):

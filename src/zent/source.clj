@@ -3,7 +3,7 @@
   isn't under ~/workspace. A :branch runs, by :from, from a worktree at origin/<branch> (:origin)
   or at the local <branch> (:local) - zent.branch - or from the main clone as it is (:clone)."
   (:require [clojure.string :as str]
-            [zent.branch :as branch]
+            [zent.branch :as branch :refer [git sync-ref]]
             [zent.shell :as shell]))
 
 (defn- main-clone-dir [repo workspace-dir]
@@ -77,13 +77,6 @@
     (str "it runs " (checkout-dir cfg) " as it is (" (if (:branch cfg) ":from :clone" "no :branch")
          "): nothing to pull - reload it")))
 
-(defn- git
-  "`git -C dir args`'s trimmed stdout, nil on failure. --no-optional-locks: a
-  background `status` mustn't take the index lock from the user's own git."
-  [dir & args]
-  (let [{:keys [exit out]} (shell/sh! (into ["git" "--no-optional-locks" "-C" dir] args))]
-    (when (zero? exit) (str/trim (str out)))))
-
 (defn parse-status
   "`git status --porcelain=v2 --branch` -> {:sha :branch :dirty}: :branch nil
   when detached, :dirty the modified and untracked paths."
@@ -140,11 +133,6 @@
        (some #(when (str/includes? (str % "\n") (str "\nbranch " ref "\n"))
                 (subs (first (str/split-lines %)) (count "worktree "))))))
 
-(defn- sync-ref
-  "The ref a worktree mode syncs to."
-  [mode branch]
-  (if (= :local mode) (str "refs/heads/" branch) (str "origin/" branch)))
-
 (defn checkout-git
   "git-status of the dir `cfg` runs from, with :from (zent.source/from). For a worktree, also :pull -
   commits its ref (origin/<branch> as of the last fetch, or the local branch) has that it doesn't -
@@ -159,7 +147,7 @@
       (cond-> st
         mode (assoc :from mode)
         (worktree? cfg) (assoc :pull (rev-count dir (str "HEAD.." (sync-ref mode branch)))
-                               :unreachable (rev-count dir "HEAD" "--not" "--branches" "--remotes" "--glob=refs/zent/*"))
+                               :unreachable (apply rev-count dir branch/unreachable-revs))
         (= :origin mode) (assoc :test? (boolean (and (:sha st) (= (:sha st) (git dir "rev-parse" "--verify" "--quiet" (branch/test-ref branch)))
                                                       (not= (:sha st) (git dir "rev-parse" "--verify" "--quiet" (str "origin/" branch))))))
         (= :local mode) (merge (when-let [ahead (rev-count dir (str "origin/" branch "..refs/heads/" branch))]

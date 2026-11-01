@@ -54,8 +54,7 @@
   `allowed?` rejects - the shape of every preset restriction."
   [preset-name k over allowed? why]
   (when-let [ks (seq (remove allowed? (keys over)))]
-    (throw (ex-info (str (format "preset %s sets %s on %s - %s" (name preset-name) (vec ks) k why)
-                         (apply str (for [key ks :let [note (schema/retired-keys key)] :when note] (str " (" key ": " note ")"))))
+    (throw (ex-info (format "preset %s sets %s on %s - %s" (name preset-name) (vec ks) k why)
                     {:preset preset-name :component k :keys (vec ks)}))))
 
 (defn- refuse-unknown-refs!

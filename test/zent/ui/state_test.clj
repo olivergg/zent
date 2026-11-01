@@ -41,9 +41,7 @@
   (let [comps {:db {:status :up} :api {:status :down} :old {:status :down} :warm {:status :idle}}]
     (testing "the preset's own, stopped or not, plus what still runs outside it"
       (is (= #{:db :api :warm} (set (keys (state/shown-components {:components comps :members [:db :api]}))))))
-    (testing "no :members yet (a code reload): the graph's ends"
-      (is (= #{:db :api :warm} (set (keys (state/shown-components {:components comps :graph [[:api :db]]}))))))
-    (testing "neither: everything"
+    (testing "no :members yet: everything"
       (is (= comps (state/shown-components {:components comps}))))))
 
 (deftest record-transitions-clock-test

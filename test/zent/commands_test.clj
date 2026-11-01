@@ -7,6 +7,11 @@
 
 (def ^:private line shell/display)
 
+(deftest compose-file-test
+  (testing "given opts' :file, then under the repo; none, then the default"
+    (is (= "/r/docker/c.yaml" (commands/compose-file "/r" {:file "docker/c.yaml"})))
+    (is (= "/r/docker-compose.yaml" (commands/compose-file "/r" {})))))
+
 (deftest docker-compose-cmd-test
   (is (= "docker compose -f /repos/broker-stack/docker-compose.yaml up -d --wait"
          (line (commands/docker-compose-cmd "/repos/broker-stack")))))

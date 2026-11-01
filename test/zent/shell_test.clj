@@ -22,6 +22,15 @@
       (is (= 0 exit))
       (is (= "/tmp\n" out)))))
 
+(deftest sh-timeout-test
+  (testing "the output, :env merged; nil on a failure or a command that can't run; killed and nil past its timeout"
+    (is (= "C\n" (shell/sh-timeout! ["sh" "-c" "echo $LC_ALL"] 5000 :env {"LC_ALL" "C"})))
+    (is (nil? (shell/sh-timeout! ["sh" "-c" "exit 3"] 5000)))
+    (is (nil? (shell/sh-timeout! ["zent-no-such-command"] 5000)))
+    (let [t0 (System/currentTimeMillis)]
+      (is (nil? (shell/sh-timeout! ["sleep" "5"] 300)))
+      (is (< (- (System/currentTimeMillis) t0) 2000)))))
+
 (deftest sh-env-test
   (testing ":env is visible to the sub-process"
     (let [{:keys [exit out]} (shell/sh! "printenv ZENT_TEST_VAR"

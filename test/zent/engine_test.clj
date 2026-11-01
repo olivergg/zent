@@ -269,15 +269,28 @@
       (is (= [[:c :h]] @started))))
 
   (testing "and the skip is reported (serve!'s :on-skipped), naming the dependency that failed"
-    (let [skipped (atom [])
-          hook @#'zent.engine/on-skipped-hook
-          before @hook]
-      (reset! hook (fn [n failed] (swap! skipped conj [n (vec failed)])))
+    (let [skipped (atom [])]
       (try (deploy-into! (collect (atom [])) [[:a {}] [:b {:deps [:a]}]] (fn [n _] (throw (ex-info "a broke" {})))
-                         (str (System/getProperty "java.io.tmpdir") "/zent-deploy-into-test.edn"))
+                         (str (System/getProperty "java.io.tmpdir") "/zent-deploy-into-test.edn")
+                         nil (fn [n failed] (swap! skipped conj [n (vec failed)])))
            (catch Exception _))
-      (reset! hook before)
       (is (= [[:b [:a]]] @skipped))))
+
+  (testing "and serve! hands its :on-skipped all the way down: an apply with a failed dep reports the skip"
+    (let [catalog {:components {:a {:kind :process :cmd "run"} :b {:kind :process :cmd "run" :deps [:a]}}
+                   :presets {:p {:a {:mode :on} :b {:mode :on}}}}
+          control (atom [])
+          skipped (atom [])
+          serving (future
+                    (with-redefs [lifecycle/down! (fn [hs] {:stopped hs :errors []})]
+                      (engine/serve! catalog :initial-preset :p :poll-ms 5 :control control
+                                     :session-path (str (System/getProperty "java.io.tmpdir") "/zent-serve-skip-test.edn")
+                                     :deploy-fn (fn [_ _] (throw (ex-info "a broke" {})))
+                                     :on-skipped (fn [n failed] (swap! skipped conj [n (vec failed)])))))]
+      (try
+        (loop [i 0] (when (and (empty? @skipped) (< i 300)) (Thread/sleep 10) (recur (inc i))))
+        (is (= [[:b [:a]]] @skipped))
+        (finally (swap! control conj {:action :shutdown :id 99}) (deref serving 3000 nil)))))
 
   (testing "given a chain a <- b <- c with :a failing, then the skip is transitive"
     (let [calls (atom [])]

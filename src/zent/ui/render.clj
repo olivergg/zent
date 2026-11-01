@@ -318,7 +318,7 @@
   [{:keys [branch dir worktree]} & [cd-title]]
   (str (when (and branch (not cd-title) (not (#{"main" "master"} branch)))
          (str "<span class=\"branch" (when worktree " wt") "\" title=\"" (esc branch)
-              (when worktree " - its own worktree, reset to origin on each deploy") "\">" (esc branch) "</span>"))
+              (when worktree " - its own worktree") "\">" (esc branch) "</span>"))
        (when dir
          (str "<button type=\"button\" class=\"workdir-open\" data-dir=\"" (esc dir) "\" title=\""
               (or cd-title (esc (tildify dir))) "&#10;Copy `cd " (esc dir) "`\">cd</button>"))))

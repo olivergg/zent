@@ -36,8 +36,6 @@
                             (presets/save! catalog dir :bad "[:db {:source-env {\"X\" {:component :front}}}]")))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Invalid"
                             (presets/save! catalog dir :bad "[:front {:namespace \"dev --context prod\"}]")))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"\(:local: use :from :clone\)"
-                            (presets/save! catalog dir :bad "[:db {:branch \"x\" :local true}]")))
       (is (not (presets/user-preset? dir :bad))))
 
     (testing "only a user preset can be deleted"

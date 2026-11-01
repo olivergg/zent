@@ -10,10 +10,8 @@ let selected = null;
 let previewing = null;
 let previewData = null;
 function activeData() { return previewing ? previewData : view; }
-// A stopped/off component clutters the
-// loom (it's not part of the current run, just left tracked/torn-down), so
-// it's hidden by default; persisted like the rail width/zoom below.
-// on unless turned off: a stopped component of the preset is part of the picture
+// A stopped component of the preset is part of the picture: shown unless turned
+// off, persisted like the rail width/zoom below.
 let showStopped = localStorage.getItem("zent.showStopped") !== "false";
 
 // the wrapper's own data-status (CSS/layout only now - the label text
@@ -310,7 +308,7 @@ function weave(host, data, all) {
   host.replaceChildren();
   const allNames = Object.keys(data.components);
   // an earlier preset's components stay in the view: stopped, they're off the picture
-  // (:members, zent.ui.state/own-components; a preview has none - all its own)
+  // (:members, the summary's rule too: zent.ui.state/shown-components; a preview has none - all its own)
   const members = new Set(data.members?.length ? data.members : allNames);
   const visible = Object.fromEntries(Object.entries(data.components)
     .filter(([name, c]) => (c.status !== "down" && c.status !== "off") || (all && members.has(name))));

@@ -4,6 +4,16 @@
             [zent.session :as session]
             [zent.shell :as shell]))
 
+(deftest pid-of-test
+  (testing "given a persisted {:kind :pid}, then its pid; a compose or :external handle, nil"
+    (is (= 42 (lifecycle/pid-of {:kind :pid :pid 42})))
+    (is (nil? (lifecycle/pid-of {:kind :docker-compose :repo-dir "/w"})))
+    (is (nil? (lifecycle/pid-of {:kind :external}))))
+  (testing "given a live Process, then its own pid"
+    (let [p (shell/spawn! ["sleep" "5"] :log-file (str (java.io.File/createTempFile "zent-pid-of" ".log")))]
+      (try (is (= (.pid p) (lifecycle/pid-of p)))
+           (finally (.destroyForcibly p))))))
+
 (deftest down-dispatches-process-handles-test
   (testing "a java.lang.Process handle is routed to stop-process!"
     (let [calls (atom [])]

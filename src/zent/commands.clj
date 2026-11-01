@@ -3,11 +3,16 @@
   can check commands without running them. Every result is an argv vector,
   so a path holding a space stays one argument.")
 
+(defn compose-file
+  "The path of one repo's compose file: opts' :file, default docker-compose.yaml."
+  [repo-dir {:keys [file]}]
+  (str repo-dir "/" (or file "docker-compose.yaml")))
+
 (defn- compose
-  "`docker compose` scoped to one repo's file (default docker-compose.yaml),
-  project and profiles, `args` appended."
-  [repo-dir {:keys [file project-name profiles]} & args]
-  (-> ["docker" "compose" "-f" (str repo-dir "/" (or file "docker-compose.yaml"))]
+  "`docker compose` scoped to one repo's file (compose-file), project and
+  profiles, `args` appended."
+  [repo-dir {:keys [project-name profiles] :as opts} & args]
+  (-> ["docker" "compose" "-f" (compose-file repo-dir opts)]
       (cond-> project-name (conj "-p" project-name))
       (into (mapcat #(vector "--profile" %)) profiles)
       (into args)))

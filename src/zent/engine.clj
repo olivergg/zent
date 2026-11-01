@@ -133,9 +133,6 @@
     (dotimes [_ n] (.put q :slot))
     (fn [f] (let [slot (.take q)] (try (f) (finally (.put q slot)))))))
 
-;; serve!'s :on-skipped - deploy-into! runs on job threads, deep under the loop: a hook, not an argument
-(defonce ^:private on-skipped-hook (atom (constantly nil)))
-
 (defn- deploy-into!
   "Deploys `ordered` ([name cfg] pairs in dependency order), each as soon as
   its in-scope :deps are up, up to `max-parallel` at once - calling (on-up
@@ -143,8 +140,9 @@
   survive a failure, which is what makes a half-finished run tearable down.
   A failed component only skips what depends on it, transitively - the rest
   still deploys - and the first error, in `ordered` order, is rethrown once
-  the batch is through."
-  [on-up ordered deploy-fn session-path & [max-parallel]]
+  the batch is through. `on-skipped`, if given, gets (name failed-deps) of each
+  one skipped."
+  [on-up ordered deploy-fn session-path & [max-parallel on-skipped]]
   (let [up? (into {} (map (fn [[name]] [name (promise)])) ordered)
         errors (atom {})
         with-slot (slots (or max-parallel default-max-parallel))
@@ -168,7 +166,7 @@
                                        (if (empty? failed)
                                          (with-slot #(deploy! name cfg))
                                          (do (println (format "[%s] skipped - %s failed" name (str/join ", " (map clojure.core/name failed))))
-                                             (@on-skipped-hook name failed)
+                                             (when on-skipped (on-skipped name failed))
                                              false)))
                                      (catch Throwable e (swap! errors assoc name e) false)))))
                       ordered)]
@@ -199,8 +197,6 @@
                                 nil))))))
         resolved))
 
-(defn- process-handle? [h] (or (instance? Process h) (= :pid (:kind h))))
-
 (defn- reload!
   "Re-applies one component after a file change or a manual reload.
 
@@ -215,7 +211,7 @@
   (logs/append! name (format "\n--- reload %s ---" (java.util.Date.)))
   (try
     (let [cfg (if (= :on (:mode cfg)) (built name cfg) cfg)]
-      (when (process-handle? current)
+      (when (lifecycle/process-handle? current)
         (lifecycle/down! [current]))
       {:ok true :handle (deploy-fn name (assoc cfg ::run-now true))})
     (catch Exception e
@@ -316,7 +312,7 @@
      :stop (vec (sort (remove warm? unneeded)))
      :keep-warm (vec (sort (filter warm? unneeded)))
      :redeploy redeploy
-     :restart (into (sorted-set) (filter #(or (process-handle? (get handles %))
+     :restart (into (sorted-set) (filter #(or (lifecycle/process-handle? (get handles %))
                                               (not= (:kind (get merged %)) (:kind (get active %)))))
                     (keys redeploy))
      :deploy (topo/topo-sort (into {} (filter (fn [[n _]] (or (redeploy n) (not (running? n))))) merged))
@@ -344,7 +340,7 @@
   first, then :deploy in dependency order. A failed redeploy gets its previous
   cfg back, so the same preset applied again retries it. `on-resolved` gets
   [preset-name active], the whole merged set."
-  [{:keys [preset merged redeploy restart deploy]} st deploy-fn session-path on-resolved max-parallel]
+  [{:keys [preset merged redeploy restart deploy]} st deploy-fn session-path on-resolved max-parallel & [on-skipped]]
   (let [{before :active handles :handles} @st]
     (swap! st update :active merge merged)
     (when on-resolved (on-resolved preset (:active @st)))
@@ -358,7 +354,7 @@
                          (catch Exception e
                            (when (redeploy name) (swap! st assoc-in [:active name] (get before name)))
                            (throw e))))
-                  session-path max-parallel)))
+                  session-path max-parallel on-skipped)))
 
 (defn- stop-and-forget!
   "Tears down `name`'s handle if any, then drops it from :active/:handles
@@ -379,7 +375,7 @@
   running instead, marked ::idle until a preset needs it again. nil
   `preset-name` is stop-everything, warm ones included.
   `stop!` (fn [name]) tears one down - serve!'s, the same a :stop uses."
-  [catalog preset-name st session-path deploy-fn on-resolved stop!]
+  [catalog preset-name st session-path deploy-fn on-resolved stop! & [on-skipped]]
   (let [{:keys [stop keep-warm] :as p} (plan catalog preset-name @st)]
     (doseq [name keep-warm]
       (println (format "[%s] not needed by %s - kept warm" name preset-name))
@@ -390,7 +386,7 @@
     (if preset-name
       (do (println "Resolving preset:" preset-name)
           ;; the stops only touched unneeded ones: p's deploy half still holds
-          (deploy-plan! p st deploy-fn session-path on-resolved (:max-parallel catalog)))
+          (deploy-plan! p st deploy-fn session-path on-resolved (:max-parallel catalog) on-skipped))
       ;; deploy-plan! calls on-resolved itself - here it's called with what's
       ;; left (permanent components only), so the UI's :preset label clears
       (when on-resolved (on-resolved nil (:active @st))))))
@@ -573,7 +569,6 @@
                   on-stop (constantly nil)
                   on-seeded (constantly nil)
                   on-check (constantly nil)}}]
-  (reset! on-skipped-hook (or on-skipped (constantly nil)))
   (let [catalog-ref (or catalog-ref (atom catalog))
         st (new-state)
         jobs (java.util.concurrent.LinkedBlockingQueue.)
@@ -589,7 +584,7 @@
                 (stop-and-forget! st name on-stopping)
                 (on-stop name))
         apply! (fn [preset-name]
-                 (switch-preset! @catalog-ref preset-name st session-path deploy-fn on-resolved stop!))
+                 (switch-preset! @catalog-ref preset-name st session-path deploy-fn on-resolved stop! on-skipped))
         _ (some-> planner (reset! #(plan-summary (plan @catalog-ref % @st))))
         persist! (fn [] (session/save! session-path (or initial-preset :serve) (seq (:handles @st))))
         ;; a reload runs the catalog as it is now (current-cfg), not as applied

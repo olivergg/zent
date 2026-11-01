@@ -61,16 +61,11 @@
                   after changes)
           (update :events #(vec (take-last max-events %))))))))
 
-(defn own-components
-  "The preset's own components: :members, else - before the first apply after a code reload - the graph's ends."
-  [{:keys [members graph]}]
-  (set (or (seq members) (flatten graph))))
-
 (defn shown-components
   "What the dashboard shows of :components (which keeps earlier presets'): the preset's own, plus whatever
   still runs outside it."
-  [{:keys [components] :as state}]
-  (let [own (own-components state)]
+  [{:keys [components members]}]
+  (let [own (set members)]
     (if (empty? own)
       components
       (into {} (filter (fn [[k c]] (or (own k) (not (#{:down :off} (:status c))))) components)))))
@@ -289,14 +284,13 @@
         (finally (reset! usage-sampling false))))))
 
 (defn refresh!
-  "The serve loop's periodic refresh: checkouts every call, git status every git-refresh-ms (both off
-  the loop), CPU and memory of `handles` ({name handle}, what the engine runs) every call."
-  ([] (refresh! nil))
-  ([handles]
-   (refresh-sources!)
-   (when (>= (- (System/currentTimeMillis) @git-refreshed-at) git-refresh-ms)
-     (refresh-git-async!))
-   (when handles (refresh-usage-async! handles))))
+  "The serve loop's periodic refresh: checkouts every call, on the loop; off it, git status every
+  git-refresh-ms and CPU and memory of `handles` ({name handle}, what the engine runs) every call."
+  [handles]
+  (refresh-sources!)
+  (when (>= (- (System/currentTimeMillis) @git-refreshed-at) git-refresh-ms)
+    (refresh-git-async!))
+  (refresh-usage-async! handles))
 
 (defn observe-preset-resolved! [preset-name resolved]
   ;; the skeleton first, so a client sees the whole run before git answers

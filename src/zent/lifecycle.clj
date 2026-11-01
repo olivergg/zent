@@ -17,6 +17,18 @@
             [zent.session :as session]
             [zent.shell :as shell]))
 
+(defn process-handle?
+  "Whether `handle` is a local process: the live Process a deploy returns, or the {:kind :pid} the
+  session persisted (an adopted one)."
+  [handle]
+  (or (instance? Process handle) (= :pid (:kind handle))))
+
+(defn pid-of
+  "A process-handle?'s pid, nil for any other handle."
+  [handle]
+  (when (process-handle? handle)
+    (if (instance? Process handle) (.pid ^Process handle) (:pid handle))))
+
 (def ^:private grace-period-ms
   "Wait after SIGTERM before SIGKILL."
   2000)

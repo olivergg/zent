@@ -104,9 +104,7 @@
     :data (-> state
               (dissoc :events)
               (update :done #(take-last 200 (sort %)))
-              (update :components with-cards)
-              ;; what the client filters the graph on, the summary's own rule
-              (assoc :members (vec (state/own-components state))))
+              (update :components with-cards))
     :summary-html (render/run-summary (state/shown-components state))
     :presets-html (render/preset-picker (keys (:presets @state/catalog)) (:preset state))}))
 

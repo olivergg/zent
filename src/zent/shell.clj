@@ -56,6 +56,24 @@
       (.inheritIO pb))
     (.start pb)))
 
+(defn sh-timeout!
+  "`cmd`'s stdout, nil when it failed, couldn't run or outlived `timeout-ms` (then killed) - for a
+  background read that mustn't pile up on a frozen tool. stderr dropped; :env merged, like sh!'s.
+  Through a file: a full pipe nobody reads yet would block it."
+  [cmd timeout-ms & {:keys [env]}]
+  (let [f (java.io.File/createTempFile "zent-sh" ".out")]
+    (try (let [pb (doto (ProcessBuilder. (argv cmd))
+                    (.redirectOutput f)
+                    (.redirectError java.lang.ProcessBuilder$Redirect/DISCARD))
+               pb-env (.environment pb)
+               _ (doseq [[k v] env] (.put pb-env k v))
+               p (.start pb)]
+           (if (.waitFor p (long timeout-ms) java.util.concurrent.TimeUnit/MILLISECONDS)
+             (when (zero? (.exitValue p)) (slurp f))
+             (do (.destroyForcibly p) nil)))
+         (catch Exception _ nil)
+         (finally (.delete f)))))
+
 (defn run-logged!
   "Runs `cmd` to completion, its stdout+stderr appended to `log-file` as
   they're written (spawn!), not captured for the end like sh!; {:exit code}."

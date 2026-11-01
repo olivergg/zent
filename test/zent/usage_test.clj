@@ -117,12 +117,13 @@
   (testing "given handles, then one ps, one docker ps and one docker stats for only our containers,
             and the CPU times kept for the next sample"
     (let [calls (atom [])]
-      (with-redefs [usage/out-of (fn [cmd & _]
-                                   (swap! calls conj cmd)
-                                   (condp = (take 2 cmd)
-                                     ["ps" "-axo"] ps-out
-                                     ["docker" "ps"] docker-ps-out
-                                     ["docker" "stats"] docker-stats-out))]
+      (with-redefs [zent.shell/sh-timeout! (fn [cmd timeout-ms & {:keys [env]}]
+                                             (is (= [5000 {"LC_ALL" "C"}] [timeout-ms env]) "a French locale writes 31,1")
+                                             (swap! calls conj cmd)
+                                             (condp = (take 2 cmd)
+                                               ["ps" "-axo"] ps-out
+                                               ["docker" "ps"] docker-ps-out
+                                               ["docker" "stats"] docker-stats-out))]
         (let [s (usage/sample! handles nil)]
           (is (= 3 (count @calls)))
           (is (= #{"aaa" "bbb" "ddd" "ccc"} (set (drop 6 (last @calls)))))
@@ -130,21 +131,7 @@
           (is (= #{:api :kafka :db} (set (keys (:usage s)))))))))
   (testing "given only pid handles, then docker isn't asked; given docker failing, then no container usage"
     (let [calls (atom [])]
-      (with-redefs [usage/out-of (fn [cmd & _] (swap! calls conj cmd) (when (= "ps" (first cmd)) ps-out))]
+      (with-redefs [zent.shell/sh-timeout! (fn [cmd & _] (swap! calls conj cmd) (when (= "ps" (first cmd)) ps-out))]
         (is (= #{:api} (set (keys (:usage (usage/sample! (select-keys handles [:api]) nil))))))
         (is (= 1 (count @calls)))
         (is (= #{:api} (set (keys (:usage (usage/sample! handles nil))))))))))
-
-(deftest out-of-test
-  (testing "the output under LC_ALL=C; nil on a failure; killed and nil past its timeout"
-    (is (= "C\n" (usage/out-of ["sh" "-c" "echo $LC_ALL"])))
-    (is (nil? (usage/out-of ["sh" "-c" "exit 3"])))
-    (let [t0 (System/currentTimeMillis)]
-      (is (nil? (usage/out-of ["sleep" "5"] 300)))
-      (is (< (- (System/currentTimeMillis) t0) 2000)))))
-
-(deftest pid-of-test
-  (testing "given a persisted {:kind :pid}, then its pid; a compose or :external handle, nil"
-    (is (= 42 (usage/pid-of {:kind :pid :pid 42})))
-    (is (nil? (usage/pid-of {:kind :docker-compose :repo-dir "/w"})))
-    (is (nil? (usage/pid-of {:kind :external})))))

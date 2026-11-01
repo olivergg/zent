@@ -215,15 +215,6 @@
   changes what runs with them, which could print them into a log."
   #{:mode :kind :deps :branch :from :use-secret-env})
 
-(def retired-keys
-  "Keys that no longer exist, each with what replaces it - named in the error."
-  {:local "use :from :clone"})
-
-(defn retired-errors
-  "{key [what replaces it]} for the retired keys `m` sets, nil when none."
-  [m]
-  (not-empty (into {} (keep (fn [[k why]] (when (contains? m k) [k [(str k " is gone: " why)]]))) retired-keys)))
-
 (defn check-secret-contexts!
   "Refuses reading secrets (:use-secret-env) from a context the catalog's
   :allow-secret-contexts doesn't list - a list apart from
@@ -277,11 +268,11 @@
   "Validates `catalog` against Catalog, throwing ex-info with a humanized
   report if invalid. Returns it unchanged when valid."
   [catalog]
-  (if-let [errors (or (some->> (retired-errors (:defaults catalog)) (hash-map :defaults))
-                      (when-not (m/validate Catalog catalog) (me/humanize (m/explain Catalog catalog))))]
-    (throw (ex-info (str "Invalid catalog: " errors)
-                    {:errors errors}))
-    catalog))
+  (if (m/validate Catalog catalog)
+    catalog
+    (let [errors (me/humanize (m/explain Catalog catalog))]
+      (throw (ex-info (str "Invalid catalog: " errors)
+                      {:errors errors})))))
 
 (def ^:private component-schema
   "The :multi schema over builtin-kinds."
@@ -316,12 +307,11 @@
                (and (:from cfg) (not (:branch cfg))) (assoc :from ["needs a :branch"]))))
 
 (defn- check!
-  "Throws on `cfg` setting a retired key, failing `schema`, then on `more-errors` of it, if given."
+  "Throws on `cfg` failing `schema`, then on `more-errors` of it, if given."
   [schema what name cfg & [more-errors]]
-  (when-let [errors (or (retired-errors cfg)
-                        (if (m/validate schema cfg)
-                          (when more-errors (more-errors cfg))
-                          (me/humanize (m/explain schema cfg))))]
+  (when-let [errors (if (m/validate schema cfg)
+                      (when more-errors (more-errors cfg))
+                      (me/humanize (m/explain schema cfg)))]
     (throw (ex-info (format "Invalid %s for %s: %s" what name errors)
                     {:component name :cfg cfg :errors errors}))))
 
