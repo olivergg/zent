@@ -569,14 +569,18 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 /* git chip, a row only when it has something to say: glyphs, the facts on hover; red is what needs acting
    on (off its wanted branch, commits a deploy would drop), weld what's worth a look (behind the default
    branch, running an older commit) */
-.node .git { display: flex; align-items: center; gap: 5px; min-width: 0; margin-top: 3px; font-size: 9.5px; white-space: nowrap; }
+.node .git { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; min-width: 0; margin-top: 4px;
+  padding-top: 4px; border-top: 1px dashed var(--hairline); font-size: 9.5px; white-space: nowrap; }
+.node .git > [title] { cursor: help; }
 .node .git > :not(.branch) { flex: none; }
-.node .branch.off { color: var(--madder); border-color: var(--madder); }
-.node .git .where { font-style: normal; color: var(--muted); }
+.node .branch.off, .node .git .want { color: var(--madder); border-color: var(--madder); }
+/* where the code comes from: origin (a worktree, reset on deploy - push to run) or local (the clone, as is) */
+.node .git .from { padding: 0 4px; border-radius: 2px; color: var(--card); }
+.node .git .from.origin { background: var(--indigo); }
+.node .git .from.local { background: var(--muted); }
 .node .git .behind, .node .git .stale { color: var(--weld); }
-.node .git .ahead { color: var(--indigo); }
-.node .git .dirty { color: var(--muted); }
-.node .git .ahead.lose, .git-summary :is(.off, .lose) { color: var(--madder); }
+.node .git .ahead, .node .git .dirty { color: var(--muted); }
+.node .git .lose, .git-summary :is(.off, .lose) { color: var(--madder); }
 .node .workdir-open {
   flex: none;
   padding: 0 3px;
@@ -754,7 +758,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 }
 
 .blocked { margin: 10px 0 0; color: var(--madder); }
-.git-summary { margin: 8px 0 0; color: var(--muted); font-size: 10.5px; }
+.git-summary { margin: 8px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 10.5px; }
+.git-summary li { margin: 2px 0; }
+.git-summary .stale, .git-summary .behind { color: var(--weld); }
 
 .facts { display: grid; grid-template-columns: 74px 1fr; gap: 4px 10px; margin: 0; }
 .facts dt { color: var(--muted); }

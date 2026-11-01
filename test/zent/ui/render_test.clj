@@ -222,8 +222,8 @@
       (is (nil? (chip {}))))
     (testing "no :branch and the default one on disk: nothing to flag"
       (is (= [true false false false false] ((juxt :default? :off? :wt? :lose? :stale?) (chip {:git git})))))
-    (testing "given no :branch but the main clone on a feature branch, then it's off"
-      (is (:off? (chip {:git (assoc git :branch "feature/x")}))))
+    (testing "given no :branch, the clone runs as it is: a feature branch there isn't off"
+      (is (= [false false] ((juxt :default? :off?) (chip {:git (assoc git :branch "feature/x")})))))
     (testing "given a :branch, then off is any other branch - the default one included"
       (is (:off? (chip {:git git :wanted-branch "feature/x"})))
       (is (not (:off? (chip {:git (assoc git :branch "feature/x") :wanted-branch "feature/x"})))))
@@ -235,22 +235,38 @@
       (is (not (:stale? (chip {:git git :deployed-sha "abcdef1234"}))))
       (is (not (:stale? (chip {:git git :deployed-sha "0000000" :status :down})))))))
 
+(deftest short-branch-test
+  (is (= "jira15165_defaut_tech" (render/short-branch "feature/jira15165_defaut_tech")))
+  (is (= "jira14606_ic\u2026rame_reco" (render/short-branch "feature/jira14606_ican_trame_reco")))
+  (is (= "kafka2" (render/short-branch "kafka2"))))
+
 (deftest component-card-git-chip-test
   (let [card #(render/component-card :svc (merge {:kind :process :status :up :source {:dir "/w/svc" :worktree "/w/svc"}} %))
         git {:sha "abcdef1234" :branch "feature/y" :base "master" :behind 3 :ahead 1 :dirty 2 :pushed true}]
-    (testing "given every flag up, then each shows as its glyph, the wrong branch red, the unpushed
-              commits red in a worktree"
+    (testing "given every flag up in a worktree, then each count says what it is, the wrong branch and
+              what the next deploy drops in red"
       (let [html (card {:git git :wanted-branch "feature/x" :deployed-sha "0000000"})]
-        (is (str/includes? html "<span class=\"branch wt off\">feature/y</span><i class=\"where\">wt</i>"))
-        (is (str/includes? html "<span class=\"behind\">&#8595;3</span>"))
-        (is (str/includes? html "<span class=\"ahead lose\">&#8593;1&#9888;</span>"))
-        (is (str/includes? html "<span class=\"dirty\">&#9679;2</span>"))
-        (is (str/includes? html "<span class=\"stale\">&#8800;</span>"))
+        (is (str/includes? html "&#9095; y</span>"))
+        (is (str/includes? html "<span class=\"branch wt off\" title=\"feature/y&#10;"))
+        (is (str/includes? html "<span class=\"want\" title=\"the preset wants feature/x, this is feature/y\">&#8800; x</span>"))
+        (is (str/includes? html "<span class=\"from origin\" title=\"runs origin/feature/y"))
+        (is (str/includes? html "rebase? (never fetched)\">&#8595;3 master</span>"))
+        (is (str/includes? html "push first\">&#8593;1 lost on next deploy &#9888;</span>"))
+        (is (str/includes? html "<span class=\"dirty lose\" title=\"2 modified or untracked file(s) - the next deploy drops them\">&#9679;2 uncommitted</span>"))
+        (is (str/includes? html "reload to run it\">&#8800; reload</span>"))
         (testing "and the facts on hover"
-          (is (str/includes? html "wanted: feature/x (preset :branch)"))
-          (is (str/includes? html "3 behind origin/master - rebase?"))
-          (is (str/includes? html "the next deploy's reset --hard drops them"))
-          (is (str/includes? html "deployed 0000000, disk abcdef1: reload to run it"))))))
+          (is (str/includes? html "the preset wants feature/x - not this one"))
+          (is (str/includes? html "runs origin/feature/y: its own worktree, reset to it on each deploy - push to run a change"))
+          (is (str/includes? html "3 commit(s) on origin/master not in this checkout - rebase? (never fetched)"))
+          (is (str/includes? html "the next deploy's reset --hard drops them: push first"))
+          (is (str/includes? html "running 0000000, the disk is at abcdef1: reload to run it"))))))
+  (testing "given the main clone on a feature branch, no :branch: it runs as it is, nothing red"
+    (let [html (render/component-card :svc {:kind :process :status :up :source {:dir "/w/svc"}
+                                            :git {:sha "abc" :branch "feature/z" :base "main" :ahead 4 :pushed true}})]
+      (is (str/includes? html "<span class=\"branch\" title=\"feature/z&#10;no :branch in the preset"))
+      (is (str/includes? html "<span class=\"from local\" title=\"runs your local clone as it is, uncommitted changes included\">&#9998; local</span>"))
+      (is (str/includes? html "safe here: the clone runs as it is\">&#8593;4 unpushed</span>"))
+      (is (str/includes? html "runs your local clone as it is, uncommitted changes included"))))
   (testing "on the default branch, clean and up to date: no row, the facts still on `cd`'s hover"
     (let [html (render/component-card :svc {:kind :process :status :up :source {:dir "/w/svc"}
                                             :git {:sha "abc" :branch "main" :base "main" :behind 0 :ahead 0 :dirty 0}})]
@@ -261,14 +277,15 @@
 (deftest run-summary-git-test
   (let [git {:sha "a" :branch "main" :base "main" :behind 0 :ahead 0 :dirty 0}
         c (fn [g & {:as more}] (merge {:status :up :source {:dir "/w"}} {:git (merge git g)} more))]
-    (testing "only the non-zero counts, in one line"
+    (testing "what asks for an action, one line each, with the components' names"
       (let [html (render/run-summary {:a (c {:branch "feature/a" :behind 2})
-                                      :b (c {:branch "feature/b" :ahead 1} :source {:dir "/wt" :worktree "/wt"} :wanted-branch "feature/b")
-                                      :d (c {:sha "b"} :deployed-sha "a")})]
-        (is (str/includes? html (str "<p class=\"git-summary\"><span class=\"branches\">2 branches</span> &#183; "
-                                     "<span class=\"off\">1 wrong branch</span> &#183; "
-                                     "<span class=\"behind\">1 behind main</span> &#183; "
-                                     "<span class=\"ahead lose\">1 unpushed &#9888;</span> &#183; "
-                                     "<span class=\"stale\">1 to reload</span></p>")))))
-    (testing "nothing to say: no line"
-      (is (not (str/includes? (render/run-summary {:a (c {})}) "git-summary"))))))
+                                      :b (c {:branch "feature/b" :ahead 1} :source {:dir "/wt" :worktree "/wt"} :wanted-branch "feature/c")
+                                      :d (c {:sha "b"} :deployed-sha "a")
+                                      :e (c {:branch "feature/e" :ahead 3})})]
+        (is (str/includes? html (str "<ul class=\"git-summary\">"
+                                     "<li class=\"off\">&#9095; not the preset's branch: b</li>"
+                                     "<li class=\"lose\">&#9888; lost on next deploy: b (1)</li>"
+                                     "<li class=\"stale\">&#8800; to reload: d</li>"
+                                     "<li class=\"behind\">&#8595; behind: a 2 main</li></ul>")))))
+    (testing "a clone on a feature branch, unpushed commits in it: nothing to do, no line"
+      (is (not (str/includes? (render/run-summary {:a (c {:branch "feature/a" :ahead 3})}) "git-summary"))))))
