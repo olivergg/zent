@@ -546,6 +546,39 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .svc[data-health="bad"]  { border-left-color: var(--madder); color: var(--madder); }
 .node .svc[data-health="bad"]::before  { background: var(--madder); }
 
+/* CPU and memory, two hairline meters on one line: grey while calm - a calm stack shows no
+   colour at all - weld when busy, madder when stressed; the figures on hover */
+.node .usage {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 9.5px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.node .meter { --m: var(--grey); display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; color: var(--muted); }
+.node .meter i {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  background: color-mix(in srgb, var(--grey) 35%, transparent);
+  overflow: hidden;
+}
+.node .meter i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  transform: scaleX(var(--v, 0));
+  background: var(--m);
+  transition: transform 600ms ease, background 600ms ease;
+}
+.node .meter b { flex: none; font-weight: inherit; }
+.node .meter.cpu b::before { content: "cpu "; opacity: .7; }
+.node .meter.rss b::before { content: "mem "; opacity: .7; }
+.node .meter[data-level="busy"] { --m: var(--weld); color: color-mix(in srgb, var(--weld) 75%, var(--ink)); }
+.node .meter[data-level="stressed"] { --m: var(--madder); color: var(--madder); font-weight: 600; }
+
 /* the port is the handle you actually reach the thing by, so it reads as
    a value, not as more grey prose */
 .node .ports {
@@ -784,6 +817,13 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .git-summary { margin: 8px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 10.5px; }
 .git-summary li { margin: 2px 0; }
 .git-summary .stale, .git-summary .behind { color: var(--weld); }
+
+/* the heaviest components, each in its own level's dye */
+.usage-top { margin: 8px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 10.5px; }
+.usage-top li { margin: 2px 0; }
+.usage-top b { display: inline-block; width: 28px; font-weight: normal; }
+.usage-top [data-level="busy"] { color: var(--weld); }
+.usage-top [data-level="stressed"] { color: var(--madder); font-weight: 600; }
 
 .facts { display: grid; grid-template-columns: 74px 1fr; gap: 4px 10px; margin: 0; }
 .facts dt { color: var(--muted); }

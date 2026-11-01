@@ -69,3 +69,12 @@
     (testing "a git failure doesn't fail the deploy it follows"
       (with-redefs [zent.source/checkout-dir (fn [_] (throw (ex-info "repo gone" {})))]
         (is (nil? (state/observe-deployed! :api cfg)))))))
+
+(deftest set-usage-test
+  (testing "given a sample, then each shown component gets its :usage, and one without loses a stale one"
+    (let [s {:components {:a {:status :up :usage {:cpu 50}} :b {:status :down :usage {:cpu 5}}}}
+          after (state/set-usage s {:a {:cpu 10 :rss 1 :level :calm} :zz {:cpu 1}})]
+      (is (= {:cpu 10 :rss 1 :level :calm} (get-in after [:components :a :usage])))
+      (is (not (contains? (get-in after [:components :b]) :usage)))
+      (testing "and a name not shown isn't invented"
+        (is (not (contains? (:components after) :zz)))))))

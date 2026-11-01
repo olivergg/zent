@@ -4,7 +4,8 @@
   catalog and the control queue the HTTP API feeds."
   (:require [clojure.string :as str]
             [zent.engine :as engine]
-            [zent.source :as source]))
+            [zent.source :as source]
+            [zent.usage :as usage]))
 
 ;; ---------------------------------------------------------------------------
 ;; the state atom - the single source of truth pushed to websocket clients
@@ -267,12 +268,41 @@
         (when (= :again (first (swap-vals! git-refresh {:running :idle :again :running})))
           (recur))))))
 
+(defn set-usage
+  "`state` with each shown component's :usage from `usage` (zent.usage/shown), dropped where it has
+  none: stopped, or nothing measurable (a one-shot, :external)."
+  [state usage]
+  (update state :components
+          (fn [comps] (into {} (for [[k c] comps] [k (if-let [u (get usage k)] (assoc c :usage u) (dissoc c :usage))])))))
+
+;; the last zent.usage/sample! (its CPU times are the next one's baseline), and whether one runs
+(defonce ^:private usage-sample (atom nil))
+(defonce ^:private usage-sampling (atom false))
+
+(defn- refresh-usage-async!
+  "A usage sample of `handles` on a thread of its own (docker stats takes ~2s), skipped while the
+  last one still runs. Swaps only on a visible change: a push per sample would redraw every card."
+  [handles]
+  (when (compare-and-set! usage-sampling false true)
+    (future
+      (try
+        (let [s (usage/sample! handles @usage-sample)
+              shown (usage/shown (:usage s))]
+          (reset! usage-sample s)
+          (when (not= (set-usage @view-state shown) @view-state)
+            (swap! view-state set-usage shown)))
+        (catch Throwable e (println "[zent.ui] usage sample failed:" (ex-message e)))
+        (finally (reset! usage-sampling false))))))
+
 (defn refresh!
-  "The serve loop's periodic refresh: checkouts every call, git status every git-refresh-ms (off the loop)."
-  []
-  (refresh-sources!)
-  (when (>= (- (System/currentTimeMillis) @git-refreshed-at) git-refresh-ms)
-    (refresh-git-async!)))
+  "The serve loop's periodic refresh: checkouts every call, git status every git-refresh-ms (both off
+  the loop), CPU and memory of `handles` ({name handle}, what the engine runs) every call."
+  ([] (refresh! nil))
+  ([handles]
+   (refresh-sources!)
+   (when (>= (- (System/currentTimeMillis) @git-refreshed-at) git-refresh-ms)
+     (refresh-git-async!))
+   (when handles (refresh-usage-async! handles))))
 
 (defn observe-preset-resolved! [preset-name resolved]
   ;; the skeleton first, so a client sees the whole run before git answers

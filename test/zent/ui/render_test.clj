@@ -323,3 +323,31 @@
                                                :error "skipped: alerte failed - reload it once that's fixed"})]
       (is (str/includes? html ">skipped<"))
       (is (str/includes? html "skipped: alerte failed")))))
+
+(deftest usage-row-test
+  (testing "given a card's :usage, then two meters with their figures, each in its own level, the
+            exact figures and the per-service split on hover"
+    (let [html (render/component-card :kafka {:kind :docker-compose :status :up
+                                              :usage {:cpu 295 :rss (* 1800 1048576) :level :stressed
+                                                      :parts [{:name :kafka :cpu 290 :rss (* 1200 1048576)}]}})]
+      (is (str/includes? html "<span class=\"usage\" data-level=\"stressed\""))
+      (is (str/includes? html "<span class=\"meter cpu\" data-level=\"stressed\"><i style=\"--v:1.00\"></i><b>295%</b></span>"))
+      (is (str/includes? html "<span class=\"meter rss\" data-level=\"busy\"><i style=\"--v:0.44\"></i><b>1.8G</b></span>"))
+      (is (str/includes? html "kafka: 290%, 1.2G"))))
+  (testing "given no :usage (stopped, a one-shot, :external), then no row"
+    (is (not (str/includes? (render/component-card :svc {:kind :process :status :up}) "class=\"usage\""))))
+  (testing "memory below a gigabyte in megabytes"
+    (is (= "640M" (render/mem-text (* 640 1048576))))
+    (is (= "1.2G" (render/mem-text (* 1229 1048576))))))
+
+(deftest usage-summary-test
+  (testing "given components' usage, then the total and the three heaviest per metric, each in its
+            level - nobody named for CPU under 5%"
+    (let [u (fn [cpu mib] {:status :up :usage {:cpu cpu :rss (* mib 1048576)}})
+          html (render/run-summary {:kafka (u 295 1800) :db (u 10 300) :api (u 0 100) :ui (u 0 640) :web (u 70 90)})]
+      (is (str/includes? html "<li><b>&#931;</b> 375% &#183; 2.9G</li>"))
+      (is (str/includes? html (str "<li><b>cpu</b> <span data-level=\"stressed\">kafka 295%</span> · "
+                                   "<span data-level=\"busy\">web 70%</span> · <span data-level=\"calm\">db 10%</span></li>")))
+      (is (str/includes? html "<span data-level=\"busy\">kafka 1.8G</span> · <span data-level=\"calm\">ui 640M</span>"))))
+  (testing "given nothing measured, then no usage list"
+    (is (not (str/includes? (render/run-summary {:a {:status :up}}) "usage-top")))))

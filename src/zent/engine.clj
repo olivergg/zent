@@ -552,8 +552,9 @@
                       job so never mid-deploy; without it the command is ignored.
     :planner        - atom, set to (fn [preset-name]) -> plan-summary from the
                       current state: what an :apply would do, for preview.
-    :on-refresh     - (fn []) every :refresh-ms (default 5s) in the loop, e.g.
-                      to re-read what's checked out on disk; errors logged."
+    :on-refresh     - (fn [handles]) every :refresh-ms (default 5s) in the loop,
+                      with {name handle} of what runs, e.g. to re-read what's
+                      checked out on disk or sample CPU/memory; errors logged."
   [catalog & {:keys [poll-ms quiet-ms max-ms session-path deploy-fn on-resolved
                      control on-handled on-stopping on-stop on-skipped on-seeded on-check initial-preset
                      catalog-ref on-ready reload-code liveness-ms planner on-refresh refresh-ms]
@@ -654,7 +655,7 @@
                        (recheck-liveness! st on-check))
                      (when (and on-refresh (>= (- (System/currentTimeMillis) @refreshed-at) refresh-ms))
                        (reset! refreshed-at (System/currentTimeMillis))
-                       (on-refresh))
+                       (on-refresh (:handles @st)))
                      (let [commands (first (reset-vals! control []))]
                        (if (some #(= :shutdown (:action %)) commands)
                          ;; after the running job, but not the queued ones (they're

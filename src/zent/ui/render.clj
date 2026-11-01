@@ -8,7 +8,8 @@
   free). `esc` is the one thing that has to be right: :error/:repo/...
   carry subprocess- and catalog-sourced text."
   (:require [clojure.string :as str]
-            [zent.source :as source]))
+            [zent.source :as source]
+            [zent.usage :as usage]))
 
 (defn esc
   "HTML-escapes `x` for use in text content or a double-quoted attribute."
@@ -100,6 +101,43 @@
                        rows))
            "</span>")
       "")))
+
+(defn cpu-text "75%" [cpu] (str (long cpu) "%"))
+
+(defn mem-text
+  "Bytes as a card can show them: 640M, 1.2G."
+  [rss]
+  (let [mib (/ (double rss) 1048576)]
+    (if (< mib 1000) (str (long mib) "M") (format "%.1fG" (/ mib 1024)))))
+
+(def ^:private meter-full
+  "What fills a meter: two cores, 4 GiB - past that it stays full, its colour says the rest."
+  {:cpu 200 :rss (* 4096 1048576)})
+
+(defn- meter
+  [metric v text]
+  (str "<span class=\"meter " (name metric) "\" data-level=\"" (name (usage/level metric v)) "\">"
+       "<i style=\"--v:" (format "%.2f" (min 1.0 (/ (double v) (meter-full metric)))) "\"></i>"
+       "<b>" text "</b></span>"))
+
+(defn- usage-title
+  "The meters' hover: the exact figures, what they mean, then per service or the process count."
+  [{:keys [cpu rss procs parts]}]
+  (let [{{cb :busy cs :stressed} :cpu {mb :busy ms :stressed} :rss} usage/thresholds]
+    (->> (concat [(str "CPU " (cpu-text cpu) " of one core (busy from " cb "%, stressed from " cs "%)")
+                  (str "memory " (mem-text rss) " resident (busy from " (mem-text mb) ", stressed from " (mem-text ms) ")")]
+                 (when (> (or procs 0) 1) [(str procs " processes")])
+                 (map (fn [{:keys [name cpu rss]}] (str (clojure.core/name name) ": " (cpu-text cpu) ", " (mem-text rss))) parts))
+         (map esc)
+         (str/join "&#10;"))))
+
+(defn usage-row
+  "A card's CPU and memory, two small meters - grey while calm, weld when busy, madder when
+  stressed - the exact figures on hover. nil without :usage."
+  [{:keys [cpu rss] :as u}]
+  (when u
+    (str "<span class=\"usage\" data-level=\"" (name (:level u)) "\" title=\"" (usage-title u) "\">"
+         (meter :cpu cpu (cpu-text cpu)) (meter :rss rss (mem-text rss)) "</span>")))
 
 (defn- can-reload? [status] (not (contains? #{:off :external :stopping} status)))
 (defn- can-stop? [status] (contains? #{:up :deploying :idle :unready} status))
@@ -266,6 +304,7 @@
        "<span class=\"permanent\" title=\"Permanent: stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">&#8734;</span>")
      "</span>"
      (facts c cd-title)
+     (usage-row (:usage c))
      (if chip
        (git-row cname chip (System/currentTimeMillis))
        ;; a preview's :branch never deployed: its worktree doesn't exist yet
@@ -337,6 +376,25 @@
     (when (seq lines)
       (str "<ul class=\"git-summary\">" (apply str lines) "</ul>"))))
 
+(defn- usage-summary
+  "The heaviest components, three per metric, each named in its own level's colour, after the
+  total. Below 5% CPU nobody is named: an idle stack has no top consumer."
+  [components]
+  (let [us (keep (fn [[n c]] (some-> (:usage c) (assoc :name (name n)))) components)
+        top (fn [metric text floor]
+              (when-let [xs (seq (take 3 (sort-by (comp - metric) (filter #(>= (metric %) floor) us))))]
+                (str/join " · " (map #(str "<span data-level=\"" (name (usage/level metric (metric %))) "\">"
+                                           (esc (:name %)) " " (text (metric %)) "</span>")
+                                     xs))))]
+    (when (seq us)
+      (let [cpu (top :cpu cpu-text 5)
+            mem (top :rss mem-text 0)]
+        (str "<ul class=\"usage-top\" title=\"CPU in % of one core, memory resident - sampled every few seconds\">"
+             "<li><b>&#931;</b> " (cpu-text (reduce + (map :cpu us))) " &#183; " (mem-text (reduce + (map :rss us))) "</li>"
+             (when cpu (str "<li><b>cpu</b> " cpu "</li>"))
+             (when mem (str "<li><b>mem</b> " mem "</li>"))
+             "</ul>")))))
+
 (defn run-summary
   "The whole #summary element (outerHTML, class included)."
   [components]
@@ -350,6 +408,7 @@
                                        (str "<span class=\"t-" k "\"><b>" n "</b> " k "</span>")))
                              summary-order))
            "</div>"
+           (usage-summary components)
            (git-summary components)
            (cond
              (seq failed) (str "<p class=\"blocked\">Blocked by " (esc (str/join ", " (map name failed))) ".</p>")
