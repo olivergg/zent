@@ -12,7 +12,9 @@
   spawns."
   (:require [clojure.string :as str]
             [zent.checks :as checks]
+            [zent.branch :as branch]
             [zent.client :as client]
+            [zent.compose :as compose]
             [zent.daemon :as daemon]
             [zent.engine :as engine]
             ;; the built-in kinds' defmethods: a data catalog requires nothing
@@ -53,15 +55,27 @@
     :more ["reload-code is another verb: it reloads zent's own code."]
     :see ["logs" "reload-code"]}
    {:verb "pull" :group "Everyday" :args "<component>"
-    :doc "bring a :branch worktree to origin/<branch>, then redeploy it"
-    :more ["A reload restarts the commit already there; an apply syncs only what it (re)deploys."]
-    :see ["reload" "rebase"]}
+    :doc "bring a :branch worktree to its ref (origin/<branch>, or your local one), then redeploy it"
+    :more ["A reload restarts the commit already there; an apply syncs only what it (re)deploys."
+           "Refused for a worktree with uncommitted files or commits on no branch (it says how to keep"
+           "them), and for a component running a clone as it is (:from :clone, no :branch)."]
+    :see ["reload" "rebase" "worktrees"]}
    {:verb "rebase" :group "Everyday" :args "<component>"
-    :doc "fetch, then rebase its clone's branch onto origin's default branch"
-    :more ["Only a main clone, nothing uncommitted, behind, and no conflict merge-tree can see: else"
-           "it says why and touches nothing. A rebase that stops anyway is aborted. Reload to run it."
-           "A worktree runs origin/<branch>, reset on each deploy: rebase and push the branch yourself."]
-    :see ["reload"]}
+    :doc "fetch, then rebase its branch onto origin's default branch"
+    :more ["Nothing uncommitted, behind, and no conflict merge-tree can see: else it says why and"
+           "touches nothing. A rebase that stops anyway is aborted. Reload to run it. By :from:"
+           "  no :branch, :clone  the clone's branch"
+           "  :local             your local <branch>, in zent's worktree - refused while another"
+           "                     checkout has it out (rebase it there)"
+           "  :origin            a local test: the worktree's commit rebased, no branch moved -"
+           "                     the next apply or pull reverts it"
+           "zent never pushes: a rebased branch on origin needs your push --force-with-lease."]
+    :see ["reload" "pull"]}
+   {:verb "worktrees" :group "Everyday" :args "[prune]"
+    :doc "list zent's :branch worktrees; prune removes the unused, clean ones"
+    :more ["Each with its repo, branch, commit, uncommitted files, commits on no branch, and the"
+           "presets running it. prune keeps any a preset uses or that holds work, saying why."]
+    :see ["pull"]}
    {:verb "stop" :group "Everyday" :args "[<component>...]"
     :doc "stop just these, or all but :permanent components"
     :see ["shutdown"]}
@@ -296,6 +310,27 @@
     (check-components! d [component])
     (println (:message (client/request d :post (str "/api/rebase/" (name component)))))))
 
+(defn worktrees!
+  "Lists zent's worktrees (zent.branch/worktrees) and the presets using each; with `prune?`, removes
+  the ones branch/prune! may."
+  [ctx prune?]
+  (let [users (compose/worktree-users (catalog ctx))
+        entries (branch/worktrees)
+        presets #(str/join "," (map name (sort (get users (:path %)))))]
+    (cond
+      (empty? entries) (println "no worktrees in" (branch/worktrees-root))
+      prune? (let [{:keys [removed kept]} (branch/prune! entries users)]
+               (doseq [{:keys [path]} removed] (println "removed" path))
+               (doseq [[{:keys [path]} why] kept] (println "kept   " path "-" why)))
+      :else (do (println (format "%-24s %-30s %-8s %5s %9s  %s" "REPO" "BRANCH" "HEAD" "DIRTY" "NO-BRANCH" "PRESETS / PATH"))
+                (doseq [{:keys [repo path head dirty unreachable] :as e} entries
+                        :let [dir (.getName (java.io.File. ^String path))]]
+                  (println (format "%-24s %-30s %-8s %5s %9s  %s" (or repo "?")
+                                   ;; the dir's name: <repo>-<branch, / as _>
+                                   (cond-> dir (and repo (str/starts-with? dir (str repo "-"))) (subs (inc (count repo))))
+                                   (or head "?") (or dirty "?") (or unreachable "?")
+                                   (str (let [ps (presets e)] (if (seq ps) ps "-")) "  " path))))))))
+
 (defn reload-code! []
   (let [d (daemon!)
         view (client/await! d (client/request d :post "/api/reload-code") print-change)
@@ -457,6 +492,7 @@
       "reload" (reload! (need arg))
       "rebase" (rebase! (need arg))
       "pull" (pull! (need arg))
+      "worktrees" (case arg nil (worktrees! ctx false) "prune" (worktrees! ctx true) (need nil))
       "shutdown" (shutdown!)
       "reload-code" (reload-code!)
       "presets" (presets! ctx)

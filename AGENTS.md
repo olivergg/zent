@@ -146,10 +146,14 @@ What a catalog's components themselves need is listed in that catalog's repo.
   streamed content arrives (the Logs tab looks empty). For that, start Chrome with
   `--remote-debugging-port` and read the page's state over the DevTools protocol
   (`Runtime.evaluate`, e.g. `document.querySelectorAll('.ln').length`).
-- `:branch` runs origin's code: a worktree in `~/.cache/zent/worktrees/`, detached at
-  `origin/<branch>` (the branch must be pushed), synced by an apply that (re)deploys it or a
-  `zent pull` - a reload keeps its commit. `:branch` + `:local true` runs the main clone as it
-  is instead, refused unless it has `<branch>` checked out. Nothing moves or holds a local branch.
+- `:branch` runs, by `:from`, a worktree in `~/.cache/zent/worktrees/<repo>-<branch>` detached
+  at `origin/<branch>` (`:origin`, the default: pushed code, fetched first) or at the local
+  `<branch>` (`:local`: committed code, no fetch), or the main clone as it is (`:clone`, refused
+  unless it has `<branch>` checked out). A worktree is synced (reset --hard) by an apply that
+  (re)deploys it or a `zent pull` - a reload keeps its commit - and the sync refuses one holding
+  uncommitted files or commits on no branch (`zent.branch/at-risk`). No sync moves or holds a
+  local branch; only `zent rebase` of a `:local` one moves it. `zent worktrees [prune]` lists /
+  removes them.
 - State: `~/.cache/zent/` (session, logs, `serve.log`, worktrees), user presets in
   `~/.config/zent/presets/`.
 - Never run a bare `zent down` to clean up: the session also tracks stacks you started.

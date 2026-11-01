@@ -52,8 +52,9 @@
    [:readiness {:optional true} Readiness]
    [:watch {:optional true} Watch]
    [:branch {:optional true} git-ref]
-   ;; with :branch: run the main clone, which must have it checked out (zent.source/resolve-source)
-   [:local {:optional true} :boolean]
+   ;; with :branch: where it runs from (zent.source/from) - a worktree at origin/<branch> (the
+   ;; default) or at the local <branch>, or the main clone as it is, refused unless on <branch>
+   [:from {:optional true} [:enum :origin :local :clone]]
    [:workspace-dir {:optional true} :string]
    [:org {:optional true} :string]
    ;; NOT :deps: doesn't order anything or gate readiness. A declared fact
@@ -205,13 +206,22 @@
   branch/image/port/context - nothing that decides what code runs (:cmd,
   :env, :scripts, :repo, :workspace-dir...), since that could reach around
   every allowlist here, e.g. a :cmd running kubectl against prod."
-  #{:mode :kind :deps :branch :local :port :image :context :namespace
+  #{:mode :kind :deps :branch :from :port :image :context :namespace
     :services :exclude :profiles :permanent :keep-warm :use-secret-env})
 
 (def secret-safe-overrides
   "All any preset may set on a component that reads secrets: nothing that
   changes what runs with them, which could print them into a log."
-  #{:mode :kind :deps :branch :local :use-secret-env})
+  #{:mode :kind :deps :branch :from :use-secret-env})
+
+(def retired-keys
+  "Keys that no longer exist, each with what replaces it - named in the error."
+  {:local "use :from :clone"})
+
+(defn retired-errors
+  "{key [what replaces it]} for the retired keys `m` sets, nil when none."
+  [m]
+  (not-empty (into {} (keep (fn [[k why]] (when (contains? m k) [k [(str k " is gone: " why)]]))) retired-keys)))
 
 (defn check-secret-contexts!
   "Refuses reading secrets (:use-secret-env) from a context the catalog's
@@ -266,11 +276,11 @@
   "Validates `catalog` against Catalog, throwing ex-info with a humanized
   report if invalid. Returns it unchanged when valid."
   [catalog]
-  (if (m/validate Catalog catalog)
-    catalog
-    (let [errors (me/humanize (m/explain Catalog catalog))]
-      (throw (ex-info (str "Invalid catalog: " errors)
-                      {:errors errors})))))
+  (if-let [errors (or (some->> (retired-errors (:defaults catalog)) (hash-map :defaults))
+                      (when-not (m/validate Catalog catalog) (me/humanize (m/explain Catalog catalog))))]
+    (throw (ex-info (str "Invalid catalog: " errors)
+                    {:errors errors}))
+    catalog))
 
 (def ^:private component-schema
   "The :multi schema over builtin-kinds."
@@ -297,17 +307,20 @@
 (defn- repo-errors
   "A :watch without a :repo would resolve to ~/workspace itself
   (zent.source/checkout-dir), scanning every repo there. (A :branch without
-  one is inert: nothing reads it.)"
+  one is inert: nothing reads it.) A :from means nothing without a :branch."
   [cfg]
-  (when (and (:watch cfg) (not (:repo cfg)))
-    {:watch ["needs a :repo"]}))
+  (not-empty (cond-> {}
+               (and (:watch cfg) (not (:repo cfg))) (assoc :watch ["needs a :repo"])
+               ;; on the resolved cfg: a catalog entry may set :from, its presets the :branch
+               (and (:from cfg) (not (:branch cfg))) (assoc :from ["needs a :branch"]))))
 
 (defn- check!
-  "Throws on `cfg` failing `schema`, then on `more-errors` of it, if given."
+  "Throws on `cfg` setting a retired key, failing `schema`, then on `more-errors` of it, if given."
   [schema what name cfg & [more-errors]]
-  (when-let [errors (if (m/validate schema cfg)
-                      (when more-errors (more-errors cfg))
-                      (me/humanize (m/explain schema cfg)))]
+  (when-let [errors (or (retired-errors cfg)
+                        (if (m/validate schema cfg)
+                          (when more-errors (more-errors cfg))
+                          (me/humanize (m/explain schema cfg))))]
     (throw (ex-info (format "Invalid %s for %s: %s" what name errors)
                     {:component name :cfg cfg :errors errors}))))
 

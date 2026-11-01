@@ -24,7 +24,7 @@
             [zent.logs :as logs]
             [zent.probe :as probe]
             [zent.session :as session]
-            [zent.source :refer [checkout-dir]]
+            [zent.source :as source :refer [checkout-dir]]
             [zent.topo :as topo]
             [zent.watch :as watch]))
 
@@ -181,20 +181,22 @@
 
 (defn- watch-targets
   "{name {:spec ... :scan ...}} for the resolved components that declare a
-  :watch, in the dir the deploy runs from - a branch-pinned worktree rather
-  than the main clone. checkout-dir, not resolve-source: this runs on serve!'s
-  loop, which must not fetch and reset a worktree the deploy worker may be
-  building from."
+  :watch, in the main clone they run from. Not a worktree (:from :origin/:local):
+  only zent moves it, by a sync that redeploys anyway. checkout-dir, not
+  resolve-source: this runs on serve!'s loop, which must not fetch and reset a
+  worktree the deploy worker may be building from."
   [resolved]
   (into {}
         (keep (fn [[name {:keys [watch] :as cfg}]]
                 (when watch
                   (let [dir (checkout-dir cfg)]
-                    (if (.isDirectory (java.io.File. ^String dir))
+                    (cond
+                      (source/worktree? cfg) (do (println (format "[%s] not watched: worktree %s" name dir)) nil)
+                      (.isDirectory (java.io.File. ^String dir))
                       [name {:spec watch :dir dir :scan (watch/scan dir watch)}]
                       ;; one bad entry (repo not cloned) loses only its own watch
-                      (do (println (format "[%s] not watched: %s doesn't exist" name dir))
-                          nil))))))
+                      :else (do (println (format "[%s] not watched: %s doesn't exist" name dir))
+                                nil))))))
         resolved))
 
 (defn- process-handle? [h] (or (instance? Process h) (= :pid (:kind h))))
@@ -520,7 +522,8 @@
                                  :watch/due?; restarts one stopped earlier. A
                                  :branch worktree stays at its commit.
                         :pull   {:name kw} - a :reload that first syncs its
-                                 worktree to origin/<branch>.
+                                 worktree to its ref (zent.branch); refused
+                                 for one running a main clone as it is.
                         :stop   {:name kw} - tears down and drops from the
                                  watched set (a later file change can't
                                  bring it back).
@@ -587,8 +590,11 @@
         _ (some-> planner (reset! #(plan-summary (plan @catalog-ref % @st))))
         persist! (fn [] (session/save! session-path (or initial-preset :serve) (seq (:handles @st))))
         ;; a reload runs the catalog as it is now (current-cfg), not as applied
-        ;; a reload restarts what's on disk; only a pull (sync? true) brings a worktree to origin
+        ;; a reload restarts what's on disk; only a pull (sync? true) brings a worktree to its ref
         reload-one! (fn [name & [sync?]]
+                      (when-let [why (and sync? (some-> (or (get-in @st [:active name]) (get-in @st [:parked name]))
+                                                        source/pull-refusal))]
+                        (throw (ex-info (format "%s: %s" (clojure.core/name name) why) {})))
                       (binding [branch/*sync* (boolean sync?)]
                         (if-let [cfg (and (not (get-in @st [:active name])) (get-in @st [:parked name]))]
                           (let [cfg (current-cfg @catalog-ref name cfg)]

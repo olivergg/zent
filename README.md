@@ -94,8 +94,9 @@ that observes a component its preset doesn't run.
 | pick a stack | `zent presets`, `zent preview <preset>`, `zent apply <preset>` | `list_presets`, `preview`, `apply` |
 | see what runs | `zent status` (dashboard: `zent serve --detach --ui`) | `status` |
 | iterate on a component | `zent reload <c>`, then `zent logs [-f] <c>` | `reload`, `logs` |
-| run what's new on a `:branch`'s origin | `zent pull <c>` (or the card's `pull`) | - |
-| catch a clone's branch up with origin's default one | `zent rebase <c>` (or the card's `rebase`), then `zent reload <c>` | - |
+| run what's new on a `:branch` (origin's or your local one, by `:from`) | `zent pull <c>` (or the card's `pull`) | - |
+| catch a branch up with origin's default one - the clone's, your local one (`:from :local`), or as a local test (`:origin`, reverted at the next sync) | `zent rebase <c>` (or the card's `rebase` / `test on <default>`), then `zent reload <c>` | - |
+| list / clean up the `:branch` worktrees | `zent worktrees`, `zent worktrees prune` | - |
 | stop some / all but `:permanent` | `zent stop <c>...` / `zent stop` | `stop` |
 | judge the running stack | `zent verify [<preset> [<check>...]]` | `verify` |
 | test a catalog edit | `zent check` | - |
@@ -162,16 +163,25 @@ A preset is a vector of component names; a map right after a name overrides it:
 
 ```clojure
 [:webapp-deps
- :front {:branch "feature/x"}                ; run from a worktree of origin/feature/x
+ :front {:branch "feature/x"}                ; run from a worktree of origin/feature/x (:from :origin)
  :webapp {:kind :external                    ; running in IntelliJ
           :readiness {:type :http-poll
                       :url "http://localhost:8080/health/readiness"}}]
 ```
 
-A `:branch` runs origin's code, from a worktree detached at `origin/<branch>`: an apply that
-(re)deploys it syncs it, `zent pull <c>` too, a reload keeps its commit. Add `:local true` to run
-your main clone as it is instead - refused unless it has that branch checked out. zent never moves,
-holds or switches a local branch.
+A `:branch` runs from where its `:from` says:
+
+| `:from` | runs | a sync (an apply that (re)deploys it, `zent pull <c>`) |
+|---|---|---|
+| `:origin` (default) | a worktree detached at `origin/<branch>`: what's pushed | fetches, then resets it to `origin/<branch>` |
+| `:local` | the same worktree, detached at your local `<branch>`: what's committed, no push needed | resets it to `<branch>`, no fetch |
+| `:clone` | your main clone as it is - refused unless it has `<branch>` checked out | nothing |
+
+A reload keeps the commit there. The worktree is `~/.cache/zent/worktrees/<repo>-<branch>` either way,
+so switching `:origin`/`:local` is a reset (ignored build output stays). A sync never loses work: it
+refuses a worktree with uncommitted files or commits on no branch, saying how to keep them. Detached,
+the worktree holds no branch: your clone may check `<branch>` out meanwhile. `zent worktrees` lists them,
+`zent worktrees prune` removes those no preset uses and that hold nothing.
 
 A tool reading other repos gets their dirs through `:source-env` (`:one-shot`, `:process`,
 `:quarkus-app`; plain values go in `:env`). Each var is set to a component's checkout as the

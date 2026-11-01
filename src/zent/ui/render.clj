@@ -148,24 +148,26 @@
 (def ^:private running? #{:up :unready :idle :done})
 
 (defn git-chip
-  "A card's git state: its :git (zent.source/git-status) plus what the preset wanted; nil before git
-  answered. :default? on the default branch, none wanted (no label then); :off? not the preset's
-  :branch - without one, the main clone runs as it is, whatever its branch; :wt? in its own worktree;
-  :lose? commits that worktree's next deploy (reset --hard) drops; :stale? running, but the disk moved
+  "A card's git state: its :git (zent.source/checkout-git) plus what the preset wanted; nil before git
+  answered. :from where it runs from (zent.source/from); :default? on the default branch, none wanted
+  (no label then); :off? not the preset's :branch - without one, the main clone runs as it is, whatever
+  its branch; :wt? in its own worktree; :lose? commits on no branch there, which the next sync refuses
+  to drop; :test? an :origin worktree running a local test rebase; :stale? running, but the disk moved
   on from the commit deployed. Its counts are never nil: 0 when git didn't tell."
-  [{:keys [git source wanted-branch wanted-local deployed-sha status preview-of]}]
-  (when-let [{:keys [branch sha base ahead] :as git}
-             (when git (cond-> (merge-with #(or %2 %1) {:behind 0 :ahead 0 :dirty 0 :pull 0} git)
-                         ;; a worktree is detached at origin/<branch>: the branch is the preset's
+  [{:keys [git source wanted-branch from deployed-sha status preview-of]}]
+  (when-let [{:keys [branch sha base unreachable] :as git}
+             (when git (cond-> (merge-with #(or %2 %1) {:behind 0 :ahead 0 :dirty 0 :pull 0 :unreachable 0} git)
+                         ;; a worktree is detached: the branch is the preset's
                          (and (:worktree source) (nil? (:branch git))) (assoc :branch wanted-branch)))]
     (let [wt? (boolean (:worktree source))]
       (assoc git
              :wanted-branch wanted-branch
-             :wanted-local wanted-local
+             :from (or from (:from git))
              :default? (and (not wanted-branch) (contains? (if base #{base} #{"main" "master"}) branch))
              :off? (boolean (and wanted-branch (not= wanted-branch branch)))
              :wt? wt?
-             :lose? (boolean (and wt? (pos? ahead)))
+             :lose? (boolean (and wt? (pos? unreachable)))
+             :test? (boolean (:test? git))
              :stale? (boolean (and deployed-sha sha (running? status) (not= deployed-sha sha)))
              :deployed-sha deployed-sha
              :preview-of preview-of))))
@@ -180,39 +182,57 @@
 (defn- git-facts
   "A chip's facts, one sentence each (nil when there's nothing to say): the `cd` hover lists them all,
   each piece of the git row shows its own."
-  [{:keys [wanted-branch wanted-local branch sha base behind ahead pushed dirty pull fetched-at deployed-sha off? wt? lose? stale?] :as chip} now]
-  {:branch (str (or branch (str "detached at " (short-sha sha))) "\n"
-                (cond (and off? wanted-local) (str "the preset's :local wants " wanted-branch " checked out here: the deploy"
-                                                   " refuses until you git checkout it")
-                      off? (str "the preset wants " wanted-branch " - not this one")
-                      wanted-local "the preset's :branch, :local: your clone runs it"
-                      wanted-branch "the preset's :branch: origin's, in a worktree"
-                      :else "no :branch in the preset: runs whatever this clone has checked out"))
-   :from (if wt?
-           (str "runs origin/" branch " in its own worktree, detached - push to run a change. An apply syncs it,"
-                " a reload keeps its commit"
-                (if (pos? pull)
-                  (str "; origin has " pull " more commit(s)"
-                       (if fetched-at (str " as of the last fetch, " (duration (max 0 (- now fetched-at))) " ago") "")
-                       ": pull to run them")
-                  ""))
-           "runs your local clone as it is, uncommitted changes included")
-   :behind (when (pos? behind)
-             (str behind " commit(s) on origin/" base " not in this checkout - "
-                  (or (source/rebase-refusal chip wt?) "rebase: the button fetches, then rebases if nothing conflicts")
-                  (if fetched-at (str " (as of the last fetch, " (duration (max 0 (- now fetched-at))) " ago)") " (never fetched)")))
-   :ahead (when (pos? ahead)
-            (str ahead " commit(s)" (if pushed (str " not on origin/" branch) " pushed nowhere")
-                 (if lose? " - the next deploy's reset --hard drops them: push first" " - safe here: the clone runs as it is")))
-   :dirty (when (pos? dirty)
-            (str dirty " modified or untracked file(s)"
-                 (if wt? " - the next deploy drops them" " - they run too: the clone runs as it is")))
-   :stale (when stale? (str "running " (short-sha deployed-sha) ", the disk is at " (short-sha sha) ": reload to run it"))})
+  [{:keys [wanted-branch from branch sha base behind ahead pushed dirty pull unreachable local-ahead local-behind
+           fetched-at deployed-sha off? wt? lose? test? stale?] :as chip} now]
+  (let [ago (if fetched-at (str " as of the last fetch, " (duration (max 0 (- now fetched-at))) " ago") "")
+        sync (str " An apply that redeploys it or a pull "
+                  (if (= :local from) (str "resets it to your " branch) (str "fetches, then resets it to origin/" branch))
+                  " - refused while it holds uncommitted files or commits on no branch; a reload keeps its commit")]
+    {:branch (str (or branch (str "detached at " (short-sha sha))) "\n"
+                  (cond (and off? (= :clone from)) (str "the preset's :from :clone wants " wanted-branch " checked out here:"
+                                                        " the deploy refuses until you git checkout it")
+                        off? (str "the preset wants " wanted-branch " - not this one")
+                        (= :clone from) "the preset's :branch, :from :clone: your clone runs it as it is"
+                        (= :local from) "the preset's :branch, :from :local: your local branch, in a worktree"
+                        wanted-branch "the preset's :branch: origin's, in a worktree"
+                        :else "no :branch in the preset: runs whatever this clone has checked out"))
+     :from (cond
+             (and wt? test?) (str "runs origin/" branch " rebased onto origin/" base " in its own worktree: a local test, no"
+                                  " branch moved - the next apply or pull reverts it")
+             (and wt? (= :local from)) (str "runs your local " branch " in its own worktree, detached - commit to it to run"
+                                            " a change, no push needed." sync
+                                            (when (pos? pull) (str "; your " branch " has " pull " more commit(s): pull to run them")))
+             wt? (str "runs origin/" branch " in its own worktree, detached - push to run a change." sync
+                      (when (pos? pull) (str "; origin has " pull " more commit(s)" ago ": pull to run them")))
+             :else "runs your local clone as it is, uncommitted changes included - nothing syncs it, a reload restarts what's on disk")
+     :behind (when (pos? behind)
+               (str behind " commit(s) on origin/" base " not in this checkout - "
+                    (or (source/rebase-refusal chip)
+                        (case from
+                          :origin (str "test on " base ": the button fetches, then rebases the worktree's commit onto it, locally"
+                                       " - no branch moves, the next apply or pull reverts it")
+                          :local (str "rebase: the button fetches, then rebases your " branch " if nothing conflicts"
+                                      " (refused while another checkout has it out)")
+                          "rebase: the button fetches, then rebases if nothing conflicts"))
+                    (if fetched-at (str " (" (subs ago 1) ")") " (never fetched)")))
+     :ahead (when (pos? ahead)
+              (str ahead " commit(s)" (if pushed (str " not on origin/" branch) " pushed nowhere")
+                   (when-not wt? " - safe here: the clone runs as it is")))
+     :lose (when lose?
+             (str unreachable " commit(s) on no branch, made in this worktree: the next sync refuses until you keep them"
+                  " (git branch rescue/" branch " HEAD)"))
+     :local (when (and (= :local from) local-ahead (pos? (+ local-ahead (or local-behind 0))))
+              (str "your " branch ": " local-ahead " commit(s) not on origin/" branch ", " local-behind " on origin/" branch
+                   " not on yours" (when (pos? (or local-behind 0)) " - pull --rebase in your clone")))
+     :dirty (when (pos? dirty)
+              (str dirty " modified or untracked file(s)"
+                   (if wt? " - the next sync refuses until you commit or stash them" " - they run too: the clone runs as it is")))
+     :stale (when stale? (str "running " (short-sha deployed-sha) ", the disk is at " (short-sha sha) ": reload to run it"))}))
 
 (defn- git-title
   "The `cd` hover: every fact, then the commit and the dir."
   [chip dir now]
-  (->> (conj (mapv (git-facts chip now) [:branch :from :behind :ahead :dirty :stale])
+  (->> (conj (mapv (git-facts chip now) [:branch :from :behind :ahead :lose :local :dirty :stale])
              (when-not (:fetched-at chip) "never fetched") (:sha chip) (tildify dir))
        (remove nil?)
        (map #(str/replace (esc %) "\n" "&#10;"))
@@ -225,27 +245,53 @@
        "\" hx-swap=\"none\" hx-disabled-elt=\"this\"" (when confirm (str " hx-confirm=\"" (esc confirm) "\"")) ">"
        label "</button>"))
 
+(defn- rebase-button
+  "The rebase a click away when `chip` is behind and nothing refuses it - what it moves depends on
+  :from (zent.source/rebase!)."
+  [cname {:keys [from branch base behind pushed local-ahead preview-of] :as chip}]
+  (when (and (pos? behind) (not (source/rebase-refusal chip)))
+    (let [onto (str "origin/" base)
+          path (str "/api/rebase/" (name cname) (when preview-of (str "?preset=" preview-of)))]
+      (case from
+        :origin (git-button (str "Fetch, then run origin/" branch " rebased onto " onto " in its worktree - no branch moves")
+                            path (str "Run origin/" branch " rebased onto " onto " in its worktree? A local test: no branch"
+                                      " moves, the next apply or pull reverts it.")
+                            (str "test on " (esc base)))
+        :local (git-button (str "Fetch, then rebase your local " branch " onto " onto " if nothing conflicts")
+                           path (str "Rebase your local branch " branch " onto " onto "? It moves " branch
+                                     " (refused while another checkout has it out)."
+                                     (when local-ahead " It is on origin: push --force-with-lease afterwards."))
+                           "rebase")
+        (git-button (str "Fetch, then rebase " branch " onto " onto " if nothing conflicts")
+                    path (str "Rebase " branch " onto " onto "?" (when pushed " It is on origin: push --force-with-lease afterwards."))
+                    "rebase")))))
+
 (defn- git-row
   "The chip, a section of its own - nil when it has nothing to say: the branch unless the default one
-  (red when not the preset's :branch, dashed in a worktree), where the code comes from (origin: a
-  worktree reset on deploy; local: the clone as it is), then each count with its word - each piece
-  with its fact on hover."
-  [cname {:keys [branch sha base behind ahead pushed dirty pull wanted-branch default? off? wt? lose? stale? preview-of] :as chip} now]
+  (red when not the preset's :branch, dashed in a worktree), where the code comes from (origin's or
+  your local branch in a worktree, or the clone as it is), then each count with its word - each piece
+  with its fact on hover. In a preview, what an apply's sync would do."
+  [cname {:keys [from branch sha base behind ahead dirty pull unreachable local-ahead local-behind wanted-branch
+                 default? off? wt? lose? test? stale? preview-of] :as chip} now]
   (let [facts (git-facts chip now)
         span (fn [cls fact body] (str "<span class=\"" cls "\" title=\"" (str/replace (esc (facts fact fact)) "\n" "&#10;") "\">" body "</span>"))
-        rebase (when (and (pos? behind) (not (source/rebase-refusal chip wt?)))
-                 (git-button (str "Fetch, then rebase " branch " onto origin/" base " if nothing conflicts")
-                             (str "/api/rebase/" (name cname) (when preview-of (str "?preset=" preview-of)))
-                             (str "Rebase " branch " onto origin/" base "?"
-                                  (when pushed " It is on origin: push --force-with-lease afterwards."))
-                             "rebase"))
-        counts (str (when (pos? behind) (str (span "behind" :behind (str "&#8595;" behind " " (esc base))) rebase))
-                    (when (pos? ahead)
-                      (if lose?
-                        (span "ahead lose" :ahead (str "&#8593;" ahead " lost on next deploy &#9888;"))
-                        (span "ahead" :ahead (str "&#8593;" ahead " unpushed"))))
+        local? (and wt? (= :local from) local-ahead)
+        counts (str (when (pos? behind) (str (span "behind" :behind (str "&#8595;" behind " " (esc base))) (rebase-button cname chip)))
+                    (cond lose? (span "ahead lose" :lose (str "&#9888;" unreachable " on no branch"))
+                          test? nil
+                          local? (str (when (pos? local-ahead) (span "ahead" :local (str "&#8593;" local-ahead " unpushed on " (esc (short-branch branch)))))
+                                      (when (pos? (or local-behind 0)) (span "behind" :local (str "&#8595;" local-behind " on origin"))))
+                          (pos? ahead) (span "ahead" :ahead (str "&#8593;" ahead " unpushed")))
                     (when (pos? dirty) (span (str "dirty" (when wt? " lose")) :dirty (str "&#9679;" dirty " uncommitted")))
-                    (when stale? (span "stale" :stale "&#8800; reload")))]
+                    (when stale? (span "stale" :stale "&#8800; reload"))
+                    ;; a preview: what applying it would do to the worktree, as of the last fetch
+                    (when (and wt? preview-of)
+                      (cond (pos? (+ dirty unreachable))
+                            (span "plan lose" (str "an apply that redeploys it refuses to sync: " (+ dirty unreachable) " uncommitted file(s) or commit(s) on no branch")
+                                  (str "&#9995; sync refused: " (+ dirty unreachable) " at risk"))
+                            (pos? pull) (span "plan" (str "an apply that redeploys it resets the worktree, " pull " commit(s) ahead")
+                                              (str "apply: reset +" pull))
+                            :else (span "plan" "an apply keeps the worktree at its commit: nothing new" "apply: keeps"))))]
     (when (or (not default?) (seq counts))
       (str "<span class=\"git\">"
            (when-not default?
@@ -253,12 +299,17 @@
                         (str "&#9095; " (esc (if branch (short-branch branch) (short-sha sha)))))
                   (when off? (span "want" (str "the preset wants " wanted-branch ", this is " branch)
                                    (str "&#8800; " (esc (short-branch wanted-branch)))))
-                  (cond (pos? pull) (span "from origin moved" :from (str "&#10227; origin +" pull))
-                        wt? (span "from origin" :from "&#10227; origin")
-                        :else (span "from local" :from "&#9998; local"))
-                  (when (and (pos? pull) (not preview-of))
-                    (git-button (str "Sync the worktree to origin/" branch ", then redeploy")
-                                (str "/api/pull/" (name cname)) nil "pull"))))
+                  (cond (not wt?) (span "from clone" :from "&#9998; clone")
+                        test? (span "from origin test" :from (str "&#10548; " (esc base) " (test)"))
+                        (= :local from) (span (str "from local" (when (pos? pull) " moved")) :from
+                                              (str "&#9095; local" (when (pos? pull) (str " +" pull))))
+                        :else (span (str "from origin" (when (pos? pull) " moved")) :from
+                                    (str "&#10227; origin" (when (pos? pull) (str " +" pull)))))
+                  (when (and wt? (not preview-of) (or test? (pos? pull)))
+                    (git-button (cond test? (str "Drop the test: sync the worktree back to origin/" branch ", then redeploy")
+                                      (= :local from) (str "Sync the worktree to your " branch ", then redeploy")
+                                      :else (str "Sync the worktree to origin/" branch ", then redeploy"))
+                                (str "/api/pull/" (name cname)) nil (if test? "undo test" "pull")))))
            counts "</span>"))))
 
 (defn- checkout
@@ -308,10 +359,13 @@
      (if chip
        (git-row cname chip (System/currentTimeMillis))
        ;; a preview's :branch never deployed: its worktree doesn't exist yet
-       (when (and (:preview? c) (:worktree source) (:wanted-branch c))
-         (str "<span class=\"git\"><span class=\"branch wt\" title=\"" (esc (:wanted-branch c)) "\">&#9095; "
-              (esc (short-branch (:wanted-branch c))) "</span><span class=\"from origin pending\" title=\"not checked out anywhere yet: apply creates its worktree from origin/"
-              (esc (:wanted-branch c)) " - what's pushed there, nothing local\">&#9888; created at apply from origin</span></span>")))
+       (when-let [b (and (:preview? c) (:worktree source) (:wanted-branch c))]
+         (let [local? (= :local (:from c))]
+           (str "<span class=\"git\"><span class=\"branch wt\" title=\"" (esc b) "\">&#9095; " (esc (short-branch b)) "</span>"
+                "<span class=\"from " (if local? "local" "origin") " pending\" title=\"not checked out anywhere yet: apply creates its worktree from "
+                (if local? (str "your local " (esc b) " - what's committed there, nothing uncommitted")
+                    (str "origin/" (esc b) " - what's pushed there, nothing local"))
+                "\">&#9888; created at apply from " (if local? (esc b) (str "origin/" (esc b))) "</span></span>"))))
      (service-rows c)
      (source-env-rows source-env)
      (when (and (links-visible? status) (seq links))
@@ -361,7 +415,7 @@
 
 (defn- git-summary
   "What the chips ask of you, one line each, with the components' names: not the preset's :branch,
-  commits the next deploy drops, a disk ahead of what runs, behind the default branch. Nothing to do:
+  work in a worktree its next sync refuses to drop, a disk ahead of what runs, behind the default branch. Nothing to do:
   nothing shown."
   [components]
   (let [chips (keep (fn [[n c]] (some-> (git-chip c) (assoc :name (name n)))) components)
@@ -369,8 +423,8 @@
                (when-let [cs (seq (sort-by :name (filter pred chips)))]
                  (str "<li class=\"" k "\">" head " " (esc (str/join ", " (map show cs))) "</li>")))
         lines (remove nil? [(line "off" "&#9095; not the preset's branch:" :off? :name)
-                            (line "lose" "&#9888; lost on next deploy:" #(or (:lose? %) (and (:wt? %) (pos? (:dirty %))))
-                                  #(str (:name %) " (" (+ (if (:lose? %) (:ahead %) 0) (if (:wt? %) (:dirty %) 0)) ")"))
+                            (line "lose" "&#9888; blocks the next sync:" #(and (:wt? %) (pos? (+ (:unreachable %) (:dirty %))))
+                                  #(str (:name %) " (" (+ (:unreachable %) (:dirty %)) ")"))
                             (line "stale" "&#8800; to reload:" :stale? :name)
                             (line "behind" "&#8595; behind:" #(pos? (:behind %)) #(str (:name %) " " (:behind %) " " (:base %)))])]
     (when (seq lines)

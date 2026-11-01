@@ -57,8 +57,9 @@ converge in place, never stopped first (`zent.engine/reload!`).
          :ignore ["target"]}}                    ; directory names to skip
 ```
 
-Paths resolve against the component's checkout dir (its branch worktree when `:branch` is
-set; `zent.engine/watch-targets`). Omitted `:paths` means `"."`; omitted `:ignore` means
+Paths resolve against the component's main clone (`zent.engine/watch-targets`); one running
+from a worktree (`:branch` with `:from :origin` or `:local`) isn't watched: only a sync moves
+it, and that redeploys anyway. Omitted `:paths` means `"."`; omitted `:ignore` means
 `target`, `node_modules`, `.git`. Validated by `zent.schema` like any other key. A component without `:watch` is
 simply never watched.
 

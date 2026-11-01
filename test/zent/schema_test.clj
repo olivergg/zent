@@ -132,3 +132,23 @@
   (testing "both context allowlists take k8s names only"
     (is (thrown? clojure.lang.ExceptionInfo
                  (schema/validate-catalog! {:components {} :presets {} :defaults {:allow-k8s-contexts ["--context=prod"]}})))))
+
+(deftest from-test
+  (let [errors #(try (schema/validate-component! :ui %) nil (catch clojure.lang.ExceptionInfo e (:errors (ex-data e))))
+        ui {:kind :process :repo "ui" :cmd "x"}]
+    (testing "given :from with a :branch, then each mode is valid; an unknown one isn't"
+      (doseq [from [:origin :local :clone]]
+        (is (nil? (errors (assoc ui :branch "b" :from from))) (str from)))
+      (is (some? (errors (assoc ui :branch "b" :from :upstream)))))
+    (testing "given :from without a :branch, then refused - it means nothing there"
+      (is (= {:from ["needs a :branch"]} (errors (assoc ui :from :local)))))
+    (testing "given the retired :local, anywhere, then refused, naming its replacement"
+      (is (= {:local [":local is gone: use :from :clone"]} (errors (assoc ui :branch "b" :local true))))
+      (is (re-find #"use :from :clone" (try (schema/validate-registry! {:ui (assoc ui :local true)}) nil
+                                            (catch clojure.lang.ExceptionInfo e (ex-message e)))))
+      (is (re-find #"use :from :clone" (try (schema/validate-catalog! {:defaults {:local true} :components {} :presets {}}) nil
+                                            (catch clojure.lang.ExceptionInfo e (ex-message e))))))
+    (testing ":from is a runtime preset's and a secret component's to set, :local no more"
+      (is (contains? schema/runtime-preset-keys :from))
+      (is (contains? schema/secret-safe-overrides :from))
+      (is (not-any? :local [schema/runtime-preset-keys schema/secret-safe-overrides])))))

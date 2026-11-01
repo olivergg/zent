@@ -36,6 +36,8 @@
                             (presets/save! catalog dir :bad "[:db {:source-env {\"X\" {:component :front}}}]")))
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Invalid"
                             (presets/save! catalog dir :bad "[:front {:namespace \"dev --context prod\"}]")))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"\(:local: use :from :clone\)"
+                            (presets/save! catalog dir :bad "[:db {:branch \"x\" :local true}]")))
       (is (not (presets/user-preset? dir :bad))))
 
     (testing "only a user preset can be deleted"
@@ -61,3 +63,9 @@
       (try
         (is (= #{:good} (set (keys (presets/load-files dir)))))
         (finally (run! #(.delete %) (.listFiles (java.io.File. dir))))))))
+
+(deftest runtime-from-test
+  (testing "given a user preset running a branch from the local one, then it's saved"
+    (let [dir (str (System/getProperty "java.io.tmpdir") "/zent-presets-from-" (System/nanoTime))]
+      (presets/save! catalog dir :mine "[:db {:branch \"x\" :from :local}]")
+      (is (= {:db {:mode :on :branch "x" :from :local}} (:mine (presets/load-files dir)))))))

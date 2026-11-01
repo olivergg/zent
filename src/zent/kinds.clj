@@ -20,8 +20,8 @@
 (defn- source-dir
   "The dir build-kind! already resolved (::dir), else resolved now - once per
   deploy, since resolving a :branch fetches and resets its worktree."
-  [{:keys [repo branch local workspace-dir org] ::keys [dir]}]
-  (or dir (resolve-source repo {:branch branch :local local :workspace-dir workspace-dir :org org})))
+  [{:keys [repo branch from workspace-dir org] ::keys [dir]}]
+  (or dir (resolve-source repo {:branch branch :from from :workspace-dir workspace-dir :org org})))
 
 (defn- source-env
   "Each :source-env var -> its source's dir (+ :path): zent.compose pinned the

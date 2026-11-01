@@ -10,7 +10,9 @@
   This namespace knows nothing about any particular component - it works
   over whatever catalog it's handed (see zent.engine's docstring for the
   catalog shape)."
-  (:require [zent.schema :as schema]))
+  (:require [clojure.string :as str]
+            [zent.schema :as schema]
+            [zent.source :as source]))
 
 (defn run
   "A preset as it reads: the components to run, some with overrides.
@@ -52,7 +54,8 @@
   `allowed?` rejects - the shape of every preset restriction."
   [preset-name k over allowed? why]
   (when-let [ks (seq (remove allowed? (keys over)))]
-    (throw (ex-info (format "preset %s sets %s on %s - %s" (name preset-name) (vec ks) k why)
+    (throw (ex-info (str (format "preset %s sets %s on %s - %s" (name preset-name) (vec ks) k why)
+                         (apply str (for [key ks :let [note (schema/retired-keys key)] :when note] (str " (" key ": " note ")"))))
                     {:preset preset-name :component k :keys (vec ks)}))))
 
 (defn- refuse-unknown-refs!
@@ -71,7 +74,7 @@
 
 (defn- pin-sources
   "Pins each :source-env entry of `cfg` to where its source is - :repo
-  :branch :workspace-dir :org, all zent.kinds needs to find the dir: a
+  :branch :from :workspace-dir :org, all zent.kinds needs to find the dir: a
   :component's cfg in this preset (`resolved`), else its catalog entry; a
   :repo's main clone. So a :branch set on a source component in the preset
   changes `cfg` too: its dependent redeploys."
@@ -82,11 +85,28 @@
             (fn [{:keys [component repo] :as ref}]
               (let [source (cond component (or (get resolved component) (merge defaults (get components component)))
                                  repo (assoc defaults :repo repo))
-                    coords (select-keys source [:repo :branch :local :workspace-dir :org])]
+                    coords (select-keys source [:repo :branch :from :workspace-dir :org])]
                 (when-not (:repo coords)
                   (throw (ex-info (format "%s: :source-env %s has no :repo" k (or component "entry"))
                                   {:component k :source component})))
                 (merge ref coords))))))
+
+(defn- refuse-split-worktrees!
+  "Refuses `resolved` running one [repo branch] worktree from two refs - :from :origin and :local
+  (zent.source/from) - its components' or their :source-env's: one dir can't be at both."
+  [resolved]
+  (let [uses (for [[k cfg] resolved
+                   [who coords] (cons [k cfg] (for [[var ref] (:source-env cfg)] [(str k " :source-env " var) ref]))
+                   :let [mode (source/from coords)]
+                   :when (#{:origin :local} mode)]
+               {:at [(:repo coords) (:branch coords)] :who who :from mode})]
+    (doseq [[[repo branch] us] (group-by :at uses)
+            :let [by-from (group-by :from us)]
+            :when (< 1 (count by-from))]
+      (let [who #(str/join ", " (sort (map (comp str :who) (by-from %))))]
+        (throw (ex-info (format "%s@%s has one worktree, run :from :origin by %s and :from :local by %s - it can't be at both"
+                                repo branch (who :origin) (who :local))
+                        {:repo repo :branch branch}))))))
 
 (defn resolve-preset
   "Resolves `preset-name` in `catalog` to {component-name validated-cfg}.
@@ -120,4 +140,17 @@
                                   [k cfg]))))
                        overlay)]
     ;; a second pass: pinning a :source-env needs its sources' resolved cfgs
-    (into {} (map (fn [[k cfg]] [k (pin-sources k cfg resolved components defaults)])) resolved)))
+    (doto (into {} (map (fn [[k cfg]] [k (pin-sources k cfg resolved components defaults)])) resolved)
+      refuse-split-worktrees!)))
+
+(defn worktree-users
+  "{worktree-path #{preset}}: the worktrees each of `catalog`'s presets runs from, a :source-env's
+  included. A preset that doesn't resolve uses none."
+  [catalog]
+  (apply merge-with into {}
+         (for [p (keys (:presets catalog))
+               :let [resolved (try (resolve-preset catalog p) (catch clojure.lang.ExceptionInfo _ nil))]
+               [_ cfg] resolved
+               coords (cons cfg (vals (:source-env cfg)))
+               :when (and (:repo coords) (source/worktree? coords))]
+           {(source/checkout-dir coords) #{p}})))

@@ -166,7 +166,8 @@
                                          :repo (:repo cfg)
                                          ;; the preset's :branch, against the one on disk (:git)
                                          :wanted-branch (:branch cfg)
-                                         :wanted-local (:local cfg)
+                                         ;; where it runs from (zent.source/from), nil without a :branch
+                                         :from (source/from cfg)
                                          :permanent (:permanent cfg)
                                          :attached-to (:attached-to cfg)
                                          :scripts (:scripts cfg)
@@ -247,7 +248,7 @@
   [k & [cfg]]
   (let [cfg (or cfg (get @described k))]
     (when (:repo cfg)
-      (let [r (source/rebase! (source/checkout-dir cfg) (boolean (:worktree (source/describe cfg))))]
+      (let [r (source/rebase! cfg)]
         (try (set-git! k cfg) (catch Exception e (println (format "[%s] git refresh failed: %s" k (ex-message e)))))
         r))))
 

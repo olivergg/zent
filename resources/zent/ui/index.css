@@ -610,10 +610,16 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .git > [title] { cursor: help; }
 .node .git > :not(.branch) { flex: none; }
 .node .branch.off, .node .git .want { color: var(--madder); border-color: var(--madder); }
-/* where the code comes from: origin (a worktree, reset on deploy - push to run) or local (the clone, as is) */
+/* where the code comes from: origin's or your local branch (a worktree, synced on deploy) or the clone, as is */
 .node .git .from { padding: 0 4px; border-radius: 2px; color: var(--card); }
 .node .git .from.origin { background: var(--indigo); }
-.node .git .from.local { background: var(--muted); }
+.node .git .from.local { background: var(--verdigris); }
+.node .git .from.clone { background: var(--muted); }
+/* an :origin worktree running a local test rebase: the next sync reverts it */
+.node .git .from.test { background: var(--weld); color: var(--ink); }
+/* a preview: what an apply's sync would do to the worktree */
+.node .git .plan { color: var(--weld); }
+.node .git .plan.lose { color: var(--madder); }
 /* a preview's :branch with no checkout yet: apply creates its worktree - worth a look before applying */
 .node .git .from.pending { background: var(--weld); color: var(--ink); }
 /* origin moved past the worktree's commit: a pull brings it */
