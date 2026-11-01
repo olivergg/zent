@@ -14,6 +14,7 @@
     (try
       (let [handle (deploy-fn name cfg)]
         (state/observe-deploy-ok! name cfg handle)
+        (state/observe-deployed! name cfg)
         handle)
       (catch Exception e
         (state/observe-deploy-failed! name e)
@@ -59,4 +60,4 @@
                        :on-seeded on-seeded
                        :on-check on-check
                        ;; a branch switched on disk shows without re-applying
-                       :on-refresh #'state/refresh-sources!)))
+                       :on-refresh #'state/refresh!)))

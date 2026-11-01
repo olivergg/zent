@@ -61,6 +61,62 @@
       worktree
       main)))
 
+(defn- git
+  "`git -C dir args`'s trimmed stdout, nil on failure. --no-optional-locks: a
+  background `status` mustn't take the index lock from the user's own git."
+  [dir & args]
+  (let [{:keys [exit out]} (shell/sh! (into ["git" "--no-optional-locks" "-C" dir] args))]
+    (when (zero? exit) (str/trim (str out)))))
+
+(defn parse-status
+  "`git status --porcelain=v2 --branch` -> {:sha :branch :dirty}: :branch nil
+  when detached, :dirty the modified and untracked paths."
+  [out]
+  (reduce (fn [acc line]
+            (cond
+              (str/starts-with? line "# branch.oid ") (let [v (subs line 13)] (cond-> acc (not= "(initial)" v) (assoc :sha v)))
+              (str/starts-with? line "# branch.head ") (let [v (subs line 14)] (cond-> acc (not= "(detached)" v) (assoc :branch v)))
+              (or (str/blank? line) (str/starts-with? line "#")) acc
+              :else (update acc :dirty inc)))
+          {:dirty 0} (str/split-lines (str out))))
+
+(defn- rev-count [dir & args]
+  (some-> (apply git dir "rev-list" "--count" args) parse-long))
+
+(defn git-status
+  "`dir`'s checkout from local refs only - never fetches:
+
+    {:sha :branch :dirty  parse-status's
+     :base                the default branch: origin/HEAD's, else master or main
+     :behind              commits on origin/<base> not in HEAD
+     :ahead               commits in HEAD not on origin/<branch> - not on any
+                          origin ref when that one doesn't exist (:pushed false)
+     :fetched-at          the last fetch (FETCH_HEAD's mtime, worktree's or clone's)}
+
+  nil when `dir` isn't a checkout."
+  [dir]
+  (when-let [{:keys [sha branch] :as st} (some-> (git dir "status" "--porcelain=v2" "--branch") parse-status)]
+    (let [origin "refs/remotes/origin/"
+          refs (into {} (keep #(let [[r sym] (str/split % #" ")] (when (seq r) [r sym])))
+                     (str/split-lines (or (apply git dir "for-each-ref" "--format=%(refname) %(symref)"
+                                                 (cond-> (mapv #(str origin %) ["HEAD" "master" "main"])
+                                                   branch (conj (str origin branch))))
+                                          "")))
+          base (or (some-> (get refs (str origin "HEAD")) not-empty (str/replace origin ""))
+                   (first (filter #(contains? refs (str origin %)) ["master" "main"])))
+          pushed (and branch (contains? refs (str origin branch)))
+          fetched-at (when-let [[own common] (some-> (git dir "rev-parse" "--path-format=absolute" "--git-path" "FETCH_HEAD"
+                                                          "--git-common-dir")
+                                                     str/split-lines)]
+                       (let [t (max (.lastModified (java.io.File. (str own))) (.lastModified (java.io.File. (str common "/FETCH_HEAD"))))]
+                         (when (pos? t) t)))]
+      (cond-> (assoc st :pushed (boolean pushed))
+        base (assoc :base base :behind (rev-count dir (str "HEAD..origin/" base)))
+        sha (assoc :ahead (if pushed
+                            (rev-count dir (str "origin/" branch "..HEAD"))
+                            (rev-count dir "HEAD" "--not" "--remotes=origin")))
+        fetched-at (assoc :fetched-at fetched-at)))))
+
 (defn describe
   "Where a component's code actually comes from, for display:
 

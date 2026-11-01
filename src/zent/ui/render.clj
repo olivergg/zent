@@ -104,16 +104,76 @@
 (defn- can-stop? [status] (contains? #{:up :deploying :idle :unready} status))
 (defn- links-visible? [status] (contains? #{:up :external :deploying} status))
 
+(defn- short-sha [sha] (when sha (subs sha 0 (min 7 (count sha)))))
+
+(def ^:private running? #{:up :unready :idle :done})
+
+(defn git-chip
+  "A card's git state: its :git (zent.source/git-status) plus what the preset wanted; nil before git
+  answered. :default? on the default branch, as wanted (no label then); :off? not the branch wanted (the
+  preset's :branch, else the default one); :wt? in its own worktree; :lose? commits that worktree's next
+  deploy (reset --hard) drops; :stale? running, but the disk moved on from the commit deployed. Its
+  counts are never nil: 0 when git didn't tell."
+  [{:keys [git source wanted-branch deployed-sha status]}]
+  (when-let [{:keys [branch sha base ahead] :as git} (when git (merge-with #(or %2 %1) {:behind 0 :ahead 0 :dirty 0} git))]
+    (let [default? (contains? (if base #{base} #{"main" "master"}) branch)
+          wt? (boolean (:worktree source))]
+      (assoc git
+             :wanted-branch wanted-branch
+             :default? (and default? (not wanted-branch))
+             :off? (if wanted-branch (not= wanted-branch branch) (not default?))
+             :wt? wt?
+             :lose? (boolean (and wt? (pos? ahead)))
+             :stale? (boolean (and deployed-sha sha (running? status) (not= deployed-sha sha)))
+             :deployed-sha deployed-sha))))
+
+(defn- git-title
+  "A chip's hover, one fact per line."
+  [{:keys [wanted-branch branch sha base behind ahead pushed dirty fetched-at deployed-sha off? wt? lose? stale?]} dir now]
+  (->> [(if wanted-branch
+          (str "wanted: " wanted-branch " (preset :branch)")
+          (str "wanted: the default branch" (when base (str ", " base)) " (no :branch)"))
+        (str "on disk: " (or branch (str "detached at " (short-sha sha))) (when off? " - not the one wanted")
+             (if wt? (str ", its own worktree - reset to origin/" branch " on each deploy") ", the main clone - run as it is"))
+        (when (pos? behind) (str behind " behind origin/" base " - rebase?"))
+        (when (pos? ahead)
+          (str ahead (if pushed (str " not on origin/" branch) " pushed nowhere")
+               (when lose? " - the next deploy's reset --hard drops them")))
+        (when (pos? dirty) (str dirty " uncommitted file(s)"))
+        (when stale? (str "deployed " (short-sha deployed-sha) ", disk " (short-sha sha) ": reload to run it"))
+        (if fetched-at (str "last fetch " (duration (max 0 (- now fetched-at))) " ago") "never fetched")
+        sha
+        (tildify dir)]
+       (remove nil?)
+       (map esc)
+       (str/join "&#10;")))
+
+(defn- git-row
+  "The chip, a row of its own - nil when it has nothing to say: the branch unless default (red when not
+  the one wanted; dashed in a worktree) and wt/clone, ↓ behind the default branch, ↑⚠ unpushed (red when
+  a deploy would drop them), ● uncommitted, ≠ to reload."
+  [{:keys [branch sha behind ahead dirty default? off? wt? lose? stale?]} title]
+  (let [glyphs (str (when (pos? behind) (str "<span class=\"behind\">&#8595;" behind "</span>"))
+                    (when (pos? ahead) (str "<span class=\"ahead" (when lose? " lose") "\">&#8593;" ahead "&#9888;</span>"))
+                    (when (pos? dirty) (str "<span class=\"dirty\">&#9679;" dirty "</span>"))
+                    (when stale? "<span class=\"stale\">&#8800;</span>"))]
+    (when (or (not default?) (seq glyphs))
+      (str "<span class=\"git\" title=\"" title "\">"
+           (when-not default?
+             (str "<span class=\"branch" (when wt? " wt") (when off? " off") "\">" (esc (or branch (short-sha sha))) "</span>"
+                  "<i class=\"where\">" (if wt? "wt" "clone") "</i>"))
+           glyphs "</span>"))))
+
 (defn- checkout
-  "A checkout in one line, the details on hover: its branch (not main/master; dashed in a worktree), then
-  `cd` - its dir, a click copies `cd <dir>`."
-  [{:keys [branch dir worktree]}]
-  (str (when (and branch (not (#{"main" "master"} branch)))
+  "A checkout in one line, the details on hover: its branch (not main/master; dashed in a worktree) unless
+  git was read (`git-facts`, git-title: its row shows it), then `cd` - its dir, a click copies `cd <dir>`."
+  [{:keys [branch dir worktree]} & [git-facts]]
+  (str (when (and branch (not git-facts) (not (#{"main" "master"} branch)))
          (str "<span class=\"branch" (when worktree " wt") "\" title=\"" (esc branch)
               (when worktree " - its own worktree, reset to origin on each deploy") "\">" (esc branch) "</span>"))
        (when dir
          (str "<button type=\"button\" class=\"workdir-open\" data-dir=\"" (esc dir) "\" title=\""
-              (esc (tildify dir)) "&#10;Copy `cd " (esc dir) "`\">cd</button>"))))
+              (or git-facts (esc (tildify dir))) "&#10;Copy `cd " (esc dir) "`\">cd</button>"))))
 
 (defn- source-env-rows
   "What a :source-env component reads: one row per var (its name the tooltip)."
@@ -124,10 +184,10 @@
 (defn- facts
   "A card's one line of facts, the details on hover: the kind as its glyph, its checkout, ↗ (the repo), its
   own port - then the state."
-  [{:keys [kind status repo repo-url port services service-status source] :as c}]
+  [{:keys [kind status repo repo-url port services service-status source] :as c} git-facts]
   (str "<span class=\"meta\">"
        "<i class=\"glyph\" title=\"" (esc (name kind)) "\">" (esc (get kind-glyph kind "·")) "</i>"
-       (checkout source)
+       (checkout source git-facts)
        (when repo
          (if repo-url
            (str "<a class=\"repo-link\" href=\"" (esc repo-url) "\" target=\"_blank\" rel=\"noopener\" title=\"" (esc repo) "\">&#8599;</a>")
@@ -138,21 +198,24 @@
 
 (defn- card-body
   "A full card's content - everything but the error and the actions."
-  [cname {:keys [status source-env links permanent] :as c}]
-  (str
-   "<span class=\"head\"><span class=\"name\">" (esc (name cname)) "</span>"
-   (when permanent
-     "<span class=\"permanent\" title=\"Permanent: stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">&#8734;</span>")
-   "</span>"
-   (facts c)
-   (service-rows c)
-   (source-env-rows source-env)
-   (when (and (links-visible? status) (seq links))
-     (str "<span class=\"endpoints\">"
-          (apply str (map (fn [{:keys [url label]}]
-                             (str "<a class=\"endpoint\" href=\"" (esc url) "\" target=\"_blank\" rel=\"noopener\">" (esc label) "</a>"))
-                           links))
-          "</span>"))))
+  [cname {:keys [status source-env links permanent source] :as c}]
+  (let [chip (git-chip c)
+        git-facts (when chip (git-title chip (:dir source) (System/currentTimeMillis)))]
+    (str
+     "<span class=\"head\"><span class=\"name\">" (esc (name cname)) "</span>"
+     (when permanent
+       "<span class=\"permanent\" title=\"Permanent: stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">&#8734;</span>")
+     "</span>"
+     (facts c git-facts)
+     (when chip (git-row chip git-facts))
+     (service-rows c)
+     (source-env-rows source-env)
+     (when (and (links-visible? status) (seq links))
+       (str "<span class=\"endpoints\">"
+            (apply str (map (fn [{:keys [url label]}]
+                               (str "<a class=\"endpoint\" href=\"" (esc url) "\" target=\"_blank\" rel=\"noopener\">" (esc label) "</a>"))
+                             links))
+            "</span>")))))
 
 (defn component-card
   "The inner markup of one node card; the client owns the wrapper <div>
@@ -192,6 +255,23 @@
 
 (def ^:private summary-order ["up" "done" "ready" "idle" "starting" "stopping" "pending" "unready" "failed" "off" "stopped"])
 
+(defn- git-summary
+  "The cards' chips in one line, the non-zero counts only: on a branch, off the one wanted, behind
+  the default branch, unpushed (red when a deploy would drop some), to reload."
+  [components]
+  (let [chips (keep git-chip components)
+        n #(count (filter % chips))
+        part (fn [k cnt text] (when (pos? cnt) (str "<span class=\"" k "\">" cnt " " text "</span>")))
+        branches (n (complement :default?))
+        bases (str/join "/" (sort (distinct (keep #(when (pos? (:behind %)) (:base %)) chips))))
+        parts (remove nil? [(part "branches" branches (if (= 1 branches) "branch" "branches"))
+                            (part "off" (n :off?) "wrong branch")
+                            (part "behind" (n #(pos? (:behind %))) (str "behind " (esc bases)))
+                            (part (if (some :lose? chips) "ahead lose" "ahead") (n #(pos? (:ahead %))) "unpushed &#9888;")
+                            (part "stale" (n :stale?) "to reload")])]
+    (when (seq parts)
+      (str "<p class=\"git-summary\">" (str/join " &#183; " parts) "</p>"))))
+
 (defn run-summary
   "The whole #summary element (outerHTML, class included)."
   [components]
@@ -205,6 +285,7 @@
                                        (str "<span class=\"t-" k "\"><b>" n "</b> " k "</span>")))
                              summary-order))
            "</div>"
+           (git-summary (vals components))
            (cond
              (seq failed) (str "<p class=\"blocked\">Blocked by " (esc (str/join ", " (map name failed))) ".</p>")
              (get tally "starting") "<p class=\"quiet\">Still starting.</p>"

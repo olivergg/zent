@@ -163,6 +163,8 @@
                                          :links (:links cfg)
                                          :port (:port cfg)
                                          :repo (:repo cfg)
+                                         ;; the preset's :branch, against the one on disk (:git)
+                                         :wanted-branch (:branch cfg)
                                          :permanent (:permanent cfg)
                                          :attached-to (:attached-to cfg)
                                          :scripts (:scripts cfg)
@@ -173,7 +175,7 @@
                                          :services (:services cfg)
                                          :status :pending}
                                         (select-keys (get comps k)
-                                                     [:status :service-status :handle-summary :error]))
+                                                     [:status :service-status :handle-summary :error :git :deployed-sha]))
                                   cfg)))
                         comps resolved)))))
 
@@ -183,6 +185,11 @@
   [state name status & [extra]]
   (cond-> state
     (contains? (:components state) name) (update-in [:components name] merge {:status status} extra)))
+
+(defn- assoc-shown
+  "`state` with `name`'s `k` set to `v` - a no-op for a name it doesn't show, like mark-status."
+  [state name k v]
+  (cond-> state (contains? (:components state) name) (assoc-in [:components name k] v)))
 
 ;; ---------------------------------------------------------------------------
 ;; observers - wired into the engine by zent.ui.bridge
@@ -216,13 +223,65 @@
     (try (describe-sources! k cfg)
          (catch Exception e (println (format "[%s] source refresh failed: %s" k (ex-message e)))))))
 
+(defn- set-git!
+  "Sets `k`'s :git (zent.source/git-status) - only when it changed: no push otherwise."
+  [k cfg]
+  (when (:repo cfg)
+    (let [g (source/git-status (source/checkout-dir cfg))]
+      (when (not= g (get-in @view-state [:components k :git]))
+        (swap! view-state assoc-shown k :git g)))))
+
+(defn refresh-git!
+  "Re-reads every described component's :git. One failing doesn't stop the rest."
+  []
+  (doseq [[k cfg] @described]
+    (try (set-git! k cfg)
+         (catch Exception e (println (format "[%s] git refresh failed: %s" k (ex-message e)))))))
+
+;; :idle, :running, or :again - asked for while running: it runs once more
+(defonce ^:private git-refresh (atom :idle))
+(defonce ^:private git-refreshed-at (atom 0))
+(def ^:private git-refresh-ms 30000)
+
+(defn- refresh-git-async!
+  "refresh-git! on a thread of its own: five git calls per component stay off the serve loop."
+  []
+  (reset! git-refreshed-at (System/currentTimeMillis))
+  (when (= :idle (first (swap-vals! git-refresh {:idle :running :running :again :again :again})))
+    (future
+      (loop []
+        (try (refresh-git!)
+             (catch Throwable e (println "[zent.ui] git refresh failed:" (ex-message e))))
+        (when (= :again (first (swap-vals! git-refresh {:running :idle :again :running})))
+          (recur))))))
+
+(defn refresh!
+  "The serve loop's periodic refresh: checkouts every call, git status every git-refresh-ms (off the loop)."
+  []
+  (refresh-sources!)
+  (when (>= (- (System/currentTimeMillis) @git-refreshed-at) git-refresh-ms)
+    (refresh-git-async!)))
+
 (defn observe-preset-resolved! [preset-name resolved]
   ;; the skeleton first, so a client sees the whole run before git answers
   (swap-view! set-preset preset-name resolved
          {:repo-url-template (get-in @catalog [:defaults :repo-url-template])})
   ;; :external included: which branch the IDE-run checkout is on matters too
   (reset! described (into {} (filter #(= :on (:mode (val %)))) resolved))
-  (refresh-sources!))
+  (refresh-sources!)
+  ;; git status at the loop's next refresh
+  (reset! git-refreshed-at 0))
+
+(defn observe-deployed!
+  "Records the commit `name` was just deployed from (:deployed-sha) and re-reads its :git: the card
+  tells when the disk moves on. Not for :external (zent runs nothing) nor an adopted component (its
+  commit is unknown). Never throws: a deploy that worked stays one."
+  [name cfg]
+  (when (and (:repo cfg) (not= :external (:kind cfg)))
+    (try
+      (let [g (source/git-status (source/checkout-dir cfg))]
+        (swap! view-state #(-> % (assoc-shown name :deployed-sha (:sha g)) (assoc-shown name :git g))))
+      (catch Exception e (println (format "[%s] deployed commit not read: %s" name (ex-message e)))))))
 
 (defn observe-deploy-start! [name]
   (swap-view! mark-status name :deploying))
