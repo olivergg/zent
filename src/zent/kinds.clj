@@ -282,7 +282,7 @@
 (defmethod engine/deploy-kind! :one-shot
   [name {:keys [scripts pre-check env] :as cfg}]
   (let [dir (source-dir cfg)
-        env (merge env (source-env cfg))]
+        env (merge env (source-env cfg) (secrets/secret-env! name cfg))]
     (probe/wait-ready! name pre-check)
     (doseq [s scripts]
       (run-local! name s cfg {:dir dir :env env}))

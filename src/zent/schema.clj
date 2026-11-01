@@ -147,20 +147,21 @@
                       secret-entries)
    ;; :attached-to - display only: drawn as a strip under that component's
    ;; card (the one it prepares) rather than as a node of its own.
-   :one-shot [[:repo :string]
-              [:scripts [:vector :string]]
-              [:attached-to {:optional true} :keyword]
-              ;; display only: one line on what the scripts do
-              [:description {:optional true} :string]
-              [:pre-check {:optional true} Readiness]
-              ;; never run by an apply, only by a reload (zent.engine/deploy-component!):
-              ;; listed in a preset, it waits as "on demand" - for a destructive one
-              [:on-demand {:optional true} :boolean]
-              ;; display only: the question the dashboard's Run button asks first
-              [:confirm {:optional true} :string]
-              [:env {:optional true} [:map-of :string :string]]
-              source-env
-              allow-parallel]
+   :one-shot (into [[:repo :string]
+                    [:scripts [:vector :string]]
+                    [:attached-to {:optional true} :keyword]
+                    ;; display only: one line on what the scripts do
+                    [:description {:optional true} :string]
+                    [:pre-check {:optional true} Readiness]
+                    ;; never run by an apply, only by a reload (zent.engine/deploy-component!):
+                    ;; listed in a preset, it waits as "on demand" - for a destructive one
+                    [:on-demand {:optional true} :boolean]
+                    ;; display only: the question the dashboard's Run button asks first
+                    [:confirm {:optional true} :string]
+                    [:env {:optional true} [:map-of :string :string]]
+                    source-env
+                    allow-parallel]
+                   secret-entries)
    ;; Some named services of a compose file, not the whole stack - for when
    ;; a repo's file carries both a webapp and the infra another component
    ;; wants alone. Separate from :docker-compose because the two tear down

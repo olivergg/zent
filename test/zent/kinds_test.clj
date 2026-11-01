@@ -138,6 +138,18 @@
               (is (= 3 (:exit (ex-data e))))
               (is (= line (:err (ex-data e)))))))))))
 
+(deftest one-shot-secret-env-test
+  (testing "given :use-secret-env, then the scripts get the secrets; without it, they don't"
+    (let [envs (atom [])]
+      (with-redefs [secrets/read-k8s-secret! (constantly "v")
+                    zent.kinds/run-local! (fn [_ _ _ {:keys [env]}] (swap! envs conj env))
+                    zent.kinds/source-dir (constantly "/r")]
+        (let [cfg {:kind :one-shot :repo "r" :scripts ["./x"] :env {"A" "1"} :allow-secret-contexts ["c"]
+                   :secret-env {"ID" {:context "c" :namespace "n" :secret "s" :key "k"}}}]
+          (engine/deploy-kind! :rec (assoc cfg :use-secret-env true))
+          (engine/deploy-kind! :rec cfg)))
+      (is (= [{"A" "1" "ID" "v"} {"A" "1"}] @envs)))))
+
 (deftest deploy-compose-services-test
   (with-tmp-repo
     (fn [root repo-dir]
