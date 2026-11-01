@@ -421,11 +421,16 @@
                                      ;; not run: a result judging nothing, :unknown
                                      (assoc (checks/parse [] 0) :preset preset :check (:name chk) :error problem)
                                      (checks/run! preset chk tests))]
-                             (run! println (checks/report r))
+                             (when-not (:none-matched r) (run! println (checks/report r)))
                              r)))
-          not-passing (remove #(= :pass (:status %)) results)]
-      (when (seq not-passing)
-        (fail! (format "%d of %d check(s) not passing" (count not-passing) (count results)))))))
+          judged (remove :none-matched results)
+          not-passing (remove #(= :pass (:status %)) judged)
+          ran (set (mapcat #(map :name (:tests %)) judged))
+          unknown (remove ran (map str tests))]
+      (cond
+        (seq not-passing) (fail! (format "%d of %d check(s) not passing" (count not-passing) (count judged)))
+        ;; after: a run that died listed no test, its failure says why
+        (seq unknown) (fail! (format "%s: no test %s in the checks run" (name preset) (str/join ", " unknown)))))))
 
 (defn save-preset!
   "Validates and saves `text` as the user's preset `preset`, and registers it

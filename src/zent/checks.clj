@@ -136,12 +136,12 @@
   (some-> s (str/split #",") (->> (remove str/blank?)) seq vec))
 
 (defn run-cmd
-  "The argv running `check`'s deftests, in file order - only `tests` (names)
-  when given."
+  "The argv running `check`'s deftests, in file order - only those of `tests`
+  (names) it has, when given: a preset's checks needn't all have them."
   [{:keys [ns]} tests]
-  (let [vars (if (seq tests)
-               (str "[" (str/join " " (map #(str "#'" ns "/" (test-name! %)) tests)) "]")
-               (format "(->> (ns-interns '%s) vals (filter (comp :test meta)) (sort-by (comp :line meta)))" ns))]
+  (let [only (when (seq tests)
+               (format "(filter (comp %s str :name meta))" (pr-str (set (map (comp str test-name!) tests)))))
+        vars (format "(->> (ns-interns '%s) vals (filter (comp :test meta)) %s (sort-by (comp :line meta)))" ns (or only ""))]
     ["clojure" "-M" "-e" (format runner ns vars (pr-str event-prefix))]))
 
 (defn- verdict
@@ -250,7 +250,8 @@
 
 (defn run!
   "Runs `preset`'s `check` (only `tests` when given), keeps its result under
-  *dir* and returns it."
+  *dir* and returns it. :none-matched when it has none of `tests`: nothing
+  judged, nothing kept."
   [preset {:keys [root] :as check} tests]
   ;; through a log file, not a pipe (zent.logs): what the run printed stays readable
   (let [log (logs/log-file (log-name preset (:name check)))
@@ -269,6 +270,8 @@
                                                             exit)
                                                     (take-last 20 (remove #(str/starts-with? % event-prefix) lines))))))
         f (io/file *dir* (name preset) (name (:name check)) (str started ".edn"))]
-    (io/make-parents f)
-    (spit f (pr-str result))
-    result))
+    (if (and (seq tests) (empty? (:tests parsed)) (not (:error result)))
+      (assoc result :none-matched true)
+      (do (io/make-parents f)
+          (spit f (pr-str result))
+          result))))

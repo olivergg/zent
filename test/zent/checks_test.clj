@@ -77,9 +77,12 @@
       (is (= ["clojure" "-M" "-e"] (take 3 argv)))
       (is (str/includes? expr "(require 'clojure.test 'full.smoke)"))
       (is (str/includes? expr "(ns-interns 'full.smoke)"))))
-  (testing "given test names, only those vars"
-    (is (str/includes? (last (checks/run-cmd {:ns 'full.smoke} ["fails" "throws"]))
-                       "(clojure.test/test-vars [#'full.smoke/fails #'full.smoke/throws])")))
+  (testing "given test names, the ns's deftests filtered on them - a name it lacks isn't a compile error"
+    (let [expr (last (checks/run-cmd {:ns 'full.smoke} ["fails" "elsewhere"]))]
+      (is (str/includes? expr "(ns-interns 'full.smoke)"))
+      (is (str/includes? expr "\"fails\""))
+      (is (str/includes? expr "\"elsewhere\""))
+      (is (not (str/includes? expr "#'full.smoke/")))))
   (testing "given a test name that isn't a symbol, refused before reaching argv"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid test name"
                           (checks/run-cmd {:ns 'full.smoke} ["x) (System/exit 1"])))))
@@ -166,6 +169,12 @@
           (is (= [[(str fixture "/checks") (str (logs/log-file :check-full-smoke))]] @calls))
           (is (= [:fail :full :smoke ["fails"] nil] ((juxt :status :preset :check :only :error) r)))
           (is (= r (read-string (slurp (first (filter #(.isFile %) (file-seq (io/file dir)))))))))))
+    (testing "given names the check doesn't have, :none-matched and nothing kept"
+      (let [dir (tmp-dir)]
+        (with-redefs [shell/run-logged! (stub (done []) 0)]
+          (let [r (binding [checks/*dir* dir] (checks/run! :full chk ["elsewhere"]))]
+            (is (:none-matched r))
+            (is (empty? (filter #(.isFile %) (file-seq (io/file dir)))))))))
     (testing "given a run cut short, :unknown, its other output kept as :error - and the log starts afresh"
       (with-redefs [shell/run-logged! (stub ["Syntax error compiling" (second real-run)] 1)]
         (let [r (binding [checks/*dir* dir] (checks/run! :full chk nil))]
@@ -186,7 +195,11 @@
               ["throws" :error nil nil]]
              (map (juxt :name :status :doc :kind) (:tests r))))
       (is (= "clojure.lang.ExceptionInfo: kaput" (-> r :tests (nth 2) :failures first :actual)))
-      (is (= [["2 assertions"] nil nil] (map :notes (:tests r))) "a :zent/note reported by the test"))))
+      (is (= [["2 assertions"] nil nil] (map :notes (:tests r))) "a :zent/note reported by the test")
+      (testing "given names, only those it has run; given none it has, nothing"
+        (binding [checks/*dir* (tmp-dir)]
+          (is (= ["passes"] (map :name (:tests (checks/run! :full chk ["passes" "elsewhere"])))))
+          (is (:none-matched (checks/run! :full chk ["elsewhere"]))))))))
 
 (deftest verify-test
   (let [ctx {:catalog #(catalog/load-dir fixture) :preset-dir (tmp-dir)}
@@ -199,8 +212,20 @@
         (is (= [[:full :smoke nil]] @ran)))
       (testing "given --only=, the tests reach the run"
         (reset! ran [])
-        (with-out-str (#'cli/dispatch ctx "verify" ["full" "smoke"] #{"--only=fails,throws"}))
-        (is (= [[:full :smoke ["fails" "throws"]]] @ran)))
+        (with-out-str (#'cli/dispatch ctx "verify" ["full" "smoke"] #{"--only=passes"}))
+        (is (= [[:full :smoke ["passes"]]] @ran)))
+      (testing "given a test only some checks have, the others are left out of the report"
+        (let [ctx (assoc ctx :catalog #(update-in (catalog/load-dir fixture) [:checks :full] conj {:name :other :ns 'full.other}))
+              stub (fn [_ chk _] (if (= :other (:name chk))
+                                   (assoc (checks/parse (done []) 0) :preset :full :check :other :none-matched true)
+                                   passing))]
+          (with-redefs [checks/run! stub]
+            (let [out (with-out-str (cli/verify! ctx :full nil ["passes"]))]
+              (is (str/includes? out "full/smoke"))
+              (is (not (str/includes? out "full/other"))))
+            (testing "and a name no check has is an error, not a silent green"
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no test typo in the checks run"
+                                    (with-out-str (cli/verify! ctx :full nil ["passes" "typo"]))))))))
       (testing "given a check that isn't the preset's, or a preset without checks, refused by name"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no check nope - its checks: smoke"
                               (cli/verify! ctx :full ["nope"] nil)))
