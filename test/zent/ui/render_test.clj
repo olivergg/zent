@@ -250,14 +250,15 @@
         (is (str/includes? html "<span class=\"branch wt off\" title=\"feature/y&#10;"))
         (is (str/includes? html "<span class=\"want\" title=\"the preset wants feature/x, this is feature/y\">&#8800; x</span>"))
         (is (str/includes? html "<span class=\"from origin\" title=\"runs origin/feature/y"))
-        (is (str/includes? html "rebase? (never fetched)\">&#8595;3 master</span>"))
+        (is (str/includes? html "then push it (--force-with-lease) (never fetched)\">&#8595;3 master</span>"))
+        (is (not (str/includes? html "act rebase")) "a worktree: no rebase button")
         (is (str/includes? html "push first\">&#8593;1 lost on next deploy &#9888;</span>"))
         (is (str/includes? html "<span class=\"dirty lose\" title=\"2 modified or untracked file(s) - the next deploy drops them\">&#9679;2 uncommitted</span>"))
         (is (str/includes? html "reload to run it\">&#8800; reload</span>"))
         (testing "and the facts on hover"
           (is (str/includes? html "the preset wants feature/x - not this one"))
           (is (str/includes? html "runs origin/feature/y: its own worktree, reset to it on each deploy - push to run a change"))
-          (is (str/includes? html "3 commit(s) on origin/master not in this checkout - rebase? (never fetched)"))
+          (is (str/includes? html "3 commit(s) on origin/master not in this checkout - its own worktree runs origin/feature/y"))
           (is (str/includes? html "the next deploy's reset --hard drops them: push first"))
           (is (str/includes? html "running 0000000, the disk is at abcdef1: reload to run it"))))))
   (testing "given the main clone on a feature branch, no :branch: it runs as it is, nothing red"
@@ -267,6 +268,12 @@
       (is (str/includes? html "<span class=\"from local\" title=\"runs your local clone as it is, uncommitted changes included\">&#9998; local</span>"))
       (is (str/includes? html "safe here: the clone runs as it is\">&#8593;4 unpushed</span>"))
       (is (str/includes? html "runs your local clone as it is, uncommitted changes included"))))
+  (testing "given a clean clone behind its default branch, then a rebase button, warning when the branch is on origin"
+    (let [card #(render/component-card :svc {:kind :process :status :up :source {:dir "/w/svc"}
+                                             :git (merge {:sha "abc" :branch "feature/z" :base "main" :behind 2 :pushed true} %)})]
+      (is (str/includes? (card {}) "hx-post=\"/api/rebase/svc\""))
+      (is (str/includes? (card {}) "hx-confirm=\"Rebase feature/z onto origin/main? It is on origin: push --force-with-lease afterwards.\""))
+      (is (not (str/includes? (card {:dirty 1}) "act rebase")) "uncommitted files: no button")))
   (testing "on the default branch, clean and up to date: no row, the facts still on `cd`'s hover"
     (let [html (render/component-card :svc {:kind :process :status :up :source {:dir "/w/svc"}
                                             :git {:sha "abc" :branch "main" :base "main" :behind 0 :ahead 0 :dirty 0}})]

@@ -117,6 +117,42 @@
                             (rev-count dir "HEAD" "--not" "--remotes=origin")))
         fetched-at (assoc :fetched-at fetched-at)))))
 
+(defn rebase-refusal
+  "Why `st` (git-status's) can't be rebased onto its default branch here - nil when it can: a branch
+  of its own, nothing uncommitted, behind. `worktree?`: zent resets it to origin on each deploy, a
+  local rebase there would be undone."
+  [{:keys [branch base dirty behind]} worktree?]
+  (cond worktree? (str "its own worktree runs origin/" branch ", reset on each deploy: rebase " branch
+                       " where you work on it, then push it (--force-with-lease)")
+        (not branch) "detached HEAD: no branch to rebase"
+        (not base) "no origin/HEAD, origin/master or origin/main to rebase onto"
+        (= branch base) (str "on " base " itself")
+        (pos? (or dirty 0)) (str dirty " uncommitted file(s): commit or stash them first")
+        (not (pos? (or behind 0))) (str "already on origin/" base)))
+
+(defn rebase!
+  "Fetches origin, then rebases `dir`'s branch onto origin/<default branch> - only when rebase-refusal
+  has nothing against it and merge-tree sees no conflict; a rebase that stops anyway is aborted.
+  {:ok true :message} or {:ok false :message}: what happened, or why not."
+  [dir worktree?]
+  (let [fetch (shell/sh! ["git" "-C" dir "fetch" "--quiet" "origin"])
+        {:keys [branch base behind pushed] :as st} (git-status dir)
+        onto (str "origin/" base)
+        why (cond (not (zero? (:exit fetch))) (str "git fetch failed: " (str/trim (str (:err fetch))))
+                  (nil? st) (str dir " isn't a checkout")
+                  :else (or (rebase-refusal st worktree?)
+                            (when-not (zero? (:exit (shell/sh! ["git" "-C" dir "merge-tree" "--write-tree" "--quiet" onto "HEAD"])))
+                              (str branch " conflicts with " onto ": rebase it by hand"))))]
+    (if why
+      {:ok false :message why}
+      (let [{:keys [exit err]} (shell/sh! ["git" "-C" dir "rebase" "--quiet" onto])]
+        (if (zero? exit)
+          {:ok true
+           :message (str "rebased " branch " onto " onto " (" behind " commit(s)) - undo: git -C " dir " reset --hard ORIG_HEAD"
+                         (when pushed (str "; origin/" branch " is now behind it: push --force-with-lease")))}
+          (do (shell/sh! ["git" "-C" dir "rebase" "--abort"])
+              {:ok false :message (str "the rebase stopped (" (str/trim (str err)) "), aborted: rebase " branch " by hand")}))))))
+
 (defn describe
   "Where a component's code actually comes from, for display:
 

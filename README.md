@@ -94,6 +94,7 @@ that observes a component its preset doesn't run.
 | pick a stack | `zent presets`, `zent preview <preset>`, `zent apply <preset>` | `list_presets`, `preview`, `apply` |
 | see what runs | `zent status` (dashboard: `zent serve --detach --ui`) | `status` |
 | iterate on a component | `zent reload <c>`, then `zent logs [-f] <c>` | `reload`, `logs` |
+| catch a clone's branch up with origin's default one | `zent rebase <c>` (or the card's `rebase`), then `zent reload <c>` | - |
 | stop some / all but `:permanent` | `zent stop <c>...` / `zent stop` | `stop` |
 | judge the running stack | `zent verify [<preset> [<check>...]]` | `verify` |
 | test a catalog edit | `zent check` | - |

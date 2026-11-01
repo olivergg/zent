@@ -238,6 +238,16 @@
     (try (set-git! k cfg)
          (catch Exception e (println (format "[%s] git refresh failed: %s" k (ex-message e)))))))
 
+(defn rebase!
+  "zent.source/rebase! on `k`'s checkout, then re-reads its :git (the card shows ≠ reload: the disk moved
+  on from what runs). nil when `k` has no repo in the preset."
+  [k]
+  (let [cfg (get @described k)]
+    (when (:repo cfg)
+      (let [r (source/rebase! (source/checkout-dir cfg) (boolean (:worktree (source/describe cfg))))]
+        (try (set-git! k cfg) (catch Exception e (println (format "[%s] git refresh failed: %s" k (ex-message e)))))
+        r))))
+
 ;; :idle, :running, or :again - asked for while running: it runs once more
 (defonce ^:private git-refresh (atom :idle))
 (defonce ^:private git-refreshed-at (atom 0))

@@ -52,6 +52,12 @@
     :doc "redeploy one running component now"
     :more ["reload-code is another verb: it reloads zent's own code."]
     :see ["logs" "reload-code"]}
+   {:verb "rebase" :group "Everyday" :args "<component>"
+    :doc "fetch, then rebase its clone's branch onto origin's default branch"
+    :more ["Only a main clone, nothing uncommitted, behind, and no conflict merge-tree can see: else"
+           "it says why and touches nothing. A rebase that stops anyway is aborted. Reload to run it."
+           "A worktree runs origin/<branch>, reset on each deploy: rebase and push the branch yourself."]
+    :see ["reload"]}
    {:verb "stop" :group "Everyday" :args "[<component>...]"
     :doc "stop just these, or all but :permanent components"
     :see ["shutdown"]}
@@ -276,6 +282,11 @@
     (check-components! d [component])
     (run-command! d (str "/api/trigger/" (name component)))))
 
+(defn rebase! [component]
+  (let [d (daemon!)]
+    (check-components! d [component])
+    (println (:message (client/request d :post (str "/api/rebase/" (name component)))))))
+
 (defn reload-code! []
   (let [d (daemon!)
         view (client/await! d (client/request d :post "/api/reload-code") print-change)
@@ -435,6 +446,7 @@
       "status" (status!)
       "stop" (stop! args)
       "reload" (reload! (need arg))
+      "rebase" (rebase! (need arg))
       "shutdown" (shutdown!)
       "reload-code" (reload-code!)
       "presets" (presets! ctx)

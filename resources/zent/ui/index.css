@@ -579,6 +579,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .git .from.origin { background: var(--indigo); }
 .node .git .from.local { background: var(--muted); }
 .node .git .behind, .node .git .stale { color: var(--weld); }
+/* behind, nothing to stop it: a rebase a click away (zent.source/rebase!) */
+.node .git .act.rebase { padding: 0 4px; font: inherit; color: var(--weld); border: 1px solid var(--weld); border-radius: 2px; cursor: pointer; }
+.node .git .act.rebase:hover { color: var(--card); background: var(--weld); }
 .node .git .ahead, .node .git .dirty { color: var(--muted); }
 .node .git .lose, .git-summary :is(.off, .lose) { color: var(--madder); }
 .node .workdir-open {

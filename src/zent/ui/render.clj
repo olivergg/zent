@@ -7,7 +7,8 @@
   No hiccup lib (the vocabulary is small, and Jolt compatibility isn't
   free). `esc` is the one thing that has to be right: :error/:repo/...
   carry subprocess- and catalog-sourced text."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [zent.source :as source]))
 
 (defn esc
   "HTML-escapes `x` for use in text content or a double-quoted attribute."
@@ -136,7 +137,7 @@
 (defn- git-facts
   "A chip's facts, one sentence each (nil when there's nothing to say): the `cd` hover lists them all,
   each piece of the git row shows its own."
-  [{:keys [wanted-branch branch sha base behind ahead pushed dirty fetched-at deployed-sha off? wt? lose? stale?]} now]
+  [{:keys [wanted-branch branch sha base behind ahead pushed dirty fetched-at deployed-sha off? wt? lose? stale?] :as chip} now]
   {:branch (str (or branch (str "detached at " (short-sha sha))) "\n"
                 (cond off? (str "the preset wants " wanted-branch " - not this one")
                       wanted-branch "the preset's :branch"
@@ -145,7 +146,8 @@
            (str "runs origin/" branch ": its own worktree, reset to it on each deploy - push to run a change")
            "runs your local clone as it is, uncommitted changes included")
    :behind (when (pos? behind)
-             (str behind " commit(s) on origin/" base " not in this checkout - rebase?"
+             (str behind " commit(s) on origin/" base " not in this checkout - "
+                  (or (source/rebase-refusal chip wt?) "rebase: the button fetches, then rebases if nothing conflicts")
                   (if fetched-at (str " (as of the last fetch, " (duration (max 0 (- now fetched-at))) " ago)") " (never fetched)")))
    :ahead (when (pos? ahead)
             (str ahead " commit(s)" (if pushed (str " not on origin/" branch) " pushed nowhere")
@@ -169,10 +171,17 @@
   (red when not the preset's :branch, dashed in a worktree), where the code comes from (origin: a
   worktree reset on deploy; local: the clone as it is), then each count with its word - each piece
   with its fact on hover."
-  [{:keys [branch sha base behind ahead dirty wanted-branch default? off? wt? lose? stale?] :as chip} now]
+  [cname {:keys [branch sha base behind ahead pushed dirty wanted-branch default? off? wt? lose? stale?] :as chip} now]
   (let [facts (git-facts chip now)
         span (fn [cls fact body] (str "<span class=\"" cls "\" title=\"" (str/replace (esc (facts fact fact)) "\n" "&#10;") "\">" body "</span>"))
-        counts (str (when (pos? behind) (span "behind" :behind (str "&#8595;" behind " " (esc base))))
+        rebase (when (and (pos? behind) (not (source/rebase-refusal chip wt?)))
+                 (str "<button type=\"button\" class=\"act rebase\" title=\"Fetch, then rebase " (esc branch) " onto origin/"
+                      (esc base) " if nothing conflicts\" hx-post=\"/api/rebase/" (esc (name cname))
+                      "\" hx-swap=\"none\" hx-disabled-elt=\"this\" hx-confirm=\""
+                      (esc (str "Rebase " branch " onto origin/" base "?"
+                                (when pushed (str " It is on origin: push --force-with-lease afterwards."))))
+                      "\">rebase</button>"))
+        counts (str (when (pos? behind) (str (span "behind" :behind (str "&#8595;" behind " " (esc base))) rebase))
                     (when (pos? ahead)
                       (if lose?
                         (span "ahead lose" :ahead (str "&#8593;" ahead " lost on next deploy &#9888;"))
@@ -232,7 +241,7 @@
        "<span class=\"permanent\" title=\"Permanent: stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">&#8734;</span>")
      "</span>"
      (facts c cd-title)
-     (when chip (git-row chip (System/currentTimeMillis)))
+     (when chip (git-row cname chip (System/currentTimeMillis)))
      (service-rows c)
      (source-env-rows source-env)
      (when (and (links-visible? status) (seq links))

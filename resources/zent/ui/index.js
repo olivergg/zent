@@ -1157,8 +1157,14 @@ document.body.addEventListener("htmx:beforeRequest", (e) => {
 document.body.addEventListener("htmx:afterRequest", (e) => {
   const path = e.detail.elt?.getAttribute?.("hx-post");
   if (!path) return;
-  let id;
-  try { id = JSON.parse(e.detail.xhr.responseText).id; } catch { /* not a queued write */ }
+  let id, reply;
+  try { reply = JSON.parse(e.detail.xhr.responseText); id = reply.id; } catch { /* not a queued write */ }
+  // a rebase answers at once, done or refused: say which, the undo command included
+  if (path.startsWith("/api/rebase/") && reply) {
+    const name = path.slice("/api/rebase/".length);
+    toast(e.detail.successful ? "up" : "failed", (e.detail.successful ? "rebased " : "not rebased: ") + name,
+          reply.message || reply.error, name);
+  }
   if (e.detail.successful && Number.isInteger(id)) pending.set(path, id);
   else pending.delete(path);
   markBusy();

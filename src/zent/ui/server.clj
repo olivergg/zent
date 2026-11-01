@@ -404,6 +404,14 @@
         (json-response {:component name :lines (mapv (comp secrets/redact logs/strip-ansi) (logs/tail name logstream/backlog-lines))})
         :else (json-response {:component name :lines [logstream/withheld-line]})))
 
+    ;; a component's git checkout, not what runs: done here, at once (zent.source/rebase!) - the card
+    ;; then shows ≠ reload
+    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/rebase/"))
+    (let [n (subs (:uri req) (count "/api/rebase/"))]
+      (if-let [{:keys [ok message]} (state/rebase! (keyword n))]
+        (if ok (json-response {:ok true :message message}) (error-response 409 message))
+        (error-response 404 (str n ": no checkout in the preset"))))
+
     ;; Writes only queue onto state/control, which the engine's loop drains
     ;; (this ns never requires zent.engine). Each answers {:ok true :id n :seq s}:
     ;; done once n is in :done; /api/events from s shows what it caused

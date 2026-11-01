@@ -133,3 +133,57 @@
     (testing "not a checkout: nil"
       (with-redefs [zent.shell/sh! (git [])]
         (is (nil? (source/git-status "/w/none")))))))
+
+(defn- git! [dir & args]
+  (let [{:keys [exit err out]} (zent.shell/sh! (into ["git" "-c" "user.name=t" "-c" "user.email=t@t" "-C" dir] args))]
+    (assert (zero? exit) (str args ": " err))
+    (clojure.string/trim out)))
+
+(defn- repos
+  "A bare origin, `clone` on feature (a commit of its own on f.txt), then origin's master one commit
+  ahead (on `master-file`, from another clone)."
+  [master-file]
+  (let [root (str (System/getProperty "java.io.tmpdir") "/zent-rebase-" (System/nanoTime))
+        origin (str root "/origin.git") clone (str root "/clone") other (str root "/other")
+        write (fn [dir f text] (spit (str dir "/" f) text))]
+    (.mkdirs (File. root))
+    (git! root "init" "--quiet" "--bare" "--initial-branch=master" origin)
+    (git! root "clone" "--quiet" origin clone)
+    (write clone "f.txt" "base\n") (git! clone "add" ".") (git! clone "commit" "--quiet" "-m" "base")
+    (git! clone "push" "--quiet" "origin" "master")
+    (git! root "clone" "--quiet" origin other)
+    (git! clone "checkout" "--quiet" "-b" "feature")
+    (write clone "f.txt" "feature\n") (git! clone "commit" "--quiet" "-am" "feature")
+    (write other master-file "master\n") (git! other "add" ".") (git! other "commit" "--quiet" "-m" "master")
+    (git! other "push" "--quiet" "origin" "master")
+    clone))
+
+(deftest rebase-refusal-test
+  (let [st {:branch "feature/x" :base "master" :dirty 0 :behind 3}]
+    (is (nil? (source/rebase-refusal st false)))
+    (is (re-find #"worktree" (source/rebase-refusal st true)))
+    (is (re-find #"uncommitted" (source/rebase-refusal (assoc st :dirty 1) false)))
+    (is (re-find #"already" (source/rebase-refusal (assoc st :behind 0) false)))
+    (is (re-find #"itself" (source/rebase-refusal (assoc st :branch "master") false)))
+    (is (re-find #"detached" (source/rebase-refusal (dissoc st :branch) false)))))
+
+(deftest rebase-test
+  (testing "given origin's master ahead on another file, then the branch is rebased onto it"
+    (let [clone (repos "g.txt")
+          {:keys [ok message]} (source/rebase! clone false)]
+      (is ok message)
+      (is (= (git! clone "rev-parse" "origin/master") (git! clone "merge-base" "HEAD" "origin/master")))
+      (is (= "feature" (git! clone "rev-parse" "--abbrev-ref" "HEAD")))))
+  (testing "given a conflict, then nothing moves"
+    (let [clone (repos "f.txt")
+          before (git! clone "rev-parse" "HEAD")
+          {:keys [ok message]} (source/rebase! clone false)]
+      (is (not ok))
+      (is (re-find #"conflicts" message))
+      (is (= before (git! clone "rev-parse" "HEAD")))))
+  (testing "given an uncommitted file, then nothing moves"
+    (let [clone (repos "g.txt")
+          before (git! clone "rev-parse" "HEAD")]
+      (spit (str clone "/f.txt") "wip\n")
+      (is (not (:ok (source/rebase! clone false))))
+      (is (= before (git! clone "rev-parse" "HEAD"))))))
