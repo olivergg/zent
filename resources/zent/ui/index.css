@@ -709,13 +709,19 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   background: var(--card); border: 1px solid var(--grey);
   padding: 6px 8px;
 }
-.preset-row[data-active="true"] { border-color: var(--verdigris); }
+/* the applied preset: the whole row in the cards' heads' green - where you are, at a glance */
+.preset-row[data-active="true"] { background: var(--verdigris); border-color: var(--verdigris); color: var(--card); }
+.preset-row[data-active="true"] .preset-name { color: var(--card); font-weight: 600; }
+.preset-row[data-active="true"] .preset-name::before { content: "\25CF  "; }
+.preset-row[data-active="true"] .preset-name::after { content: "applied"; margin-left: 8px; font-size: 9px; font-weight: 400;
+  letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.75; }
+.preset-row[data-active="true"] .act { color: var(--card); }
 .preset-name { flex: 1; font-size: 12px; cursor: pointer; }
 .preset-name:hover { color: var(--indigo); }
 .preset-row[data-previewing="true"] .preset-name { color: var(--indigo); font-weight: 500; }
 .preset-row .act { padding: 2px 5px; }
 .preset-row .act:disabled { opacity: 0.35; cursor: default; }
-.preset-row[data-active="true"] .play { color: var(--verdigris); opacity: 0.4; }
+.preset-row[data-active="true"] .play { opacity: 0.5; }
 
 /* ------------------------------------------------------------------ rail */
 
