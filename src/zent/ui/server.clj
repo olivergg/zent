@@ -88,8 +88,9 @@
   structured data to run the DAG layout, so this adds to the payload
   rather than replacing it."
   [components]
-  (reduce-kv (fn [acc name c] (assoc acc name (assoc c :card (render/component-card name c))))
-             {} components))
+  (let [now (System/currentTimeMillis)]
+    (reduce-kv (fn [acc name c] (assoc acc name (assoc c :card (render/component-card name (assoc c :now now)))))
+               {} components)))
 
 (defn- snapshot-message
   "The websocket push: the raw state (for the client's own layout math) plus
@@ -409,22 +410,19 @@
         (json-response {:component name :lines (mapv (comp secrets/redact logs/strip-ansi) (logs/tail name logstream/backlog-lines))})
         :else (json-response {:component name :lines [logstream/withheld-line]})))
 
-    ;; a component's git checkout, not what runs: done here, at once (zent.source/rebase!) - the card
-    ;; then shows ≠ reload
-    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/rebase/"))
-    (let [n (subs (:uri req) (count "/api/rebase/"))
-          ;; from a preview: the component as that preset resolves it, not as the applied one does
-          previewed (some->> (:query-string req) (re-find #"(?:^|&)preset=([^&]+)") second
-                             (#(java.net.URLDecoder/decode ^String % "UTF-8")) keyword)]
-      (if-let [{:keys [ok message]} (state/rebase! (keyword n)
-                                                   (when previewed (get (compose/resolve-preset @state/catalog previewed) (keyword n))))]
-        (if ok (json-response {:ok true :message message}) (error-response 409 message))
-        (error-response 404 (str n ": no checkout in the preset"))))
-
     ;; Writes only queue onto state/control, which the engine's loop drains
     ;; (this ns never requires zent.engine). Each answers {:ok true :id n :seq s}:
     ;; done once n is in :done; /api/events from s shows what it caused
     ;; (zent.client/await!).
+    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/rebase/"))
+    (let [n (subs (:uri req) (count "/api/rebase/"))
+          ;; from a preview: the component as that preset resolves it, not as the applied one does
+          previewed (some-> (query-param req "preset") keyword)]
+      (if-let [id (state/request-rebase! (keyword n)
+                                         (when previewed (get (compose/resolve-preset @state/catalog previewed) (keyword n))))]
+        (queued id)
+        (error-response 404 (str n ": no checkout in the preset"))))
+
     (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/trigger/"))
     (component-command :reload (subs (:uri req) (count "/api/trigger/")))
 

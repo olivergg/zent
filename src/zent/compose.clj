@@ -144,13 +144,15 @@
       refuse-split-worktrees!)))
 
 (defn worktree-users
-  "{worktree-path #{preset}}: the worktrees each of `catalog`'s presets runs from, a :source-env's
-  included. A preset that doesn't resolve uses none."
+  "{:users {worktree-path #{preset}} :unresolved #{preset}}: the worktrees each of `catalog`'s presets
+  runs from, a :source-env's included, and the presets that don't resolve - which may use any."
   [catalog]
-  (apply merge-with into {}
-         (for [p (keys (:presets catalog))
-               :let [resolved (try (resolve-preset catalog p) (catch clojure.lang.ExceptionInfo _ nil))]
-               [_ cfg] resolved
-               coords (cons cfg (vals (:source-env cfg)))
-               :when (and (:repo coords) (source/worktree? coords))]
-           {(source/checkout-dir coords) #{p}})))
+  (let [by-preset (for [p (keys (:presets catalog))]
+                    [p (try (resolve-preset catalog p) (catch clojure.lang.ExceptionInfo _ nil))])]
+    {:users (apply merge-with into {}
+                   (for [[p resolved] by-preset
+                         [_ cfg] resolved
+                         coords (cons cfg (vals (:source-env cfg)))
+                         :when (and (:repo coords) (source/worktree? coords))]
+                     {(source/checkout-dir coords) #{p}}))
+     :unresolved (set (keep (fn [[p resolved]] (when-not resolved p)) by-preset))}))

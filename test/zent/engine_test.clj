@@ -766,6 +766,38 @@
         (is (= 2 @deploys))
         (finally (swap! control conj {:action :shutdown :id 99}) (deref serving 3000 nil))))))
 
+(deftest serve-job-test
+  (testing "given a :job, then it runs on the deploy worker, its own id given, never next to a deploy; what it
+            throws is its :error"
+    (let [catalog {:components {:svc {:kind :process :cmd "run"}}
+                   :presets {:p {:svc {:mode :on}}}}
+          control (atom [])
+          handled (atom [])
+          deploying (atom false)
+          overlap (atom false)
+          ran (atom [])
+          serving (future
+                    (with-redefs [lifecycle/down! (fn [hs] {:stopped hs :errors []})]
+                      (engine/serve! catalog :initial-preset :p :poll-ms 5 :control control
+                                     :session-path (str (System/getProperty "java.io.tmpdir") "/zent-serve-job-test.edn")
+                                     :deploy-fn (fn [n _]
+                                                  (reset! deploying true)
+                                                  (Thread/sleep 100)
+                                                  (reset! deploying false)
+                                                  {:kind :external :component n})
+                                     :on-handled #(swap! handled into %))))]
+      (try
+        (swap! control conj
+               {:action :reload :name :svc :id 1}
+               {:action :job :name :svc :id 2 :run (fn [id] (when @deploying (reset! overlap true)) (swap! ran conj id))}
+               {:action :job :name :svc :id 3 :run (fn [_] (throw (ex-info "refused" {})))})
+        (loop [i 0] (when (and (< (count @handled) 3) (< i 300)) (Thread/sleep 10) (recur (inc i))))
+        (is (= [2] @ran))
+        (is (false? @overlap))
+        (is (= "refused" (:error (first (filter #(= 3 (:id %)) @handled)))))
+        (is (nil? (:error (first (filter #(= 2 (:id %)) @handled)))))
+        (finally (swap! control conj {:action :shutdown :id 99}) (deref serving 3000 nil))))))
+
 (deftest serve-reload-failure-reported-test
   (testing "given a running component whose reload fails (an exception), then the
             command carries the error - `zent reload` exits non-zero"

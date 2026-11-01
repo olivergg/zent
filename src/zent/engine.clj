@@ -524,6 +524,9 @@
                         :pull   {:name kw} - a :reload that first syncs its
                                  worktree to its ref (zent.branch); refused
                                  for one running a main clone as it is.
+                        :job    {:name kw :run (fn [id])} - runs it as a job
+                                 over that component, one at a time with the
+                                 deploys; what it throws is the :error.
                         :stop   {:name kw} - tears down and drops from the
                                  watched set (a later file change can't
                                  bring it back).
@@ -686,6 +689,8 @@
                              (submit! #{name} [c] #(reload-one! name)))
                            (doseq [{:keys [name] :as c} (:pull by-action)]
                              (submit! #{name} [c] #(reload-one! name true)))
+                           (doseq [{:keys [name run id] :as c} (:job by-action)]
+                             (submit! #{name} [c] #(run id)))
                            (let [cur-keys (set (keys (:active @st)))
                                  ;; a fresh scan baseline only for names a job just added
                                  new-targets (watch-targets (select-keys (:active @st) (set/difference cur-keys known-keys)))
@@ -728,7 +733,7 @@
                                                         (assoc acc name t)))
                                                     {} rescanned)]
                              ;; done here and now: stops, and anything else not a job's
-                             (when-let [inline (seq (remove (comp (cond-> #{:apply :reload :pull} reload-code (conj :reload-code))
+                             (when-let [inline (seq (remove (comp (cond-> #{:apply :reload :pull :job} reload-code (conj :reload-code))
                                                                   :action)
                                                             (concat now-stops (remove #(= :stop (:action %)) commands))))]
                                (on-handled (vec inline)))

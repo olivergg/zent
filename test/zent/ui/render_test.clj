@@ -245,6 +245,10 @@
   (let [card #(render/component-card :svc (merge {:kind :process :status :up :from :origin
                                                   :source {:dir "/w/svc" :worktree "/w/svc"}} %))
         git {:sha "abcdef1234" :base "master" :behind 3 :ahead 1 :unreachable 1 :dirty 2 :pushed false :from :origin}]
+    (testing "given a last fetch, then its age comes from the render's :now: same input, same card"
+      (let [args {:git (assoc git :fetched-at 1000) :wanted-branch "feature/y" :now 61000}]
+        (is (str/includes? (card args) "(as of the last fetch, 1m00s ago)"))
+        (is (= (card args) (card args)))))
     (testing "given every flag up in an :origin worktree, then each count says what it is, what blocks the next sync
               in red, and a test rebase a click away"
       (let [html (card {:git git :wanted-branch "feature/y" :deployed-sha "0000000"})]

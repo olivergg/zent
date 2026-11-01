@@ -34,24 +34,38 @@
   restarts the commit already there (zent.engine binds it), a pull does again."
   true)
 
-(defn- out [dir & args]
-  (let [{:keys [exit out]} (shell/sh! (into ["git" "-C" dir] args))]
+(defn git
+  "A git read: `git -C dir args`'s trimmed stdout, nil on failure. --no-optional-locks: a
+  background `status` mustn't take the index lock from the user's own git."
+  [dir & args]
+  (let [{:keys [exit out]} (shell/sh! (into ["git" "--no-optional-locks" "-C" dir] args))]
     (when (zero? exit) (str/trim (str out)))))
 
+(defn sync-ref
+  "The ref a worktree mode syncs to."
+  [mode branch]
+  (if (= :local mode) (str "refs/heads/" branch) (str "origin/" branch)))
+
+(def unreachable-revs
+  "rev-list's args for the commits HEAD has that no branch, remote ref or refs/zent/* ref keeps."
+  ["HEAD" "--not" "--branches" "--remotes" "--glob=refs/zent/*"])
+
+(defn- lines [s] (remove str/blank? (str/split-lines s)))
+
 (defn at-risk
-  "{:dirty n :unreachable n} of worktree `dir`: files `git status` shows (untracked included,
-  ignored ones not), commits HEAD has that no branch, remote ref or refs/zent/* ref keeps - what
-  a reset --hard would lose."
+  "{:dirty n :unreachable n} of worktree `dir` - what a reset --hard would lose: files `git status`
+  shows (untracked included, ignored ones not), unreachable-revs. nil where git can't tell, never 0."
   [dir]
-  {:dirty (count (remove str/blank? (str/split-lines (or (out dir "status" "--porcelain") ""))))
-   :unreachable (count (remove str/blank? (str/split-lines (or (out dir "rev-list" "HEAD" "--not" "--branches" "--remotes"
-                                                                    "--glob=refs/zent/*")
-                                                               ""))))})
+  {:dirty (some-> (git dir "status" "--porcelain") lines count)
+   :unreachable (some-> (apply git dir "rev-list" unreachable-revs) lines count)})
 
 (defn- refuse-if-at-risk!
-  "Throws, with how to keep it, when resetting `dir` would lose work."
+  "Throws, with how to keep it, when resetting `dir` would lose work - or when git can't tell."
   [dir branch]
   (let [{:keys [dirty unreachable]} (at-risk dir)]
+    (when-not (and dirty unreachable)
+      (throw (ex-info (str "can't tell what worktree " dir " holds: not syncing it")
+                      {:dir dir :hint (str "git -C " dir " status")})))
     (when (pos? (+ dirty unreachable))
       (throw (ex-info (str "worktree " dir " holds "
                            (str/join " and " (cond-> []
@@ -66,8 +80,8 @@
 (defn- local-ref!
   "refs/heads/<branch> of `clone`, or throws saying how to make it."
   [clone branch]
-  (let [ref (str "refs/heads/" branch)]
-    (when-not (out clone "rev-parse" "--verify" "--quiet" (str ref "^{commit}"))
+  (let [ref (sync-ref :local branch)]
+    (when-not (git clone "rev-parse" "--verify" "--quiet" (str ref "^{commit}"))
       (throw (ex-info (str "no local branch " branch " in " clone " (:from :local runs it)")
                       {:dir clone :hint (str "git -C " clone " branch " branch " origin/" branch ", or :from :origin")})))
     ref))
@@ -84,7 +98,7 @@
            exists? (.exists (io/file worktree-dir))
            sync? (or *sync* (not exists?))
            local? (= :local from)
-           ref (if local? (when sync? (local-ref! main-clone-dir branch)) (str "origin/" branch))
+           ref (if local? (when sync? (local-ref! main-clone-dir branch)) (sync-ref from branch))
            shown (if local? branch ref)
            ;; the worktrees share the main clone's refs: fetching there updates origin/<branch> for both
            fetched? (or local? (not sync?)
@@ -114,26 +128,32 @@
         :when (.isDirectory f)
         :let [path (.getPath f)
               ;; its own checkout's top, not some repo enclosing a leftover dir
-              own? (= (.getCanonicalPath f) (some-> (out path "rev-parse" "--show-toplevel") io/file .getCanonicalPath))
-              clone (when own? (some-> (out path "rev-parse" "--path-format=absolute" "--git-common-dir") io/file .getParent))]]
-    (merge {:path path :clone clone :repo (some-> clone io/file .getName) :head (out path "rev-parse" "--short" "HEAD")}
+              own? (= (.getCanonicalPath f) (some-> (git path "rev-parse" "--show-toplevel") io/file .getCanonicalPath))
+              clone (when own? (some-> (git path "rev-parse" "--path-format=absolute" "--git-common-dir") io/file .getParent))]]
+    (merge {:path path :clone clone :repo (some-> clone io/file .getName) :head (git path "rev-parse" "--short" "HEAD")}
            (when clone (at-risk path)))))
 
 (defn prune!
   "Removes the `entries` (worktrees') no preset uses - `users`: {path #{preset}} - and that hold
-  nothing at-risk would lose, through the main clone's `git worktree remove`, then `worktree prune`.
-  {:removed [entry] :kept [[entry why]]}."
+  nothing at-risk would lose, through the main clone's `git worktree remove`, then `worktree prune`;
+  a local test's ref (test-ref) at its HEAD goes with it. {:removed [entry] :kept [[entry why]]}."
   [entries users]
   (reduce (fn [acc {:keys [path clone dirty unreachable] :as e}]
             (let [why (cond (nil? clone) "not a git worktree"
                             (seq (get users path)) (str "used by " (str/join ", " (map name (sort (get users path)))))
+                            (not (and dirty unreachable)) "can't tell what it holds"
                             (pos? dirty) (str dirty " uncommitted file(s)")
                             (pos? unreachable) (str unreachable " commit(s) on no branch"))
                   removed (when-not why
                             (locking (repo-lock clone)
-                              (let [{:keys [exit err]} (shell/sh! ["git" "-C" clone "worktree" "remove" path])]
+                              (let [test-refs (some-> (git path "for-each-ref" "--format=%(refname)" "--points-at" "HEAD" "refs/zent/test/")
+                                                      lines)
+                                    {:keys [exit err]} (shell/sh! ["git" "-C" clone "worktree" "remove" path])]
                                 (shell/sh! ["git" "-C" clone "worktree" "prune"])
-                                (if (zero? exit) :ok (str "git worktree remove failed: " (str/trim (str err)))))))]
+                                (if (zero? exit)
+                                  (do (doseq [r test-refs] (shell/sh! ["git" "-C" clone "update-ref" "-d" r]))
+                                      :ok)
+                                  (str "git worktree remove failed: " (str/trim (str err)))))))]
               (if (= :ok removed)
                 (update acc :removed conj e)
                 (update acc :kept conj [e (or why removed)]))))

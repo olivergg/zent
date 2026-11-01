@@ -181,7 +181,8 @@ A reload keeps the commit there. The worktree is `~/.cache/zent/worktrees/<repo>
 so switching `:origin`/`:local` is a reset (ignored build output stays). A sync never loses work: it
 refuses a worktree with uncommitted files or commits on no branch, saying how to keep them. Detached,
 the worktree holds no branch: your clone may check `<branch>` out meanwhile. `zent worktrees` lists them,
-`zent worktrees prune` removes those no preset uses and that hold nothing.
+`zent worktrees prune` removes those no preset uses, nothing runs from and that hold nothing; it refuses
+to run while a preset doesn't resolve or the session lists components no daemon answers for.
 
 A tool reading other repos gets their dirs through `:source-env` (`:one-shot`, `:process`,
 `:quarkus-app`; plain values go in `:env`). Each var is set to a component's checkout as the

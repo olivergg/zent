@@ -160,6 +160,25 @@
           (is (= (str "git -C " clone " branch feature origin/feature, or :from :origin") (:hint (ex-data e))))
           (is (not (.exists (java.io.File. wt)))))))))
 
+(deftest at-risk-cant-tell-test
+  (let [{:keys [clone wt]} (repos)
+        not-git (str wt "-not-git")]
+    (testing "given a dir git can't read, then nil counts, not 0"
+      (.mkdirs (java.io.File. not-git))
+      (is (= {:dirty nil :unreachable nil} (branch/at-risk not-git))))
+    (testing "given a worktree git can't read, then a sync refuses instead of resetting"
+      (with-redefs [branch/worktree-path (fn [_ _] wt)]
+        (branch/resolve-worktree clone "repo" "feature")
+        (let [head (git! wt "rev-parse" "HEAD")
+              e (with-redefs [branch/at-risk (constantly {:dirty nil :unreachable 0})]
+                  (refusal #(branch/resolve-worktree clone "repo" "master")))]
+          (is (re-find #"can't tell what worktree" (ex-message e)))
+          (is (= (str "git -C " wt " status") (:hint (ex-data e))))
+          (is (= head (git! wt "rev-parse" "HEAD"))))))
+    (testing "given one prune can't read, then kept, saying why"
+      (let [entry {:path "/wt/x" :clone clone :dirty 0 :unreachable nil}]
+        (is (= {:removed [] :kept [[entry "can't tell what it holds"]]} (branch/prune! [entry] {})))))))
+
 (deftest worktrees-prune-test
   (let [{:keys [clone]} (repos)
         root (str (.getParent (java.io.File. clone)) "/worktrees")]
@@ -168,6 +187,7 @@
       (git! clone "branch" "--quiet" "a" "feature") (git! clone "branch" "--quiet" "b" "feature")
       (doseq [b ["a" "b" "feature"]] (branch/resolve-worktree clone "repo" b :local))
       (spit (str (branch/worktree-path "repo" "b") "/wip.txt") "wip")
+      (git! (branch/worktree-path "repo" "a") "update-ref" (branch/test-ref "a") "HEAD")
       (let [entries (branch/worktrees)
             used (branch/worktree-path "repo" "feature")]
         (testing "given three worktrees, then each with its clone, commit and what's at risk"
@@ -179,4 +199,6 @@
             (is (= #{"used by mine" "1 uncommitted file(s)"} (set (map second kept))))
             (is (not (.exists (java.io.File. (branch/worktree-path "repo" "a")))))
             (is (.exists (java.io.File. (str (branch/worktree-path "repo" "b") "/wip.txt"))))
-            (is (not (re-find #"repo-a\b" (git! clone "worktree" "list"))) "git forgot it too")))))))
+            (is (not (re-find #"repo-a\b" (git! clone "worktree" "list"))) "git forgot it too")
+            (is (not (zero? (:exit (zent.shell/sh! ["git" "-C" clone "rev-parse" "--verify" "--quiet" (branch/test-ref "a")]))))
+                "its local test's ref went with it")))))))

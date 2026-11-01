@@ -22,8 +22,9 @@ smaller change.
    entries. Generic keys (`:mode`, `:deps`, `:readiness`, `:watch`) are handled once, in
    the engine; nothing there lists kinds by name.
 5. **Never touch what zent can't prove it owns.** A PID is re-checked by `ps` identity
-   before a kill; `:permanent` survives every implicit teardown; the main clone is only
-   read (`:branch` runs from a worktree); no auto-clone.
+   before a kill; `:permanent` survives every implicit teardown; a deploy or a sync
+   never touches the main clone's files or branches (`:branch` runs from a worktree, only
+   `origin/*` refs get fetched), only an explicit `zent rebase` moves them; no auto-clone.
 6. **Security defaults on.** Every kubectl pins `--context`, which must be in the catalog's
    allowlist (the kubeconfig may hold prod). Runtime presets (CLI, MCP) pick components
    and branch/image/port/context, never what code runs (`:cmd`, `:env`, `:scripts`), and

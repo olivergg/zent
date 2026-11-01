@@ -190,9 +190,10 @@
       (is (= :local (get-in (resolve [:seed :api {:branch "x" :from :local}]) [:seed :source-env "API" :from]))))))
 
 (deftest worktree-users-test
-  (testing "given presets on branches, then each worktree with the presets using it, a broken preset none"
+  (testing "given presets on branches, then each worktree with the presets using it, a broken preset named apart"
     (let [cat (-> catalog
                   (assoc-in [:presets :a] (compose/run :api {:branch "x"} :ui {:branch "y" :from :clone}))
                   (assoc-in [:presets :b] (compose/run :api {:branch "x" :from :local}))
                   (assoc-in [:presets :broken] (compose/run :api {:branch "z" :port "no"})))]
-      (is (= {(zent.branch/worktree-path "api" "x") #{:a :b}} (compose/worktree-users cat))))))
+      (is (= {:users {(zent.branch/worktree-path "api" "x") #{:a :b}} :unresolved #{:broken}}
+             (compose/worktree-users cat))))))

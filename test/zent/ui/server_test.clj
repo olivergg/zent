@@ -107,6 +107,14 @@
     (testing "an unknown component is refused before reaching the engine"
       (is (= 404 (first (post-json "/api/trigger/typo" :token "test-token")))))))
 
+(deftest post-rebase-queues-test
+  (testing "a rebase is queued like any write, not run in the request; no checkout there: refused"
+    (with-redefs [state/request-rebase! (fn [k _] (when (= :svc k) 7))]
+      (let [[status body] (post-json "/api/rebase/svc" :token "test-token")]
+        (is (= 200 status))
+        (is (= 7 (:id body))))
+      (is (= 404 (first (post-json "/api/rebase/none" :token "test-token")))))))
+
 (deftest post-from-a-foreign-origin-is-rejected-even-with-the-right-token-test
   (testing "belt-and-suspenders: a correct token from a non-localhost Origin still fails -
             this only matters if a token ever leaked, the token check alone already stops

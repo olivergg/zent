@@ -1148,10 +1148,20 @@ document.body.addEventListener("htmx:configRequest", (e) => { e.detail.headers["
    since each push re-renders the buttons themselves. Infinity while the POST
    is still in flight (no id yet). */
 const pending = new Map();
+// queued rebases, id -> component: once handled, say what happened, the undo command included
+const rebases = new Map();
 
 function markBusy() {
   const done = new Set(view.done || []);
   for (const [path, id] of pending) if (done.has(id)) pending.delete(path);
+  for (const [id, name] of rebases) {
+    if (!done.has(id)) continue;
+    rebases.delete(id);
+    const error = view["command-errors"]?.[id];
+    if (!error) refreshPreview();
+    toast(error ? "failed" : "up", (error ? "not rebased: " : "rebased ") + name,
+          error || view["command-messages"]?.[id], name);
+  }
   document.querySelectorAll("[hx-post]").forEach((b) => {
     b.dataset.busy = String(pending.has(b.getAttribute("hx-post")));
   });
@@ -1167,12 +1177,10 @@ document.body.addEventListener("htmx:afterRequest", (e) => {
   if (!path) return;
   let id, reply;
   try { reply = JSON.parse(e.detail.xhr.responseText); id = reply.id; } catch { /* not a queued write */ }
-  // a rebase answers at once, done or refused: say which, the undo command included
   if (path.startsWith("/api/rebase/") && reply) {
     const name = path.slice("/api/rebase/".length).split("?")[0];
-    if (e.detail.successful) refreshPreview();
-    toast(e.detail.successful ? "up" : "failed", (e.detail.successful ? "rebased " : "not rebased: ") + name,
-          reply.message || reply.error, name);
+    if (Number.isInteger(id)) rebases.set(id, name);
+    else toast("failed", "not rebased: " + name, reply.error, name);
   }
   if (e.detail.successful && Number.isInteger(id)) pending.set(path, id);
   else pending.delete(path);
@@ -1332,6 +1340,7 @@ function connect() {
     // command ids from 0 - refresh one, forget pending spinners of the other
     if (reconnecting) {
       pending.clear();
+      rebases.clear();
       try {
         const { token } = await (await fetch("/api/token")).json();
         document.querySelector('meta[name="csrf-token"]').content = token;

@@ -4,6 +4,31 @@
 
 (defn- step [s at components] (state/record-transitions at s (assoc s :components components)))
 
+(deftest request-rebase-test
+  (let [queue! (fn [cfg] (state/request-rebase! :svc cfg)
+                 (last @state/control))
+        cfg {:repo "svc"}]
+    (reset! state/control [])
+    (with-redefs [zent.source/checkout-git (constantly nil)]
+      (testing "given no repo there, then nothing queued"
+        (is (nil? (state/request-rebase! :nope {:kind :process})))
+        (is (empty? @state/control)))
+      (testing "given a repo, then queued as a job: nothing runs until the engine takes it"
+        (let [ran (atom 0)]
+          (with-redefs [zent.source/rebase! (fn [_] (swap! ran inc) {:ok true :message "rebased, undo: x"})]
+            (let [{:keys [action name run id]} (queue! cfg)]
+              (is (= [:job :svc 0] [action name @ran]))
+              (testing "when it runs, then what it did is kept under its id"
+                (run id)
+                (is (= 1 @ran))
+                (is (= "rebased, undo: x" (get-in @state/view-state [:command-messages id]))))))))
+      (testing "given a refusal, then it throws why: the command's :error"
+        (with-redefs [zent.source/rebase! (constantly {:ok false :message "2 uncommitted"})]
+          (let [{:keys [run id]} (queue! cfg)]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo #"2 uncommitted" (run id)))
+            (is (nil? (get-in @state/view-state [:command-messages id])))))))
+    (reset! state/control [])))
+
 (deftest set-preset-members-test
   (testing "the view keeps an earlier preset's components, :members names this one's own"
     (let [s (-> state/empty-state

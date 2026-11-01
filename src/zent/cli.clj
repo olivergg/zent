@@ -74,7 +74,8 @@
    {:verb "worktrees" :group "Everyday" :args "[prune]"
     :doc "list zent's :branch worktrees; prune removes the unused, clean ones"
     :more ["Each with its repo, branch, commit, uncommitted files, commits on no branch, and the"
-           "presets running it. prune keeps any a preset uses or that holds work, saying why."]
+           "presets running it. prune keeps any a preset uses, a component runs from or that holds work,"
+           "saying why; it refuses to run when a preset doesn't resolve or no daemon answers for the session."]
     :see ["pull"]}
    {:verb "stop" :group "Everyday" :args "[<component>...]"
     :doc "stop just these, or all but :permanent components"
@@ -308,20 +309,48 @@
 (defn rebase! [component]
   (let [d (daemon!)]
     (check-components! d [component])
-    (println (:message (client/request d :post (str "/api/rebase/" (name component)))))))
+    (let [queued (client/request d :post (str "/api/rebase/" (name component)))
+          view (client/await! d queued print-change)
+          id (keyword (str (:id queued)))]
+      (when-let [error (get-in view [:command-errors id])] (fail! error))
+      (println (get-in view [:command-messages id])))))
+
+(defn prune-refusal
+  "Why `worktrees prune` can't tell what's unused, or nil: `unresolved` presets may use any worktree,
+  and without a `daemon?` to ask, nothing says where the session's `handles` run (a pid has no dir)."
+  [unresolved handles daemon?]
+  (cond
+    (seq unresolved) (str "not pruning: " (str/join ", " (map name (sort unresolved)))
+                          " doesn't resolve, it may use any worktree - fix it first")
+    (and (seq handles) (not daemon?)) (str "not pruning: the session lists " (str/join ", " (map (comp name :component) handles))
+                                           " and no daemon can say where they run - `zent serve --detach` adopts them")))
+
+(defn running-worktrees
+  "{worktree-path #{:<component> (running)}}: the worktrees a daemon's view `components` run or read
+  from - all but what's stopped, in the shape of compose/worktree-users' :users."
+  [components]
+  (apply merge-with into {}
+         (for [[n {:keys [status source source-env]}] components
+               :when (not (#{:off :down} (keyword status)))
+               path (keep :worktree (cons source (vals source-env)))]
+           {path #{(keyword (str (name n) " (running)"))}})))
 
 (defn worktrees!
   "Lists zent's worktrees (zent.branch/worktrees) and the presets using each; with `prune?`, removes
-  the ones branch/prune! may."
+  the ones branch/prune! may, unless prune-refusal says it can't tell."
   [ctx prune?]
-  (let [users (compose/worktree-users (catalog ctx))
+  (let [{:keys [users unresolved]} (compose/worktree-users (catalog ctx))
         entries (branch/worktrees)
         presets #(str/join "," (map name (sort (get users (:path %)))))]
     (cond
       (empty? entries) (println "no worktrees in" (branch/worktrees-root))
-      prune? (let [{:keys [removed kept]} (branch/prune! entries users)]
-               (doseq [{:keys [path]} removed] (println "removed" path))
-               (doseq [[{:keys [path]} why] kept] (println "kept   " path "-" why)))
+      prune? (let [d (live)]
+               (when-let [why (prune-refusal unresolved (:handles (session/read-session session/default-path)) d)]
+                 (fail! why))
+               (let [running (when d (running-worktrees (:components (client/request d :get "/api/view"))))
+                     {:keys [removed kept]} (branch/prune! entries (merge-with into users running))]
+                 (doseq [{:keys [path]} removed] (println "removed" path))
+                 (doseq [[{:keys [path]} why] kept] (println "kept   " path "-" why))))
       :else (do (println (format "%-24s %-30s %-8s %5s %9s  %s" "REPO" "BRANCH" "HEAD" "DIRTY" "NO-BRANCH" "PRESETS / PATH"))
                 (doseq [{:keys [repo path head dirty unreachable] :as e} entries
                         :let [dir (.getName (java.io.File. ^String path))]]

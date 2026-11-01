@@ -39,8 +39,8 @@
 (defn resolve-source
   ([repo] (resolve-source repo {}))
   ([repo {:keys [workspace-dir branch org] :as opts}]
-   ;; the main clone is only read: a worktree for :origin/:local (zent.branch), as it is for :clone,
-   ;; which must have the branch checked out - zent never switches it
+   ;; resolving leaves the main clone's files and branches alone: a worktree for :origin/:local
+   ;; (zent.branch), as it is for :clone, which must have the branch checked out - zent never switches it
    (let [dir (main-clone-dir repo workspace-dir)
          mode (from opts)]
      (cond

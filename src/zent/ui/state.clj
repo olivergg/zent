@@ -234,23 +234,16 @@
       (when (not= g (get-in @view-state [:components k :git]))
         (swap! view-state assoc-shown k :git g)))))
 
+(defn- try-set-git!
+  "set-git! that logs a failure instead of throwing."
+  [k cfg]
+  (try (set-git! k cfg)
+       (catch Exception e (println (format "[%s] git refresh failed: %s" k (ex-message e))))))
+
 (defn refresh-git!
   "Re-reads every described component's :git. One failing doesn't stop the rest."
   []
-  (doseq [[k cfg] @described]
-    (try (set-git! k cfg)
-         (catch Exception e (println (format "[%s] git refresh failed: %s" k (ex-message e)))))))
-
-(defn rebase!
-  "zent.source/rebase! on `k`'s checkout, then re-reads its :git (the card shows ≠ reload: the disk moved
-  on from what runs). `cfg`: `k` as a previewed preset resolves it, else the applied one's. nil when `k`
-  has no repo there."
-  [k & [cfg]]
-  (let [cfg (or cfg (get @described k))]
-    (when (:repo cfg)
-      (let [r (source/rebase! cfg)]
-        (try (set-git! k cfg) (catch Exception e (println (format "[%s] git refresh failed: %s" k (ex-message e)))))
-        r))))
+  (doseq [[k cfg] @described] (try-set-git! k cfg)))
 
 ;; :idle, :running, or :again - asked for while running: it runs once more
 (defonce ^:private git-refresh (atom :idle))
@@ -405,9 +398,24 @@
 (defn request-shutdown! [] (enqueue! {:action :shutdown}))
 (defn request-reload-code! [] (enqueue! {:action :reload-code}))
 
+(defn request-rebase!
+  "Queues zent.source/rebase! of `k`'s checkout as a job: git writes there, so never next to a deploy.
+  What it did lands in :command-messages under the id, why not in :command-errors; its :git is re-read
+  (the card shows ≠ reload: the disk moved on from what runs). `cfg`: `k` as a previewed preset resolves
+  it, else the applied one's. The id, or nil when `k` has no repo there."
+  [k & [cfg]]
+  (let [cfg (or cfg (get @described k))]
+    (when (:repo cfg)
+      (enqueue! {:action :job :name k
+                 :run (fn [id]
+                        (let [{:keys [ok message]} (source/rebase! cfg)]
+                          (try-set-git! k cfg)
+                          (when-not ok (throw (ex-info message {})))
+                          (swap! view-state assoc-in [:command-messages id] message)))}))))
+
 (defn observe-handled!
   "Marks `commands` processed; a failed one's :error lands in :command-errors
-  under its id, for the client that queued it."
+  under its id, for the client that queued it. Both it and :command-messages keep the recent ones."
   [commands]
   (swap! view-state
          (fn [s] (let [handled (max (:handled s 0) (reduce max 0 (keep :id commands)))
@@ -416,6 +424,7 @@
                    (-> s
                        (assoc :handled handled)
                        (update :done #(into #{} (filter recent?) (into (or % #{}) (keep :id commands))))
+                       (update :command-messages #(into {} (filter (comp recent? key)) %))
                        (update :command-errors
                                #(into {} (filter (comp recent? key))
                                       (merge % (into {} (keep (fn [c] (when (:error c) [(:id c) (:error c)]))) commands)))))))))

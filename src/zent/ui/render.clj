@@ -345,10 +345,10 @@
        "<span class=\"state\">" (esc (label-of kind status)) (clock c) "</span></span>"))
 
 (defn- card-body
-  "A full card's content - everything but the error and the actions."
-  [cname {:keys [status source-env links permanent source] :as c}]
+  "A full card's content - everything but the error and the actions. :now: the render's clock (ms)."
+  [cname {:keys [status source-env links permanent source now] :as c}]
   (let [chip (git-chip c)
-        cd-title (when chip (git-title chip (:dir source) (System/currentTimeMillis)))]
+        cd-title (when chip (git-title chip (:dir source) now))]
     (str
      "<span class=\"head\"><span class=\"name\">" (esc (name cname)) "</span>"
      (when permanent
@@ -357,7 +357,7 @@
      (facts c cd-title)
      (usage-row (:usage c))
      (if chip
-       (git-row cname chip (System/currentTimeMillis))
+       (git-row cname chip now)
        ;; a preview's :branch never deployed: its worktree doesn't exist yet
        (when-let [b (and (:preview? c) (:worktree source) (:wanted-branch c))]
          (let [local? (= :local (:from c))]
