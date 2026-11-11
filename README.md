@@ -20,9 +20,11 @@ kept in a repo of its own (see "A catalog repo" below, `docs/resource-kinds.md` 
 Install (macOS, Linux x86_64):
 
 ```
+brew tap jolt-lang/jolt                                  # zent's runtime: brew doesn't add a dependency's tap
+brew trust --formula jolt-lang/jolt/jolt                 # Homebrew loads a third-party tap only once trusted
 brew tap olivergg/zent https://github.com/olivergg/zent
-brew trust --formula olivergg/zent/zent                  # Homebrew loads a third-party tap only once trusted
-brew install --HEAD zent                                 # pulls jolt in; HEAD until a release is tagged
+brew trust --formula olivergg/zent/zent
+brew install --HEAD zent                                 # HEAD until a release is tagged
 brew update && brew upgrade --fetch-HEAD zent            # later, to update; then, with a daemon up:
 zent shutdown && zent serve --detach                     # move it onto the new version - stops all but :permanent
 zent apply <preset>                                      # so bring your preset back up
