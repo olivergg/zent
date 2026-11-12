@@ -5,7 +5,7 @@
  :deps {metosin/malli {:mvn/version "0.20.3"}
         jolt-lang/ring-chez-adapter
         {:git/url "https://github.com/jolt-lang/ring-chez-adapter"
-         :git/sha "87e637e2ce3b6d25fee67b8bf86cd7595eea30a4"} ; v0.8.0
+         :git/sha "387cf67ea7b6a8573c6ee6abca6026a45bc3b6bf"} ; v0.10.1
         jolt-lang/http-client
         {:git/url "https://github.com/jolt-lang/http-client"
          :git/sha "5a9706e093d09d480c1d8ad70d8b64dfa505398d"} ; v0.1.5
