@@ -9,6 +9,7 @@
             [zent.checks :as checks]
             [zent.cli :as cli]
             [zent.daemon :as daemon]
+            [zent.diff :as diff]
             [zent.logs :as logs]
             [zent.shell :as shell]))
 
@@ -128,7 +129,8 @@
                                                   :counts {:tests 2 :assertions 2 :failed 1 :errors 0}}))]
           (is (str/includes? text "kept - Orders keep their total"))
           (is (str/includes? text "=> 2 orders of 3 lost it"))
-          (is (str/includes? text "[Total] order 7"))
+          (is (str/includes? text "✗ Total"))
+          (is (str/includes? text "e.g. order 7 : 12.5 -> 12"))
           (is (str/includes? text "≈ known"))
           (is (str/includes? text "accepted: ticket 42"))))))
   (testing "given failures of a few shapes, then grouped by shape, counted, the largest first"
@@ -172,20 +174,30 @@
            (checks/parse ["Syntax error compiling"] 1)))))
 
 (deftest report-test
-  (testing "given a failing run, a line per check and test, each failure under its test"
+  (testing "given a failing run, a line per check and test, its doc's first line and its failures by group"
     (is (= ["✗ full/smoke  fail - 3 test(s), 2 not passing, 3 assertion(s), 1.2 s"
             "  ✓ passes [invariant]  2"
             "  ✗ fails  1"
             "      # One equals two,"
-            "      # on two lines."
-            "      ctx [:label \"x\"]  (smoke.clj:9)"
-            "      expected: (= 1 2)"
-            "        actual: (not (= 1 2))"
+            "      ✗ ctx [:label \"x\"]  (smoke.clj:9)"
             "  ! throws  0"
-            "      Uncaught exception, not in assertion.  (smoke.clj:11)"
-            "      expected: nil"
+            "      ! Uncaught exception, not in assertion.  (smoke.clj:11)"
             "        actual: clojure.lang.ExceptionInfo: kaput"]
            (checks/report (assoc (checks/parse real-run 0) :preset :full :check :smoke :duration-ms 1234)))))
+  (testing "given a group of failures on values, its count, explanation, diff and a few examples"
+    (let [f #(hash-map :message nil :where [["vehicle" %1]] :diff (diff/of [%1 %2]))]
+      (is (= ["      ✗ Value  x3"
+              "        two forms"
+              "        expected: 000764"
+              "          actual: 000{+00000000+}764{+05+}"
+              "        e.g. vehicle 000764 : 000764 -> 0000000000076405"
+              "        e.g. vehicle 004872 : 004872 -> 0000000000487205"
+              "        e.g. vehicle 00084F : 00084F -> 0000000000084F05"]
+             (drop 2 (checks/report {:preset :p :check :c :status :fail :counts {:tests 1 :assertions 3 :failed 1 :errors 0}
+                                     :tests [{:name "t" :status :fail :assertions 3
+                                              :groups [{:count 3 :group "Value" :explain "two forms"
+                                                        :examples [(f "000764" "0000000000076405") (f "004872" "0000000000487205")
+                                                                   (f "00084F" "0000000000084F05")]}]}]}))))))
   (testing "given a passing test's notes, they show under it, a line each"
     (is (= ["✓ full/smoke  pass - 1 test(s), 1 assertion(s), 0.0 s"
             "  ✓ passes [invariant]  1"

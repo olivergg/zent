@@ -253,10 +253,28 @@
 
 (def ^:private glyph {:pass "✓" :accepted "≈" :fail "✗" :error "!" :unknown "?"})
 
+(defn- group-lines
+  "A group of failures as text: what it is, how many, where; its explanation; its first example's
+  diff - else, when no message says it, its expected and actual - and a few more examples."
+  [{n :count :keys [group explain examples]} error?]
+  (let [[{:keys [message context expected actual file line diff]} :as exs] examples
+        ;; a diff says what differs, its examples which one; else the message is the what
+        what (or group (when diff "difference") (not-empty (str/join " " (remove nil? [context message]))) "failure")]
+    (concat [(str "      " (glyph (if error? :error :fail)) " " what (when (> n 1) (str "  x" n))
+                  (when file (format "  (%s:%s)" file line)))]
+            (when explain [(str "        " explain)])
+            (map #(str "        " %)
+                 (cond diff (diff/lines diff)
+                       error? [(str "actual: " actual)]
+                       (not (or group message)) [(str "expected: " expected) (str "  actual: " actual)]))
+            (when (or (> (count exs) 1) (seq (:where (first exs))))
+              (for [{:keys [where message diff]} (take 3 exs)]
+                (str "        e.g. " (if (seq where) (str/join " · " (map (fn [[k v]] (str k " " v)) where)) message)
+                     (when diff (str " : " (diff/inline diff)))))))))
+
 (defn report
-  "`result` as text lines: a line per check and per test; under a test not
-  passing, its docstring, then each failure's message, location and
-  expected/actual."
+  "`result` as text lines: a line per check and per test - its verdict and figures, an
+  accepted gap - and, under one not passing, its doc's first line and its failures by group."
   [{:keys [preset check status tests counts duration-ms only error]}]
   (concat
    [(format "%s %s/%s  %s - %d test(s)%s, %d assertion(s), %.1f s" (glyph status) (name preset) (name check)
@@ -265,28 +283,20 @@
             (:assertions counts) (/ (or duration-ms 0) 1000.0))]
    (when only [(str "  only: " (str/join ", " only))])
    (when error (map #(str "  | " %) (str/split-lines error)))
-   (for [{:keys [name title status assertions failures doc kind notes verdict facts accepted]} tests
+   (for [{:keys [name title status assertions failures groups doc kind notes verdict facts accepted]} tests
          line (concat [(format "  %s %s%s%s  %d" (glyph status) name (if title (str " - " title) "")
                                (if kind (str " [" (clojure.core/name kind) "]") "") assertions)]
                       (when verdict [(str "      => " verdict)])
-                      (when (seq facts) [(str "      " (str/join " · " (for [[l v] facts] (str l ": " v))))])
+                      ;; what the test judged, passing or not: its figures, else its notes
+                      (if (seq facts)
+                        [(str "      " (str/join " · " (for [[l v] facts] (str l ": " v))))]
+                        (map #(str "      · " %) (mapcat str/split-lines notes)))
                       (map #(str "      accepted: " %) accepted)
-                      ;; what the test judged, passing or not
-                      (map #(str "      · " %) (mapcat str/split-lines notes))
-                      ;; the why of a test, where it matters: when it doesn't pass
+                      ;; what it checks, where it matters: when it doesn't pass
                       (when (and doc (not (#{:pass :accepted} status)))
-                        (map #(str "      # " (str/trim %)) (str/split-lines doc)))
-                      (for [{:keys [message context expected actual file line diff group where]} failures
-                            l (into [(str "      " (str/join " " (remove nil? [(some->> group (format "[%s]")) context
-                                                                         (some->> (seq where) (map (fn [[k v]] (str k " " v)))
-                                                                                  (str/join " · "))
-                                                                         message]))
-                                          (when file (format "  (%s:%s)" file line)))]
-                                    (if diff
-                                      (map #(str "      " %) (diff/lines diff))
-                                      [(str "      expected: " expected)
-                                       (str "        actual: " actual)]))]
-                        l))]
+                        [(str "      # " (str/trim (first (str/split-lines doc))))])
+                      (mapcat #(group-lines % (= :error status))
+                              (or groups (map (fn [f] {:count 1 :examples [f]}) failures))))]
      line)))
 
 (defn log-name

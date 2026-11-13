@@ -81,6 +81,15 @@
   (let [[open close] (if (= :del side) ["[-" "-]"] ["{+" "+}"])]
     (apply str (for [[o t] segs :when (#{:same side} o)] (if (= :same o) t (str open t close))))))
 
+(defn inline
+  "A diff (of) on one line, its sides plain: \"a -> b\", or a map's changed keys."
+  [{:keys [segments keys]}]
+  (let [side (fn [segs op] (apply str (for [[o t] segs :when (#{:same op} o)] t)))]
+    (if keys
+      (str/join " · " (for [{:keys [key op value] segs :segments} keys :when (not= :same op)]
+                        (str key " " (if segs (str (side segs :del) " -> " (side segs :add)) value))))
+      (str (side segments :del) " -> " (side segments :add)))))
+
 (defn lines
   "A diff (of) as text lines, labelled like clojure.test's report."
   [{:keys [segments keys]}]
