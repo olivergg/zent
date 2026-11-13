@@ -32,6 +32,12 @@
 
   --display: "Futura", "Avenir Next Condensed", "Century Gothic", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  /* the drawing board: a dotted engineering grid, chrome as frosted panels floating over it */
+  --board: #f2f2f4;
+  --board-dot: #d9d9df;
+  --glass: rgba(255, 255, 255, .72);
+  --glass-edge: 0 0 0 .5px rgba(0, 0, 0, .12), 0 8px 30px rgba(0, 0, 0, .06);
 
   --rail: 330px;
   --head: 54px;
@@ -43,9 +49,9 @@ html, body { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--linen);
+  background: var(--board) radial-gradient(circle, var(--board-dot) 1px, transparent 1.2px) 0 0 / 16px 16px;
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 12.5px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -59,7 +65,12 @@ body {
   align-items: center;
   gap: 20px;
   padding: 0 22px;
-  border-bottom: 1px solid var(--ink);
+  position: relative;
+  z-index: 3;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: var(--glass-edge);
 }
 
 .wordmark {
@@ -76,8 +87,9 @@ body {
    (state + name), not a button; Stop/Start acts on that very preset. The
    "am I running, and can I stop/start it from here" answer - everything
    else (the rail's per-row play/stop) is deliberately quiet by comparison. */
-.run { --led: var(--verdigris); display: inline-flex; align-items: stretch; border: 1px solid var(--ink); }
-.run[data-state="idle"] { border-color: var(--grey); }
+.run { --led: var(--verdigris); display: inline-flex; align-items: stretch; border-radius: 8px; overflow: hidden; background: #fff;
+       box-shadow: 0 0 0 .5px rgba(0, 0, 0, .18), 0 1px 2px rgba(0, 0, 0, .06); }
+.run[data-state="idle"] { background: rgba(0, 0, 0, .04); box-shadow: none; }
 .run-label { display: flex; flex-direction: column; justify-content: center; padding: 3px 12px; line-height: 1.2; }
 .run-label small {
   font-family: var(--display); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
@@ -107,7 +119,6 @@ body {
   font-weight: 500;
   padding: 0 16px;
   border: none;
-  border-left: 1px solid var(--ink);
   cursor: pointer;
   color: #fff;
 }
@@ -186,8 +197,8 @@ body[data-tab="logs"] .rail-toggle, body[data-tab="checks"] .rail-toggle { displ
    the rail's border, so nothing inside either pane can be under it */
 .grip {
   cursor: col-resize;
-  background: var(--linen);
-  border-left: 1px solid var(--ink);
+  background: transparent;
+  border-left: .5px solid rgba(0, 0, 0, .14);
 }
 .grip:hover, .grip[data-dragging="true"] { background: var(--indigo); border-left-color: var(--indigo); }
 body[data-resizing="true"] { cursor: col-resize; user-select: none; }
@@ -203,11 +214,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
      than beside it - .warp is position:absolute so it never joins this
      flow either way, so this only ever affects the banner/.levels pair. */
   flex-direction: column;
-  /* the linen's own weave, barely there; `local` so it scrolls with the fabric */
-  background:
-    repeating-linear-gradient(0deg, color-mix(in srgb, var(--ink) 5%, transparent) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--ink) 4%, transparent) 0 1px, transparent 1px 4px)
-    var(--linen);
+  /* the drawing board's grid; `local` so it scrolls with the graph */
+  background: var(--board) radial-gradient(circle, var(--board-dot) 1px, transparent 1.2px) 0 0 / 16px 16px;
   background-attachment: local;
 }
 
@@ -280,8 +288,11 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   gap: 12px;
   margin: -34px -40px 20px;
   padding: 10px 40px;
-  background: var(--ink);
-  color: var(--linen);
+  /* a dark frosted bar: still unmistakably "not what runs", the grid showing through */
+  background: rgba(23, 27, 46, .86);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: #f2f2f4;
   font-family: var(--display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -777,6 +788,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .rail {
   padding: 22px 20px;
   overflow: auto;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  backdrop-filter: blur(12px) saturate(1.5);
 }
 
 #rail-run { display: flex; flex-direction: column; gap: 22px; }
@@ -840,12 +854,13 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 /* ---------------------------------------------------------------- logs */
 
 /* tabs: the graph and the logs share the page, one shown at a time */
-.tabs { display: flex; gap: 2px; }
+/* a segmented control, as in a macOS toolbar */
+.tabs { display: flex; gap: 0; padding: 2px; border-radius: 8px; background: rgba(0, 0, 0, .06); }
 .tabs a {
-  color: var(--ink); text-decoration: none; padding: 4px 12px;
-  border: 1px solid transparent; border-radius: 3px;
+  color: var(--muted); text-decoration: none; padding: 4px 12px; border-radius: 6px; font-weight: 500;
 }
-.tabs a[aria-current="page"] { border-color: var(--ink); background: var(--card); }
+.tabs a:hover { color: var(--ink); }
+.tabs a[aria-current="page"] { color: var(--ink); background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
 body[data-tab="logs"] .shell, body[data-tab="checks"] .shell { display: none; }
 /* View Transitions (index.js transit, html[data-vt] while one runs): only
    what moves is named; the rest of the page swaps in place */
@@ -878,12 +893,12 @@ body:not([data-tab="checks"]) .checks-view { display: none; }
 }
 .tab-badge.ok { background: var(--verdigris); }
 .checks-view { height: calc(100vh - var(--head)); display: grid; grid-template-columns: minmax(360px, 42%) 1fr; }
-.checks-view .left { border-right: 1px solid var(--grey); display: flex; flex-direction: column; overflow: auto; }
+.checks-view .left { border-right: .5px solid rgba(0, 0, 0, .14); display: flex; flex-direction: column; overflow: auto; }
 .checks-view .right { overflow: auto; padding: 14px 20px; }
-.checks-bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; background: var(--card); border-bottom: 1px solid var(--grey); position: sticky; top: 0; z-index: 1; }
+.checks-bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; background: var(--glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: .5px solid rgba(0, 0, 0, .12); position: sticky; top: 0; z-index: 1; }
 .checks-bar button, .chk-cmd button {
-  font: inherit; font-size: 11.5px; padding: 3px 10px; border: 1px solid var(--ink);
-  background: var(--linen); color: var(--ink); border-radius: 3px; cursor: pointer;
+  font: inherit; font-size: 11.5px; font-weight: 500; padding: 4px 11px; border: 0;
+  background: rgba(0, 0, 0, .06); color: var(--ink); border-radius: 7px; cursor: pointer;
 }
 .checks-bar button:disabled, .chk-cmd button:disabled { opacity: .45; cursor: default; }
 .checks-bar label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: var(--muted); }
