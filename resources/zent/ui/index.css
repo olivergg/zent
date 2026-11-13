@@ -14,13 +14,8 @@
      merely-woven/external (indigo) at a glance, closer to how most
      dashboards use green for healthy. */
   --verdigris: #2a6d45;
-  /* the warp's own greys (index.js drawWarp): a level's hairline, a thread
-     still slack, a :related coupling */
-  --hairline:  #d6d3ca;
-  --slack:     #c9c6bd;
+  /* a :related coupling's dotted line (index.js drawWarp) */
   --related:   #8d8880;
-  /* a one-shot's strip under its card: linen washed in indigo */
-  --strip:     color-mix(in srgb, var(--indigo) 10%, var(--card));
   /* the logs terminal: indigo-dyed ink, not a foreign dark theme */
   --term-bg:   #141829;
   --term-bar:  #1b2038;
@@ -40,12 +35,12 @@
   --glass-edge: 0 0 0 .5px rgba(0, 0, 0, .12), 0 8px 30px rgba(0, 0, 0, .06);
 
   --rail: 330px;
-  --head: 54px;
+  --head: 76px;
 }
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; }
+html, body { height: 100%; overflow: hidden; }
 
 body {
   margin: 0;
@@ -59,12 +54,15 @@ body {
 
 /* ---------------------------------------------------------------- header */
 
+/* the toolbar: a frosted bar floating over the board */
 .masthead {
-  height: var(--head);
+  height: 48px;
+  margin: 14px 16px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 0 22px;
+  gap: 16px;
+  padding: 0 14px 0 18px;
   position: relative;
   z-index: 3;
   background: var(--glass);
@@ -90,9 +88,30 @@ body {
 .run { --led: var(--verdigris); display: inline-flex; align-items: stretch; border-radius: 8px; overflow: hidden; background: #fff;
        box-shadow: 0 0 0 .5px rgba(0, 0, 0, .18), 0 1px 2px rgba(0, 0, 0, .06); }
 .run[data-state="idle"] { background: rgba(0, 0, 0, .04); box-shadow: none; }
-.run-label { display: flex; flex-direction: column; justify-content: center; padding: 3px 12px; line-height: 1.2; }
+.run-label { display: flex; flex-direction: column; justify-content: center; padding: 3px 26px 3px 12px; line-height: 1.2;
+  font: inherit; text-align: left; color: inherit; background: none; border: 0; cursor: pointer; position: relative; }
+.run-label::after { content: ""; position: absolute; right: 10px; top: 50%; width: 5px; height: 5px; margin-top: -4px;
+  border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.run-label:hover { background: rgba(0, 0, 0, .04); }
+/* the presets, and the run's figures, under the preset's name */
+.masthead { z-index: 6; }
+.run-menu { position: absolute; left: 250px; top: 54px; z-index: 6; width: 300px; max-height: 75vh; overflow: auto; padding: 14px; border-radius: 12px;
+  background: rgba(255, 255, 255, .94); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .14), 0 14px 40px rgba(0, 0, 0, .16); }
+.run-menu[hidden] { display: none; }
+.run-menu h2 { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
+.run-menu h2:not(:first-child) { margin-top: 16px; }
+#mode button { font: inherit; font-weight: 500; color: var(--muted); padding: 4px 12px; border: 0; border-radius: 6px; background: none; cursor: pointer; }
+/* which one you're looking at can't be missed: Running in the up-green, Preview in blue - and a
+   preview frames the whole board in that blue */
+#mode button[aria-pressed="true"] { color: #fff; background: #28b463; box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+#mode button[aria-pressed="true"][data-mode="preview"] { background: #0a84ff; }
+#mode button[aria-pressed="true"]::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: #fff; vertical-align: 1px; }
+.loom[data-preview="true"] { --board-dot: #bcd6f5; box-shadow: inset 0 0 0 2px #0a84ff; border-radius: 12px; }
+.loom[data-preview="true"]::before { content: "Preview - nothing here is running"; position: absolute; top: 0; left: 0; z-index: 4;
+  padding: 3px 10px; border-radius: 0 0 8px 0; font-size: 11px; font-weight: 600; color: #fff; background: #0a84ff; white-space: nowrap; }
+#mode button:disabled { opacity: .4; cursor: default; }
 .run-label small {
-  font-family: var(--display); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+  font-size: 10px;
   color: var(--muted); display: flex; align-items: center; gap: 5px;
 }
 .run[data-state="live"] .run-label small::before,
@@ -108,16 +127,12 @@ body {
 .run[data-health] .run-label small::before { box-shadow: 0 0 0 3px color-mix(in srgb, var(--led) 22%, transparent); }
 .run:is([data-health="starting"], [data-health="stopping"]) .run-label small::before { animation: led 1.4s ease-in-out infinite; }
 @keyframes led { 50% { opacity: .3; } }
-.preset { font-family: var(--display); letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; }
-.run[data-state="idle"] .preset { display: none; }
+.preset { font-size: 13px; font-weight: 600; letter-spacing: -.01em; }
 
 .run-toggle {
-  font-family: var(--display);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 0 16px;
+  font: inherit;
+  font-weight: 600;
+  padding: 0 14px;
   border: none;
   cursor: pointer;
   color: #fff;
@@ -208,34 +223,37 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .loom {
   position: relative;
   overflow: auto;
-  padding: 34px 40px 40px;
+  /* the bottom: room for the legend floating there */
+  padding: 34px 40px 80px;
   display: flex;
-  /* column: the preview banner (when shown) stacks above .levels rather
-     than beside it - .warp is position:absolute so it never joins this
-     flow either way, so this only ever affects the banner/.levels pair. */
-  flex-direction: column;
   /* the drawing board's grid; `local` so it scrolls with the graph */
   background: var(--board) radial-gradient(circle, var(--board-dot) 1px, transparent 1.2px) 0 0 / 16px 16px;
   background-attachment: local;
 }
 
-/* the warp: hairlines the fabric is woven across */
+/* the wiring (index.js drawWarp): one bus per source, in its source's state */
 .warp { position: absolute; inset: 0; pointer-events: none; }
-/* a thread names its two ends on hover */
-.warp .thread { pointer-events: stroke; }
-/* a thread just pulled taut: one shuttle crossing it, dependency to
-   dependent - a single dash (--len: the path's length, set by drawWarp),
-   parked off the path at rest */
-.warp .shuttle {
-  fill: none;
-  stroke: var(--indigo);
-  stroke-width: 3.2;
-  stroke-linecap: round;
-  stroke-dasharray: 18px calc(1px * var(--len));
-  stroke-dashoffset: 18px;
-  animation: shuttle 1000ms cubic-bezier(.65, 0, .35, 1);
-}
-@keyframes shuttle { from { stroke-dashoffset: 18px; } to { stroke-dashoffset: calc(-1px * var(--len)); } }
+.warp path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.warp .bus { --w: #b8b8bf; transition: opacity 200ms ease; }
+.warp .bus.ok { --w: #28b463; }
+.warp .bus.wait { --w: #e8a200; }
+.warp .bus.bad { --w: #e5463b; }
+.warp .bus path { stroke: var(--w); }
+.warp .bus.wait path { stroke-dasharray: 6 5; }
+.warp .bus.bad path { stroke-dasharray: 2 5; }
+.warp .bus circle { fill: #fff; stroke: var(--w); stroke-width: 1.5; }
+.warp .tag { pointer-events: all; cursor: help; }
+.warp .tag rect { fill: #fff; stroke: rgba(0, 0, 0, .1); }
+.warp .tag text { font: 600 10px var(--font); fill: var(--muted); }
+.warp[data-focus="true"] .bus:not(.lit) { opacity: .1; }
+.warp .bus.lit path { stroke-width: 2.6; }
+.warp .related { stroke: var(--related); stroke-width: 1.4; stroke-dasharray: 1 5; }
+.warp .related.faded { opacity: .2; }
+/* the waiting wires again, alone on their layer: they breathe while something starts - opacity only */
+.warp.flow { will-change: opacity; animation: breathe 1.6s ease-in-out infinite; }
+.warp.flow:empty { display: none; }
+.warp.flow path { stroke: #ffd36b; stroke-width: 3; }
+@keyframes breathe { 0%, 100% { opacity: 0; } 50% { opacity: .9; } }
 
 /* `zoom` rather than `transform: scale()` on purpose: it affects layout,
    so .loom's own scrollbars keep reaching the whole fabric instead of
@@ -244,142 +262,75 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .loom[data-panning="true"] { cursor: grabbing; }
 .loom[data-panning="true"] .node { pointer-events: none; }
 
-/* previewing a preset that isn't running: the whole fabric reads as a
-   sketch, not a report - dashed cards, no health colour (nothing IS
-   healthy yet, this is a plan) - so it can never be mistaken for the
-   live view at a glance. Its cards are linen gauze: the live fabric shows
-   through, out of focus, without the two mixing. */
+/* previewing a preset that isn't running: a sketch, not a report - dashed outlines, LEDs and wires
+   unlit (nothing IS healthy yet, this is a plan) - so it can't be mistaken for the live view */
 .loom[data-preview="true"] #levels .node {
-  border-style: dashed;
-  background: color-mix(in srgb, var(--card) 80%, transparent);
+  outline: 1px dashed rgba(0, 0, 0, .35);
+  outline-offset: 2px;
 }
 .loom[data-preview="true"] #levels .node .actions { display: none; }
-/* a strip keeps its tint: transparent, it reads as one more dashed box
-   rather than part of the card above */
-.loom[data-preview="true"] #levels .node.satellite { background: var(--strip); }
 
-/* ...and the live fabric under it, laid out as it runs but out of focus and
-   faded: what the plan would change, still there. Blur and opacity only -
-   one composited layer; nothing in it takes a click. */
-.levels.ghost {
-  /* centred in the loom's padding box, as the live view sits when shown */
-  position: absolute;
-  inset: 34px 40px 40px;
-  width: fit-content;
-  height: fit-content;
-  filter: blur(4px) saturate(.7);
-  opacity: .32;
-  pointer-events: none;
-}
-.levels.ghost:empty { display: none; }
-
-/* the `display: flex` below only applies while the banner isn't hidden -
-   the native [hidden] attribute is display:none by default, but an
-   author rule setting `display` on the same element overrides that, so
-   without this guard the (empty, until a preview starts) banner rendered
-   as a visible box even when hidden was set. */
-.preview-banner[hidden] { display: none; }
-.preview-banner {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: -34px -40px 20px;
-  padding: 10px 40px;
-  /* a dark frosted bar: still unmistakably "not what runs", the grid showing through */
-  background: rgba(23, 27, 46, .86);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  color: #f2f2f4;
-  font-family: var(--display);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 11px;
-}
-.preview-banner button {
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  background: none;
-  border: 1px solid var(--linen);
-  color: var(--linen);
-  padding: 4px 10px;
-  cursor: pointer;
-}
-.preview-banner .plan { flex: 1; opacity: 0.75; text-transform: none; letter-spacing: 0.02em; }
-.preview-banner .plan span[title] { border-bottom: 1px dotted; cursor: help; }
-.preview-banner button:hover { background: var(--linen); color: var(--ink); }
-.preview-banner .play { border-color: var(--verdigris); background: var(--verdigris); }
-
+/* rows, in start order: a row starts once what it waits for in the rows above is ready; the buses
+   run in the gap under each (index.js drawWarp sets it) */
 .levels {
   position: relative;
   display: flex;
-  gap: 48px;
-  align-items: flex-start;      /* rows line up across levels, so it reads as a weave */
-  /* auto margins centre a small fabric without clipping a large one the way
+  flex-direction: column;
+  /* auto margins centre a small graph without clipping a large one the way
      justify-content: center would once it overflows */
   margin: auto;
 }
+.level { position: relative; display: flex; gap: var(--gap, 48px); align-items: flex-start; padding-top: 26px; border-top: 1px dashed rgba(0, 0, 0, .1); }
+.level .lane { position: absolute; left: 0; top: 5px; font-size: 11px; font-weight: 600; color: #a1a1a6; cursor: help; }
+.stack { width: 186px; flex: none; }
 
-.level { display: flex; flex-direction: column; gap: 16px; width: 230px; flex: none; }
+/* a one-shot with a place of its own: a capsule - its pip the state, hatched while on demand */
+.node[data-kind="one-shot"] { width: auto; padding: 7px 12px 7px 10px; border-radius: 8px; white-space: nowrap; }
+/* its run and stop come beside it, not over its words */
+.node[data-kind="one-shot"] > .actions { top: 5px; right: auto; left: calc(100% + 4px); }
+.stack:has(> .node[data-kind="one-shot"]) { width: auto; }
+.node .capsule { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.node .capsule i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #b8b8bf; }
+.node .capsule .name { font-size: 12px; }
+.node .capsule .state { font-weight: 400; color: var(--muted); font-size: 11px; }
+.node .capsule[data-state="done"] i { background: #28b463; }
+.node .capsule[data-state="running"] i { background: var(--weld); animation: led 1s steps(2, jump-none) infinite; }
+.node .capsule[data-state="failed"] i { background: #e5463b; }
+.node:has(.capsule[data-state="ondemand"]) { background: repeating-linear-gradient(135deg, #fff7e8 0 4px, #fde9c4 4px 8px); box-shadow: 0 0 0 1px rgba(255, 159, 10, .7); }
+.node .capsule[data-state="ondemand"] { color: #b06d00; }
+.node .capsule[data-state="ondemand"] i { background: transparent; box-shadow: inset 0 0 0 1.5px #ff9f0a; }
+/* what a one-shot reads (:source-env): one checkout per row, once selected */
+.node .source-env { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 4px; }
+.node:not([data-selected="true"]) .source-env { display: none; }
 
-/* a card and the :attached-to one-shots it carries, as strips under it -
-   jobs run against the component, not services of their own */
-.stack { display: flex; flex-direction: column; }
-/* hangs from the card: flush under it, inset, no top border of its own */
-.node.satellite {
-  z-index: 1;
-  width: calc(100% - 20px);
-  margin-left: 10px;
-  border-top: none;
-  padding: 4px 26px 4px 8px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 6px;
-  font-size: 10.5px;
-  background: var(--strip);
-  border-color: var(--c, color-mix(in srgb, var(--indigo) 28%, var(--card)));
-}
-/* a host's one-shots folded into one line, dyed by the most urgent of them */
-.strips-fold {
-  z-index: 1;
-  width: calc(100% - 20px);
-  margin-left: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 4px;
-  padding: 3px 8px;
-  font: inherit;
-  font-size: 10.5px;
-  text-align: left;
-  color: color-mix(in srgb, var(--c, var(--indigo)) 70%, var(--ink));
-  background: color-mix(in srgb, var(--c, var(--indigo)) 10%, var(--card));
-  border: 1px solid color-mix(in srgb, var(--c, var(--indigo)) 35%, var(--card));
-  border-top: none;
-  border-left: 3px solid var(--c, var(--indigo));
-  cursor: pointer;
-}
-.strips-fold:hover { background: color-mix(in srgb, var(--c, var(--indigo)) 18%, var(--card)); }
-.strips-fold[aria-expanded="true"] { border-bottom-style: dashed; }
-.strips-fold .fold-mark { width: 10px; }
-.strips-fold .fold-part { white-space: nowrap; }
-.strips-fold[data-status="ready"] { border-left-style: dashed; }
-.strips-fold:is([data-status="starting"], [data-status="queued"]) { --c: var(--weld); }
-.strips-fold:is([data-status="failed"], [data-status="unready"], [data-status="skipped"]) { --c: var(--madder); }
-.strips-fold:is([data-status="stopped"], [data-status="off"]) { --c: var(--grey); }
-
-/* a script name breaks between scripts, never mid-name */
-.node.satellite .name { font-size: 11px; letter-spacing: 0.02em; text-transform: none; flex: 1; overflow-wrap: normal; }
-/* read on an indigo-washed strip: a shade deeper than muted */
-.node.satellite .desc { flex-basis: 100%; padding-left: 14px; color: color-mix(in srgb, var(--muted) 80%, var(--ink)); font-size: 10px; }
-/* what a one-shot reads (:source-env): one checkout per row, under its description */
-.node .source-env { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; }
-.node.satellite .source-env { flex-basis: 100%; padding-left: 14px; }
-.node.satellite .actions { top: 1px; }
-.node.satellite .fray { flex-basis: 100%; margin-top: 2px; }
+/* sockets (index.js drawWarp): panel-mount jacks standing out of the plate's edge, seen side on - a
+   hex nut against the plate (its facets catching the light), a threaded sleeve, an insulating ring
+   at its mouth. Inputs, along the top, are steel with a blue ring that turns green and glows once
+   what they wait for is ready; outputs, under the plate, are brass. */
+.node > .pin { position: absolute; width: 14px; height: 5px; cursor: help; border-radius: 1px; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .45), 0 1px 2px rgba(0, 0, 0, .3);
+  background: linear-gradient(90deg, #7d838e 0 14%, #f4f6f8 14% 20%, #dfe2e7 20% 42%, #a9aeb8 42% 60%, #eceef2 60% 82%, #747a85 82%); }
+.node > .pin::before { content: ""; position: absolute; left: 3px; width: 8px; height: 4px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .28), transparent 30%, rgba(255, 255, 255, .5) 50%, transparent 70%, rgba(0, 0, 0, .3)),
+              repeating-linear-gradient(180deg, #e3e6ea 0 1px, #8f95a0 1px 2px); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .4); }
+.node > .pin::after { content: ""; position: absolute; left: 2px; width: 10px; height: 2px; border-radius: 1px; background: linear-gradient(#5aaeff, #0a6fe0); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .35); }
+.node > .pin.in { top: -5px; }
+.node > .pin.in::before { bottom: 5px; }
+.node > .pin.in::after { bottom: 9px; }
+.node > .pin.in.ok::after { background: linear-gradient(#7af0a4, #1fa055); box-shadow: 0 0 5px 1px rgba(52, 196, 108, .9); }
+.node > .pin.out { bottom: -5px; left: calc(50% - 7px);
+  background: linear-gradient(90deg, #7a5a12 0 14%, #fff1b8 14% 20%, #f0d27a 20% 42%, #c39a36 42% 60%, #f6dd8e 60% 82%, #6f510f 82%); }
+.node > .pin.out::before { top: 5px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .28), transparent 30%, rgba(255, 255, 255, .5) 50%, transparent 70%, rgba(0, 0, 0, .3)),
+              repeating-linear-gradient(180deg, #f3dc92 0 1px, #a37f25 1px 2px); }
+.node > .pin.out::after { top: 9px; background: linear-gradient(#3a3d46, #17181c); }
+/* a wire's plug (drawWarp): a metal tip in the socket, a moulded body with a gloss down its length,
+   a band in its end's colour - blue at an input, brass at an output - and a ribbed strain relief */
+.warp .plug .tip { fill: url(#plug-metal); stroke: rgba(0, 0, 0, .4); stroke-width: .5; }
+.warp .plug .body { fill: url(#plug-body); stroke: rgba(0, 0, 0, .55); stroke-width: .5; }
+.warp .plug .band.in { fill: #2f93ff; } .warp .plug .band.out { fill: #e2bd5c; }
+.warp .bus .plug .relief { stroke: #2a2c33; stroke-width: 4.5; stroke-dasharray: 1.1 .8; stroke-linecap: butt; }
+.warp .bus .plug rect { stroke-dasharray: none; }
+.warp .bus path { stroke-width: 2.6; }
 
 /* ----------------------------------------------------------------- nodes */
 
@@ -391,10 +342,15 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   text-align: left;
   font: inherit;
   color: inherit;
-  padding: 10px 12px 11px;
-  background: var(--card);
-  border: 1px solid var(--c, var(--grey));
-  border-left-width: 3px;
+  /* a faceplate: brushed aluminium, its ear (the kind) down the left edge */
+  border: 0;
+  padding: 9px 12px 10px 23px;
+  border-radius: 9px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 1px, rgba(255, 255, 255, .35) 1px 2px, rgba(0, 0, 0, .018) 2px 3px),
+    linear-gradient(180deg, #fbfbfc 0%, #eceef1 48%, #e2e4e8 100%);
+  box-shadow: inset 0 1px 0 #fff, inset 0 -1px 0 rgba(0, 0, 0, .08), 0 0 0 .5px rgba(0, 0, 0, .22),
+              0 2px 3px rgba(0, 0, 0, .08), 0 10px 22px rgba(0, 0, 0, .08);
   cursor: pointer;
   transition: border-color 240ms ease, background 240ms ease, box-shadow 240ms ease, transform 160ms ease,
               opacity 200ms ease;
@@ -402,25 +358,62 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 /* hovering a card: it and its neighbours stay, the rest of the fabric steps back */
 .loom[data-hovering="true"] .node[data-near="false"] { opacity: .35; }
 
-/* a card and its strips move as one piece */
-.stack:hover > .node { transform: translateX(2px); }
 /* keyboard focus: one indigo ring everywhere, linen on the dark terminal */
 :focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
 .logs-view :focus-visible { outline-color: var(--term-fg); }
 
-/* ∞ on the name's band */
-.node .permanent {
-  padding: 0 4px;
-  font-size: 9px;
-  color: #fff;
-  border: 1px solid #ffffffa0;
-}
+/* the ear: anodised in the kind's family colour, two screws - gold on a :permanent plate */
+.node .ear { position: absolute; left: 0; top: 0; bottom: 0; width: 13px; border-radius: 9px 0 0 9px; cursor: help;
+  background: linear-gradient(90deg, #a5a5ab, #7c7c82); box-shadow: inset -1px 0 0 rgba(0, 0, 0, .18), inset 1px 1px 0 rgba(255, 255, 255, .35); }
+.node .ear[data-family="compose"] { background: linear-gradient(90deg, #3d93ff, #0a6fe0); }
+.node .ear[data-family="quarkus"] { background: linear-gradient(90deg, #cc7cf5, #a23fd8); }
+.node .ear[data-family="one-shot"] { background: linear-gradient(90deg, #ffb340, #e08a00); }
+.node .ear[data-family="k8s"] { background: linear-gradient(90deg, #5fd0c4, #1f9d90); }
+.node .ear[data-family="external"] { background: repeating-linear-gradient(135deg, #a5a5ab 0 4px, #c9c9ce 4px 8px); }
+.node .ear i { position: absolute; left: 3px; width: 7px; height: 7px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #c9cbd0 45%, #8a8d94); box-shadow: 0 .5px 0 rgba(0, 0, 0, .35); }
+.node .ear i:first-child { top: 7px; } .node .ear i:last-child { bottom: 7px; }
+.node:has(.permanent) .ear i { background: radial-gradient(circle at 35% 30%, #fff6d6, #e0b44f 45%, #9c7420); }
+.node .permanent { position: absolute; right: 8px; top: -8px; padding: 1px 7px; font-size: 9px; font-weight: 600; color: #8a6514; background: #fffaf0;
+  border-radius: 999px; box-shadow: 0 0 0 .5px rgba(224, 180, 79, .9); cursor: help; }
+/* the state, a LED behind a lens: dyed by --c, glowing once the state is a settled one */
+.node .led { width: 10px; height: 10px; flex: none; margin: 0 2px 0 auto; border-radius: 50%; cursor: help;
+  background: radial-gradient(circle at 35% 30%, #fff8, transparent 60%), var(--led, #9a9da4);
+  box-shadow: 0 0 0 2px #d3d5da, 0 0 0 2.5px rgba(0, 0, 0, .12); }
+.node:is([data-status="up"], [data-status="external"]) { --led: #28b463; }
+.node[data-status="starting"] { --led: #e8a200; }
+.node:is([data-status="failed"], [data-status="unready"], [data-status="skipped"]) { --led: #e5463b; }
+.node:is([data-status="up"], [data-status="external"], [data-status="failed"], [data-status="starting"]) .led {
+  box-shadow: 0 0 0 2px #d3d5da, 0 0 7px 1px color-mix(in srgb, var(--led) 65%, transparent); }
+/* starting: a ring scaling out of the LED - transform and opacity only */
+.node[data-status="starting"] .led { position: relative; }
+.node[data-status="starting"] .led::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid rgba(232, 162, 0, .7);
+  will-change: transform, opacity; animation: ring 1.6s ease-out infinite; }
+@keyframes ring { from { transform: scale(.55); opacity: 1; } to { transform: scale(1.7); opacity: 0; } }
+.node .kind { display: block; font-size: 10.5px; color: var(--muted); }
+/* what the LED can't say: what it still waits for */
+.node .note { display: block; margin-top: 4px; font-size: 11px; }
+.node .note.wait { color: #a37200; }
+/* a port: a half-round boss on the plate's right edge, a jack in it, the number engraved beside */
+.node { display: flow-root; }
+.node .room { float: right; width: 0; height: calc(var(--n) * var(--pitch, 24px)); }
+.node .room.dense, .node .room.dense ~ .socket { --pitch: 15px; }
+.node .room.dense ~ .socket { height: 14px; }
+.node .room.dense ~ .socket::before { top: 0; }
+.node .room.dense ~ .socket b { top: 1px; }
+.node .socket { position: absolute; right: -8px; top: calc(11px + var(--i) * var(--pitch, 24px)); width: 8px; height: 20px; border-radius: 0 10px 10px 0;
+  background: linear-gradient(90deg, #e4e6ea, #f6f7f8 40%, #d2d5da); box-shadow: inset -1px 0 0 rgba(0, 0, 0, .12), 1px 1px 2px rgba(0, 0, 0, .12); cursor: help; }
+.node .socket::before { content: ""; position: absolute; left: -5px; top: 3px; width: 13px; height: 13px; border-radius: 50%;
+  background: radial-gradient(circle, #141416 0 2.4px, #5d6068 2.8px 3.6px, #f4f5f7 4px 5px, #a3a6ad 5.6px); }
+.node .socket.live::before { background: radial-gradient(circle, #141416 0 2.4px, #34c46c 2.8px 4.2px, #f4f5f7 4.6px 5.2px, #a3a6ad 5.8px);
+  box-shadow: 0 0 5px rgba(52, 196, 108, .7); }
+.node .socket b { position: absolute; left: 11px; top: 4px; font: 600 9px/12px var(--mono); color: #9a9da4; text-shadow: 0 1px 0 #fff; }
+.node .socket.live b { color: #3f8a5c; }
 
 .node .name {
-  font-family: var(--display);
-  font-size: 13.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -.01em;
   /* a long name wraps rather than widening the column: the whole graph has
      to stay visible without scrolling, since "what broke" is the point */
   overflow-wrap: anywhere;
@@ -437,19 +430,46 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   margin-top: 4px;
 }
 .node .meta .state { margin-left: auto; flex: none; }
+/* the plate says only what the LED can't: a settled or not-yet-started state goes without words, and
+   the folder and repo shortcuts wait for the pointer */
+.node:is([data-status="up"], [data-status="external"], [data-status="queued"], [data-status="off"], [data-status="stopped"]) .meta .state,
+.node:not(:hover, :focus-within) .meta :is(.workdir-open, .repo-link) { display: none; }
+.node .meta { margin: 0; min-height: 0; }
+.node .meta .state { margin-left: 0; font-size: 11px; }
+.node .meta :is(.workdir-open, .repo-link) { position: absolute; top: 28px; right: 10px; background: #f4f5f7; }
+.node .meta .repo-link { right: 34px; padding: 0 3px; }
+/* a compose's services: named on the kind line - a chip only for one that isn't healthy */
+.node .svc:is([data-health="ok"], [data-health=""]) { display: none; }
+/* one-shots: buttons in a recess - the pip is the state, pressed in once done, hatched on demand */
+.node .shots { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; padding: 4px; border-radius: 6px; background: #dfe1e6;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15), 0 1px 0 #fff; }
+.node .shot { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 7px 2px 5px; border-radius: 5px; font-size: 10.5px;
+  background: linear-gradient(#fff, #eef0f3); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .2), 0 1px 1px rgba(0, 0, 0, .1); cursor: pointer; }
+.node .shot > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node .shot i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #b8b8bf; box-shadow: 0 0 0 1px rgba(0, 0, 0, .12); }
+.node .shot[data-state="done"] { background: linear-gradient(#eef0f3, #f8f9fa); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .18); }
+.node .shot[data-state="done"] i { background: #28b463; box-shadow: 0 0 4px rgba(40, 180, 99, .8); }
+.node .shot[data-state="running"] i { background: var(--weld); animation: led 1s steps(2, jump-none) infinite; }
+.node .shot[data-state="failed"] { color: var(--madder); } .node .shot[data-state="failed"] i { background: #e5463b; }
+.node .shot[data-state="ondemand"] { background: repeating-linear-gradient(135deg, #fff7e8 0 4px, #fde9c4 4px 8px); box-shadow: 0 0 0 1px rgba(255, 159, 10, .7); color: #b06d00; }
+.node .shot[data-state="ondemand"] i { background: transparent; box-shadow: inset 0 0 0 1.5px #ff9f0a; }
+.node .shot .act.run { display: none; padding: 0 0 0 2px; font-size: 9px; color: #0a84ff; }
+.node .shot:hover .act.run { display: inline; }
+/* git: the branch in its window; what blocks or asks for a click stays, the rest shows once selected */
+.node:not([data-selected="true"]) .git :is(.from, .ahead:not(.lose), .dirty:not(.lose), .plan:not(.lose), .behind) { display: none; }
+.node:not([data-selected="true"]) .git .behind + .git-act { display: none; }
 .node .clock { margin-left: 5px; opacity: .75; font-variant-numeric: tabular-nums; }
-.node .glyph { font-style: normal; font-size: 11px; color: var(--ink); }
 
 /* status: one dye (--c), for a card (its border and state; the cards it
    settled on are washed in it and cast its shade), the legend's swatch and
    the run's tally. up and external are both verdigris (both mean "confirmed
    healthy") - the dashed border is what still marks external as "zent
    didn't start this", not a different colour */
-.node:is([data-status="up"], [data-status="external"]), .legend :is(.up, .external), .tally .t-up { --c: var(--verdigris); }
-.node:is([data-status="done"], [data-status="ready"]), .legend .done, .tally .t-done { --c: var(--indigo); }
-.node[data-status="stopping"], .legend .stopping { --c: var(--grey); }
-.node[data-status="starting"], .legend .starting, .tally .t-starting { --c: var(--weld); }
-.node:is([data-status="failed"], [data-status="unready"], [data-status="skipped"]), .legend .failed,
+.node:is([data-status="up"], [data-status="external"]), .tally .t-up { --c: var(--verdigris); }
+.node:is([data-status="done"], [data-status="ready"]), .tally .t-done { --c: var(--indigo); }
+.node[data-status="stopping"] { --c: var(--grey); }
+.node[data-status="starting"], .tally .t-starting { --c: var(--weld); }
+.node:is([data-status="failed"], [data-status="unready"], [data-status="skipped"]),
 .tally :is(.t-failed, .t-unready, .t-skipped) { --c: var(--madder); }
 /* skipped: an apply left it out, a dependency having failed - dashed, nothing ran */
 .node[data-status="skipped"] { border-style: dashed; }
@@ -463,12 +483,6 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node[data-status="stopping"] { opacity: 0.75; }
 /* unready: running but its readiness failing, between up and failed */
 .node[data-status="unready"] { border-style: dashed; }
-.node:is([data-status="up"], [data-status="external"], [data-status="done"],
-         [data-status="failed"], [data-status="unready"]) {
-  /* the band carries the dye now: the body only a hint of it */
-  background: color-mix(in srgb, var(--c) 6%, var(--card));
-  box-shadow: 0 12px 22px -14px var(--c);
-}
 .node:is([data-status="ready"], [data-status="stopping"], [data-status="unready"]) .state { font-style: italic; }
 .node[data-status="off"],
 .node[data-status="stopped"]  { opacity: 0.5; font-style: italic; }
@@ -478,16 +492,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
    stopped keeps its reload button (faded like the rest of the card until
    hovered, same as any other node) so a manual stop is reversible. */
 .node[data-status="off"] .actions { display: none; }
-.node[data-selected="true"]   { box-shadow: 3px 3px 0 var(--ink); }
-
-/* queued: not yet touched, distinct from off - a soft glow rather than a
-   colour, so "about to happen" reads as different from "static/ignored"
-   without borrowing weld/madder/indigo's own meanings. */
-.node[data-status="queued"] { animation: glow 1.8s ease-in-out infinite; }
-@keyframes glow {
-  0%, 100% { background: var(--card); }
-  50%      { background: #ffffff; }
-}
+.node[data-selected="true"]   { box-shadow: inset 0 1px 0 #fff, 0 0 0 2px #0a84ff, 0 10px 30px rgba(10, 132, 255, .2); }
 
 /* motion follows the stack (index.js noteChanges): a card joining rises in,
    column after column, in dependency order; a status change washes the card
@@ -498,6 +503,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   position: absolute;
   inset: 0;
   z-index: -1;
+  border-radius: inherit;
   background: var(--c, var(--grey));
   opacity: 0;
   transform-origin: left;
@@ -560,54 +566,57 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 /* CPU and memory, two hairline meters on one line: grey while calm - a calm stack shows no
    colour at all - weld when busy, madder when stressed; the figures on hover */
 .node .usage {
-  display: flex;
-  gap: 10px;
-  margin-top: 4px;
-  font-size: 9.5px;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
+  /* a level meter, as on an amplifier: two rows of segments in a window milled into the plate -
+     green, then amber, then red as the load climbs - each with its engraved label; the figures on hover */
+  display: grid;
+  gap: 2px;
+  margin-top: 7px;
+  padding: 3px 5px 3px 4px;
+  border-radius: 4px;
+  /* milled into the plate, like the branch's window: the same metal, a shade down */
+  background: #e3e5e9;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .14), 0 1px 0 #fff;
+  font: 600 7.5px/1 var(--mono);
+  cursor: help;
 }
-.node .meter { --m: var(--grey); display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; color: var(--muted); }
-.node .meter i {
-  position: relative;
-  flex: 1;
-  height: 3px;
-  background: color-mix(in srgb, var(--grey) 35%, transparent);
-  overflow: hidden;
-}
-.node .meter i::after {
+.node .meter { display: flex; flex-direction: row-reverse; align-items: center; gap: 5px; min-width: 0; color: #7c8089; }
+.node .meter i { position: relative; flex: 1; height: 5px; }
+/* the segments: unlit ones barely there, lit ones up to --v, cut from one green-amber-red strip */
+.node .meter i::before, .node .meter i::after {
   content: "";
   position: absolute;
   inset: 0;
-  transform-origin: left;
-  transform: scaleX(var(--v, 0));
-  background: var(--m);
-  transition: transform 600ms ease, background 600ms ease;
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 5.5px);
+  mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 5.5px);
 }
-.node .meter b { flex: none; font-weight: inherit; }
-.node .meter.cpu b::before { content: "cpu "; opacity: .7; }
-.node .meter.rss b::before { content: "mem "; opacity: .7; }
-.node .meter[data-level="busy"] { --m: var(--weld); color: color-mix(in srgb, var(--weld) 75%, var(--ink)); }
-.node .meter[data-level="stressed"] { --m: var(--madder); color: var(--madder); font-weight: 600; }
+.node .meter i::before { background: #c9ccd2; }
+.node .meter i::after {
+  background: linear-gradient(90deg, #28b463 0 62%, #e8a200 62% 82%, #e5463b 82%);
+  clip-path: inset(0 calc((1 - var(--v, 0)) * 100%) 0 0);
+  transition: clip-path 600ms ease;
+}
+.node .meter b { flex: none; width: 17px; font-weight: inherit; font-size: 0; letter-spacing: .04em; text-transform: uppercase; }
+.node .meter b::before { font-size: 7.5px; }
+.node .meter.cpu b::before { content: "cpu"; }
+.node .meter.rss b::before { content: "mem"; }
+.node .meter[data-level="busy"] { color: #a37200; }
+.node .meter[data-level="stressed"] { color: #e5463b; }
 
-/* the port is the handle you actually reach the thing by, so it reads as
-   a value, not as more grey prose */
-.node .ports {
-  font-family: var(--mono);
-  color: var(--ink);
-  white-space: nowrap;
-}
-.node .ports.own { flex: none; font-size: 10px; }
 
 /* a checkout in one line: the branch as a label (the one thing here you might be surprised by), cut, its
    full name on hover - dashed in its own worktree; then `cd` */
+.node .git > .branch { flex: 1 1 100%; }
+.node .git > .want { flex: 1 1 100%; min-width: 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 .node .branch {
   min-width: 0;
-  padding: 0 5px;
-  font-size: 9.5px;
-  color: var(--indigo);
-  border: 1px solid var(--indigo);
-  border-radius: 2px;
+  padding: 1px 6px;
+  font: 9.5px var(--mono);
+  color: #3a3a3f;
+  /* an engraved label window */
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: #e3e5e9;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .14), 0 1px 0 #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -616,8 +625,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 /* git chip, a row only when it has something to say: glyphs, the facts on hover; red is what needs acting
    on (off its wanted branch, commits a deploy would drop), weld what's worth a look (behind the default
    branch, running an older commit) */
-.node .git { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; min-width: 0; margin-top: 4px;
-  padding-top: 4px; border-top: 1px dashed var(--hairline); font-size: 9.5px; white-space: nowrap; }
+.node .git { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; min-width: 0; margin-top: 7px;
+  font-size: 9.5px; white-space: nowrap; }
 .node .git > [title] { cursor: help; }
 .node .git > :not(.branch) { flex: none; }
 .node .branch.off, .node .git .want { color: var(--madder); border-color: var(--madder); }
@@ -655,42 +664,20 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .workdir-open:hover { color: var(--indigo); border-color: var(--indigo); }
 .node .workdir-open[data-failed="true"] { color: var(--madder); border-color: var(--madder); }
 
-.node .endpoints { display: flex; flex-wrap: wrap; gap: 0 10px; margin-top: 4px; }
-.node .endpoint {
-  /* the hit area is the text itself */
-  width: fit-content;
-  font-size: 10.5px;
-  font-family: var(--mono);
-  color: var(--verdigris);
-  text-decoration: none;
-  overflow-wrap: anywhere;
-}
-.node .endpoint:hover { text-decoration: underline; }
-
-/* the one moving thing: a pick crossing a component while it starts */
-.node[data-status="stopping"]::after,
-.node[data-status="starting"]::after {
-  content: "";
-  position: absolute;
-  left: 0; bottom: -1px;
-  height: 2px; width: 34%;
-  background: var(--weld);
-  animation: pick 1150ms ease-in-out infinite;
-}
-
-.node[data-status="stopping"]::after { background: var(--grey); animation-direction: reverse; }
-
-@keyframes pick {
-  0%   { transform: translateX(0); }
-  50%  { transform: translateX(196%); }
-  100% { transform: translateX(0); }
-}
+/* the declared links: a strip machined into the plate, one row each - blue once reachable */
+.node .endpoints { display: flex; flex-direction: column; gap: 1px; margin-top: 8px; padding: 3px; border-radius: 6px;
+  background: linear-gradient(#d9dbe0, #e3e5e9); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .18), 0 1px 0 #fff; }
+.node .endpoint { display: flex; align-items: center; padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  color: #0a84ff; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node .endpoint::after { content: "\2197"; margin-left: auto; padding-left: 6px; }
+.node .endpoint.idle { color: var(--muted); cursor: help; }
+.node a.endpoint:hover { background: rgba(10, 132, 255, .1); }
 
 .node .fray {
   display: block;
-  margin-top: 6px;
-  color: var(--madder);
-  font-size: 10.5px;
+  margin-top: 4px;
+  color: #e5463b;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -716,26 +703,10 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 .node .act { padding: 2px 4px; }
 
-/* the name on a band dyed with the state: the card reads at a glance, the body stays quiet */
-.node > .head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: -10px -12px 0;
-  padding: 5px 46px 4px 10px;
-  color: #fff;
-  background: var(--c, var(--grey));
-}
-/* weld is too light for white text: ink on it */
-.node[data-status="starting"] > .head { color: var(--ink); }
-.node[data-status="starting"] > .head .permanent { color: var(--ink); border-color: var(--ink); }
-.node:is([data-status="ready"], [data-status="unready"], [data-status="external"]) > .head {
-  background: repeating-linear-gradient(135deg, var(--c) 0 7px, color-mix(in srgb, var(--c) 80%, #fff) 7px 14px);
-}
-/* the actions sit on the band */
-.node:not(.satellite) > .actions .act { color: #ffffffc0; }
-.node:not(.satellite) > .actions .act:hover { color: #fff; }
-.node[data-status="starting"]:not(.satellite) > .actions .act { color: var(--ink); }
+/* LED, name, then what's rare (permanent); reload/stop come over it on hover */
+.node > .head { display: flex; align-items: center; gap: 7px; }
+.node > .actions { top: 7px; right: 26px; padding: 1px 2px; border-radius: 6px; background: #f4f5f7; opacity: 0; transition: opacity 120ms ease; }
+.node:is(:hover, :focus-within) > .actions { opacity: 1; }
 .node .act:disabled { opacity: 0.25; cursor: default; }
 
 .empty-loom {
@@ -759,8 +730,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .picker { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .preset-row {
   display: flex; align-items: center; gap: 6px;
-  background: var(--card); border: 1px solid var(--grey);
-  padding: 6px 8px;
+  background: rgba(255, 255, 255, .7); border: 1px solid transparent; border-radius: 8px;
+  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .08);
+  padding: 6px 10px;
 }
 /* the applied preset: the whole row in the cards' heads' green - where you are, at a glance */
 .preset-row[data-active="true"] { background: var(--verdigris); border-color: var(--verdigris); color: var(--card); }
@@ -785,12 +757,16 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 /* ------------------------------------------------------------------ rail */
 
+/* the inspector: a frosted panel floating over the board */
 .rail {
-  padding: 22px 20px;
+  margin: 0 16px 16px 0;
+  padding: 16px;
   overflow: auto;
+  border-radius: 12px;
   background: var(--glass);
   -webkit-backdrop-filter: blur(12px) saturate(1.5);
   backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: var(--glass-edge);
 }
 
 #rail-run { display: flex; flex-direction: column; gap: 22px; }
@@ -798,24 +774,65 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 #detail.enter { animation: detail-in 320ms cubic-bezier(.215, .61, .355, 1); }
 @keyframes detail-in { from { opacity: 0; transform: translateY(6px); } }
 
-.rail h2 {
-  font-family: var(--display);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 0 0 10px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--grey);
-}
+.rail :is(h2, h3) { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
+#detail h3 { margin-top: 18px; }
+#detail .head { display: flex; align-items: center; }
+#detail .kind { font-size: 10.5px; color: var(--muted); }
+#detail .kind.bad, #detail .row .bad, #detail .row .fail { color: #e5463b; }
+#detail .row :is(.ok, .pass) { color: #28b463; }
+#detail .row .unknown { color: #e8a200; }
+#detail .title { font-size: 17px; font-weight: 700; letter-spacing: -.02em; color: var(--ink); margin: 10px 0 2px; }
+#detail .led { width: 10px; height: 10px; margin-left: auto; border-radius: 50%; background: #9a9da4; box-shadow: 0 0 0 2px #d3d5da; }
+#detail .led[data-state="up"] { background: #28b463; box-shadow: 0 0 0 2px #d3d5da, 0 0 7px 1px rgba(40, 180, 99, .65); }
+#detail .led[data-state="starting"] { background: #e8a200; box-shadow: 0 0 0 2px #d3d5da, 0 0 7px 1px rgba(232, 162, 0, .6); }
+#detail .led[data-state="failed"] { background: #e5463b; box-shadow: 0 0 0 2px #d3d5da, 0 0 8px 1px rgba(229, 70, 59, .7); }
+#detail .about { margin: 12px 0 0; color: var(--muted); }
+#detail .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+#detail .btn { font: inherit; font-weight: 500; padding: 6px 12px; border: 0; border-radius: 8px; background: rgba(0, 0, 0, .06); color: var(--ink); cursor: pointer; }
+#detail .btn.primary { background: #0a84ff; color: #fff; }
+#detail .btn.danger { color: #e5463b; }
+#detail .rows { border-radius: 10px; background: rgba(255, 255, 255, .7); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .08); }
+#detail .row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-top: .5px solid rgba(0, 0, 0, .08); }
+#detail .row:first-child { border-top: 0; }
+#detail .row > :first-child { color: var(--muted); }
+#detail .row > :last-child { text-align: right; overflow-wrap: anywhere; }
+#detail .row small { margin-left: 4px; opacity: .7; }
 
-.legend { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; font-size: 10.5px; }
-.legend span { display: flex; align-items: center; gap: 7px; color: var(--muted); }
-.legend i { width: 3px; height: 13px; background: var(--c, var(--grey)); }
-/* external and idle as their cards' borders: dashed, dotted */
-.legend .idle i { background: transparent; border-left: 3px dotted var(--grey); }
-.legend .external i { background: transparent; border-left: 3px dashed var(--c); }
+/* what the marks mean, bottom left of the board; each entry explains itself on hover */
+.shell { position: relative; }
+.legend { position: absolute; left: 16px; bottom: 16px; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 9px 14px;
+  border-radius: 12px; font-size: 11.5px; color: var(--muted); background: var(--glass);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5); backdrop-filter: blur(12px) saturate(1.5); box-shadow: var(--glass-edge); }
+.legend > span { display: inline-flex; align-items: center; gap: 6px; cursor: help; }
+.legend .ear { width: 14px; height: 14px; border-radius: 4px; background: linear-gradient(90deg, #a5a5ab, #7c7c82); }
+.legend .ear[data-family="compose"] { background: linear-gradient(90deg, #3d93ff, #0a6fe0); }
+.legend .ear[data-family="quarkus"] { background: linear-gradient(90deg, #cc7cf5, #a23fd8); }
+.legend em { width: 18px; border-top: 2px solid #28b463; }
+.legend em.wait { border-top: 2px dashed #e8a200; }
+.legend em.bad { border-top: 2px dotted #e5463b; }
+.legend .jack { width: 16px; height: 9px; border-radius: 1px; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .45);
+  background: linear-gradient(#5aaeff 0 2.5px, transparent 0), linear-gradient(90deg, #7d838e 0 14%, #f4f6f8 14% 20%, #dfe2e7 20% 42%, #a9aeb8 42% 60%, #eceef2 60% 82%, #747a85 82%); }
+.legend .jack.out { background: linear-gradient(90deg, #7a5a12 0 14%, #fff1b8 14% 20%, #f0d27a 20% 42%, #c39a36 42% 60%, #f6dd8e 60% 82%, #6f510f 82%); }
+.legend .shot { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px 1px 5px; border-radius: 5px; font-size: 10.5px; color: var(--ink);
+  background: #f2f2f5; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .18); }
+.legend .shot i { width: 6px; height: 6px; border-radius: 50%; background: #28b463; }
+body:is([data-tab="logs"], [data-tab="checks"]) .legend { display: none; }
+
+/* the run in three figures, in the toolbar */
+.chips { display: inline-flex; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .05); color: var(--muted); white-space: nowrap; }
+.chip b { color: var(--ink); font-weight: 600; }
+.chip.bad { background: rgba(229, 70, 59, .12); color: #e5463b; }
+.chip.bad b { color: #e5463b; }
+
+/* an explanation, following the pointer (index.js) */
+.tip { position: fixed; z-index: 20; max-width: 280px; padding: 8px 10px; border-radius: 9px; font-size: 11.5px; line-height: 1.4; color: #fff;
+  white-space: pre-line; pointer-events: none; background: rgba(30, 30, 34, .9); box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+  opacity: 0; transition: opacity 120ms ease; }
+.tip.on { opacity: 1; }
+.tip b { display: block; }
+.tip span { color: #c7c7cc; }
+.tip span:empty { display: none; }
 
 .show-stopped {
   display: flex; align-items: center; gap: 6px;
@@ -845,9 +862,6 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .usage-top [data-level="busy"] { color: var(--weld); }
 .usage-top [data-level="stressed"] { color: var(--madder); font-weight: 600; }
 
-.facts { display: grid; grid-template-columns: 74px 1fr; gap: 4px 10px; margin: 0; }
-.facts dt { color: var(--muted); }
-.facts dd { margin: 0; overflow-wrap: anywhere; }
 
 .quiet { color: var(--muted); }
 
@@ -893,8 +907,8 @@ body:not([data-tab="checks"]) .checks-view { display: none; }
 }
 .tab-badge.ok { background: var(--verdigris); }
 .checks-view { height: calc(100vh - var(--head)); display: grid; grid-template-columns: minmax(360px, 42%) 1fr; }
-.checks-view .left { border-right: .5px solid rgba(0, 0, 0, .14); display: flex; flex-direction: column; overflow: auto; }
-.checks-view .right { overflow: auto; padding: 14px 20px; }
+.checks-view .left { border-right: .5px solid rgba(0, 0, 0, .14); display: flex; flex-direction: column; overflow: auto; background: rgba(255, 255, 255, .7); }
+.checks-view .right { overflow: auto; padding: 14px 20px; background: rgba(255, 255, 255, .7); }
 .checks-bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; background: var(--glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: .5px solid rgba(0, 0, 0, .12); position: sticky; top: 0; z-index: 1; }
 .checks-bar button, .chk-cmd button {
   font: inherit; font-size: 11.5px; font-weight: 500; padding: 4px 11px; border: 0;
@@ -983,7 +997,8 @@ ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
 .term .cursor { color: var(--term-dim); padding: 0 1ch; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
-.open-logs { font: inherit; font-size: 11px; background: none; border: 1px solid var(--grey); cursor: pointer; margin-top: 14px; }
+.open-logs { font: inherit; font-size: 11px; background: none; border: 1px solid var(--grey); cursor: pointer; }
+#detail .clock { margin-left: 5px; }
 
 .logs-view {
   height: calc(100vh - var(--head)); display: flex; flex-direction: column;
@@ -1043,15 +1058,16 @@ ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
   max-width: 360px;
   display: flex; flex-direction: column; gap: 2px;
   padding: 9px 14px 10px 12px;
-  background: color-mix(in srgb, var(--c) 8%, var(--card));
-  border: 1px solid var(--ink);
-  border-left: 4px solid var(--c);
-  box-shadow: 0 14px 28px -16px color-mix(in srgb, var(--ink) 55%, transparent);
+  border-radius: 10px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: inset 4px 0 0 var(--c), var(--glass-edge);
   cursor: pointer;
   animation: toast-in 380ms cubic-bezier(.215, .61, .355, 1);
 }
 .toast[data-kind="failed"] { --c: var(--madder); }
-.toast b { font-family: var(--display); font-weight: 500; font-size: 13px; letter-spacing: .04em; color: var(--c); }
+.toast b { font-weight: 600; font-size: 13px; color: var(--c); }
 .toast span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .toast.leaving { opacity: 0; transform: translateX(16px); transition: opacity 220ms ease, transform 220ms ease; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } }

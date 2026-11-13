@@ -1,9 +1,10 @@
 <!doctype html>
 <!-- zent dashboard.
-     The design thesis: a zent is the thread drawn through the warp on a loom,
-     so the stack is drawn as fabric being woven. Warp = one vertical line per
-     dependency level; components sit on it; the zent thread advances through
-     them in topological order as they come up, and stops where a deploy broke.
+     The design thesis: the stack as a rack on a drawing board. A component is a
+     faceplate - its ear the kind, a LED its state, sockets for what it waits for
+     and what it listens on - and a dependency is a wire, bussed from its source
+     and coloured by that source's state, so what holds a start back reads at once.
+     Every mark explains itself on hover. Rows are the start order.
      Nothing animates at rest - this is meant to sit on a second monitor.
      No remote fonts or CDN: it runs offline, straight out of `bin/zent ... --ui`.
      Its style is index.css, its code index.js. -->
@@ -27,9 +28,26 @@
       <a href="#checks" data-tab="checks" id="checks-tab" hidden>Checks<span class="tab-badge" id="checks-badge" hidden></span></a>
     </nav>
     <div class="run" id="run" data-state="idle">
-      <span class="run-label"><small id="run-caption">no run</small><span class="preset" id="preset"></span></span>
+      <!-- the preset's name opens the presets: pick one to preview it, ▶ to apply it -->
+      <button type="button" class="run-label" id="run-label" aria-expanded="false" aria-controls="run-menu"
+              title="Presets&#10;Pick one to preview it, ▶ to apply it"><small id="run-caption">no run</small><span class="preset" id="preset">presets</span></button>
       <button type="button" class="run-toggle" id="run-toggle" hidden></button>
     </div>
+    <div class="run-menu" id="run-menu" hidden>
+      <h2>Presets</h2>
+      <ul class="picker" id="preset-picker"></ul>
+      <h2>Run</h2>
+      <div id="summary" class="quiet">Nothing running.</div>
+      <label class="show-stopped">
+        <input type="checkbox" id="show-stopped">
+        Show stopped
+      </label>
+    </div>
+    <div class="tabs" id="mode" role="group" aria-label="What the board shows">
+      <button type="button" data-mode="preview" aria-pressed="false" title="Preview&#10;The preset as it would run: nothing is started">Preview</button>
+      <button type="button" data-mode="run" aria-pressed="true" title="Running&#10;What runs now">Running</button>
+    </div>
+    <span class="chips" id="chips"></span>
     <span class="link" id="link">connecting</span>
     <button type="button" class="rail-toggle" id="rail-toggle" aria-pressed="true"
             aria-label="Side panel" title="Hide the side panel">
@@ -42,9 +60,8 @@
 
   <main class="shell" id="shell">
     <section class="loom" id="loom" aria-label="component graph">
-      <div class="preview-banner" id="preview-banner" hidden></div>
-      <div class="levels ghost" id="ghost" aria-hidden="true"></div>
       <svg class="warp" id="warp" aria-hidden="true"></svg>
+      <svg class="warp flow" id="warp-flow" aria-hidden="true"></svg>
       <div class="levels" id="levels"></div>
     </section>
 
@@ -53,38 +70,22 @@
 
     <aside class="rail">
       <div id="rail-run">
-        <div>
-          <h2>presets</h2>
-          <ul class="picker" id="preset-picker"></ul>
-        </div>
-        <div>
-          <h2>run</h2>
-          <div id="summary" class="quiet">Nothing running.</div>
-        </div>
-        <div>
-          <h2>status</h2>
-          <div class="legend">
-            <span class="up"><i></i>up</span>
-            <span class="done"><i></i>done</span>
-            <span class="starting"><i></i>starting</span>
-            <span class="stopping"><i></i>stopping</span>
-            <span class="failed"><i></i>failed</span>
-            <span><i></i>pending</span>
-            <span class="external"><i></i>external</span>
-            <span class="idle"><i></i>idle (kept warm)</span>
-            <span><i></i>off</span>
-          </div>
-          <label class="show-stopped">
-            <input type="checkbox" id="show-stopped">
-            Show stopped
-          </label>
-        </div>
-        <div>
-          <h2>component</h2>
-          <div id="detail" class="quiet">Select a component to see its status.</div>
-        </div>
+        <div id="detail" class="quiet">Select a component to see its status.</div>
       </div>
     </aside>
+    <!-- what the plates' marks mean; each entry says more on hover -->
+    <footer class="legend" id="legend">
+      <span title="Blue ear&#10;Docker containers, run by Docker Compose - a whole compose file, or only some of its services"><i class="ear" data-family="compose"></i>compose</span>
+      <span title="Purple ear&#10;A JVM service zent builds with Maven, then runs"><i class="ear" data-family="quarkus"></i>quarkus</span>
+      <span title="Grey ear&#10;A command run from its repo, as a plain process"><i class="ear"></i>process</span>
+      <span title="A one-shot&#10;A script that runs once: a button on its host's plate, pressed in once done, hatched while it only runs on demand"><span class="shot" data-state="done"><i></i>step</span></span>
+      <span title="Green wire&#10;What it leaves from is ready"><em class="ok"></em>ready</span>
+      <span title="Amber dashes&#10;Still waited for"><em class="wait"></em>waited for</span>
+      <span title="Red dots&#10;What it leaves from is down: nothing after it can start"><em class="bad"></em>source down</span>
+      <span title="Input&#10;A steel jack on a plate's top edge, one per thing it waits for: its blue ring turns green once that is ready"><i class="jack in"></i>input</span>
+      <span title="Output&#10;A brass jack under a plate: every wire plugged there is something waiting for it"><i class="jack out"></i>output</span>
+    </footer>
+    <div class="tip" id="tip" role="tooltip"></div>
   </main>
 
   <section class="checks-view" id="checks-view" aria-label="checks">

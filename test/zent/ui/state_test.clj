@@ -34,6 +34,14 @@
             (is (= "checked out x" (get-in @state/view-state [:command-messages id])))))))
     (reset! state/control [])))
 
+(deftest listening-ports-test
+  (is (= #{"8765" "5432"}
+         (state/listening-ports (str "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n"
+                                     "jolt 26704 me 12u IPv4 0x1 0t0 TCP 127.0.0.1:8765 (LISTEN)\n"
+                                     "ssh 501 me 9u IPv6 0x2 0t0 TCP *:5432 (LISTEN)\n"
+                                     "ssh 501 me 8u IPv4 0x3 0t0 TCP *:5432 (LISTEN)\n"))))
+  (is (= #{} (state/listening-ports nil))))
+
 (deftest set-preset-members-test
   (testing "the view keeps an earlier preset's components, :members names this one's own"
     (let [s (-> state/empty-state

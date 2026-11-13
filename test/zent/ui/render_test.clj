@@ -96,7 +96,40 @@
       (is (str/includes? (render/component-card :svc (assoc cfg :status :external)) "http://x"))
       (is (str/includes? (render/component-card :svc (assoc cfg :status :deploying)) "http://x"))
       (is (not (str/includes? (render/component-card :svc (assoc cfg :status :off)) "http://x")))
-      (is (not (str/includes? (render/component-card :svc (assoc cfg :status :failed)) "http://x"))))))
+      (is (not (str/includes? (render/component-card :svc (assoc cfg :status :failed)) "http://x")))
+      (is (str/includes? (render/component-card :svc (assoc cfg :status :off)) "<span class=\"endpoint idle\" title=\"Not served yet: opens once it is up\">admin</span>")
+          "listed all the same, not clickable"))))
+
+(deftest component-card-shots-test
+  (let [shots [[:seed {:kind :one-shot :status :done :description "Load the data"}]
+               [:purge {:kind :one-shot :status :ready :confirm "Delete rows?"}]
+               [:replay {:kind :one-shot :status :deploying}]]
+        card #(render/component-card :db (merge {:kind :process :status :up :shots shots} %))]
+    (testing "given a host's one-shots, then one button each: its state, what it does on hover, a run that asks first"
+      (let [html (card {})]
+        (is (str/includes? html "data-shot=\"seed\" data-state=\"done\" title=\"seed - done\nLoad the data\""))
+        (is (str/includes? html "data-shot=\"purge\" data-state=\"ondemand\""))
+        (is (str/includes? html "title=\"Run\" hx-post=\"/api/trigger/purge\" hx-swap=\"none\" hx-disabled-elt=\"this\" hx-confirm=\"Delete rows?\""))
+        (is (str/includes? html "title=\"Run again\" hx-post=\"/api/trigger/seed\""))
+        (is (not (str/includes? html "/api/trigger/replay")) "running: nothing to run")))
+    (testing "given an :on-demand one never run, then it says so whatever its status - an apply won't start it"
+      (is (str/includes? (card {:shots [[:purge {:kind :one-shot :status :pending :on-demand true}]]}) "data-state=\"ondemand\""))
+      (is (str/includes? (card {:shots [[:seed {:kind :one-shot :status :pending}]]}) "data-state=\"idle\"")))
+    (testing "in a preview, nothing runs"
+      (is (not (str/includes? (card {:preview? true}) "/api/trigger/"))))))
+
+(deftest component-card-plate-test
+  (testing "the ear says the kind's family - compose-services is compose too - and its port is a socket, lit once up"
+    (let [card #(render/component-card :svc (merge {:kind :quarkus-app :status :up :port 9091} %))]
+      (is (str/includes? (card {}) "<span class=\"ear\" data-family=\"quarkus\""))
+      (is (str/includes? (card {:kind :compose-services :services [:pg :redis]}) "data-family=\"compose\""))
+      (is (str/includes? (card {:kind :compose-services :services [:pg :redis]}) "<span class=\"kind\">compose · pg, redis</span>"))
+      (is (str/includes? (card {:kind :compose-services :services [:a :b :c :d]}) "<span class=\"kind\">compose · 4 services</span>"))
+      (is (str/includes? (card {}) "<span class=\"socket live\" style=\"--i:0\" title=\"localhost:9091\nSomething listens here\"><b>9091</b>"))
+      (is (str/includes? (card {:status :deploying}) "<span class=\"socket\" style=\"--i:0\" title=\"localhost:9091\nNothing listens yet"))
+      (testing "given the ports this machine listens on, then a socket follows them, not the component's state"
+        (is (str/includes? (card {:status :deploying :listening #{"9091"}}) "<span class=\"socket live\""))
+        (is (str/includes? (card {:listening #{"80"}}) "<span class=\"socket\" style"))))))
 
 (deftest component-card-service-rows-test
   (testing "each service gets its own health-classed row"
@@ -105,7 +138,7 @@
                                                               {:service :pg :state "running" :health "unhealthy"}]})]
       (is (str/includes? html "data-health=\"ok\""))
       (is (str/includes? html "data-health=\"bad\""))
-      (is (str/includes? html ":6379"))))
+      (is (str/includes? html "<span class=\"socket live\" style=\"--i:0\" title=\"localhost:6379\nSomething listens here\"><b>6379</b>"))))
 
   (testing "before the stack is up, declared names show with no health yet"
     (let [html (render/component-card :db {:kind :docker-compose :status :pending :services [:redis]})]
@@ -174,31 +207,64 @@
   (testing "nothing selected / component unknown"
     (is (str/includes? (render/detail-panel :ghost nil) "Select a component")))
 
-  (testing "facts, deps joined, handle and error shown only when present/failed"
+  (testing "its kind and state, the error while failed, what it waits for, what to do about it"
     (let [html (render/detail-panel :svc {:kind :process :status :failed :deps [:a :b]
                                           :handle-summary "Process" :error "boom"})]
-      (is (str/includes? html "<dt>kind</dt><dd>process</dd>"))
-      (is (str/includes? html "<dt>waits for</dt><dd>a, b</dd>"))
-      (is (str/includes? html "<dt>handle</dt><dd>Process</dd>"))
-      (is (str/includes? html "<dt>error</dt><dd>boom</dd>"))))
+      (is (str/includes? html "<span class=\"kind\">process</span><span class=\"led\" data-state=\"failed\">"))
+      (is (str/includes? html "<div class=\"kind bad\">boom</div>"))
+      (is (str/includes? html "<div class=\"row\"><span>Waits for</span><span>a, b</span></div>"))
+      (is (str/includes? html "class=\"btn primary\" hx-post=\"/api/trigger/svc\"") "failed: reload is the thing to do")
+      (is (not (str/includes? html "/api/stop/")) "nothing to stop")))
 
   (testing "no deps reads as \"nothing\", no error shown once recovered"
     (let [html (render/detail-panel :svc {:kind :process :status :up :error "stale"})]
-      (is (str/includes? html "<dt>waits for</dt><dd>nothing</dd>"))
-      (is (not (str/includes? html "error"))))))
+      (is (str/includes? html "<span>Waits for</span><span>nothing</span>"))
+      (is (str/includes? html "<div class=\"kind\">up</div>"))
+      (is (not (str/includes? html "stale")))))
+
+  (testing "given its ports, what waits for it and the checks judging it, then a section each"
+    (let [html (render/detail-panel :svc {:kind :quarkus-app :status :up :port 9091 :waited-by [:replay]
+                                          :checks [{:name :events :status :fail} {:name :chain :status nil}]})]
+      (is (str/includes? html "<h3>Ports</h3><div class=\"rows\"><div class=\"row\"><span>localhost:9091</span><span class=\"ok\">Listening</span>"))
+      (is (str/includes? html "<span>Waited for by</span><span>replay</span>"))
+      (is (str/includes? html "<span>events</span><span class=\"fail\">Failed</span>"))
+      (is (str/includes? html "<span>chain</span><span class=\"unknown\">Can't tell</span>"))
+      (is (str/includes? html "class=\"btn danger\" hx-post=\"/api/stop/svc\""))))
+
+  (testing "selected in a preview: nothing is deployed, so nothing to reload or stop"
+    (let [html (render/detail-panel :svc {:kind :process :status :pending :preview? true})]
+      (is (not (str/includes? html "hx-post")))
+      (is (str/includes? html "Show log")))))
 
 (deftest attached-one-shot-card-test
-  (testing "given an :attached-to one-shot, then its card is a one-line strip:
-            name, state and actions, no repo/meta block"
+  (testing "given a one-shot drawn on its own, then its card is a capsule: name, state and actions,
+            what it runs on hover, no repo/meta block"
     (let [html (render/component-card :seed {:kind :one-shot :status :done :repo "r" :attached-to :broker
                                               :scripts ["./SeedA.java" "bin/seed-b.sh some/arg.tsv"] :description "seeds things"})]
-      (is (str/includes? html "SeedA → seed-b") "the scripts it runs, not its name")
-      (is (str/includes? html "title=\"seed\""))
+      (is (str/includes? html "title=\"seeds things\nruns SeedA → seed-b\""))
+      (is (str/includes? html "<span class=\"capsule\" data-state=\"done\""))
+      (is (str/includes? html "<span class=\"name\">seed</span>"))
       (is (str/includes? html "seeds things"))
       (is (str/includes? html "done"))
       (is (str/includes? html "act reload"))
       (is (not (str/includes? html "class=\"meta\"")))
       (is (not (str/includes? html "class=\"repo\""))))))
+
+(deftest capsule-wording-test
+  (testing "until it runs, a capsule says what it is to the stack: where everything leads, or on demand"
+    (let [state #(second (re-find #"class=\"state\">([^<]*)" (render/component-card :job (merge {:kind :one-shot :status :pending} %))))]
+      (is (= "the point of it" (state {:terminus true :on-demand true})))
+      (is (= "on demand" (state {:on-demand true})))
+      (is (= "queued" (state {})))
+      (is (= "running" (state {:terminus true :status :deploying})) "once it runs, its state"))))
+
+(deftest link-follows-its-port-test
+  (let [card #(render/component-card :svc (merge {:kind :process :status :up :links [{:url "http://localhost:8081/x" :label "admin"}]} %))]
+    (testing "given the ports listened on, then a link opens once its own port listens - whatever the component's state"
+      (is (str/includes? (card {:listening #{"8081"} :status :deploying}) "href=\"http://localhost:8081/x\""))
+      (is (str/includes? (card {:listening #{"9"}}) "<span class=\"endpoint idle\"")))
+    (testing "ports unknown: the component's state decides"
+      (is (str/includes? (card {}) "href=\"http://localhost:8081/x\"")))))
 
 (deftest one-shot-labels-test
   (testing "a one-shot reads as a job: not run / queued / running, never stopped"
@@ -252,7 +318,7 @@
     (testing "given every flag up in an :origin worktree, then each count says what it is, what blocks the next sync
               in red, and a test rebase a click away"
       (let [html (card {:git git :wanted-branch "feature/y" :deployed-sha "0000000"})]
-        (is (str/includes? html "&#9095; y</span>"))
+        (is (str/includes? html ">y</span>") "its window shows the bare branch")
         (is (str/includes? html "<span class=\"branch wt\" title=\"feature/y&#10;the preset's :branch: origin's, in a worktree\""))
         (is (str/includes? html "<span class=\"from origin\" title=\"runs origin/feature/y in its own worktree"))
         (is (str/includes? html "&#10227; origin</span>"))

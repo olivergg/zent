@@ -64,10 +64,59 @@
   [s]
   (-> s (str/split #"\s+") first (str/replace #"^.*/" "") (str/replace #"\.[^.]*$" "")))
 
-(def ^:private kind-glyph
-  "A mark per kind - geometric glyphs, not emoji (which render per platform)."
-  {:process "▸" :quarkus-app "▸" :docker-compose "▤"
-   :compose-services "▥" :one-shot "↓" :external "◇" :k8s "⎈"})
+(def ^:private kind-family
+  "The ear's colour: what runs it, as you'd say it - compose-services is still Docker containers."
+  {:docker-compose "compose" :compose-services "compose" :quarkus-app "quarkus" :process "process"
+   :one-shot "one-shot" :external "external" :k8s "k8s"})
+
+(def ^:private kind-tip
+  "What zent does with each kind, the ear's hover."
+  {:docker-compose "Docker containers: zent runs the whole compose file (up --wait) and tears it down with the stack"
+   :compose-services "Docker containers: only these services of the compose file run, the rest of the file stays down"
+   :quarkus-app "A JVM service: zent builds it with Maven, then runs the jar - ready once its health endpoint answers"
+   :process "A command run from its repo, as a plain process zent tracks by pid"
+   :one-shot "A script that runs once and exits"
+   :external "Started outside zent (your IDE): zent only checks that it answers"
+   :k8s "Kubernetes workloads zent rolls out to the cluster"})
+
+(defn- kind-line
+  "Under the name: the kind as you'd say it - for a compose one, how much of the file runs."
+  [{:keys [kind services service-status]}]
+  (let [names (map (comp name #(:service % %)) (or (seq service-status) services))
+        n (count names)]
+    (case kind
+      :docker-compose "compose · whole file"
+      :compose-services (cond (zero? n) "compose · some services"
+                              (<= n 3) (str "compose · " (str/join ", " names))
+                              :else (str "compose · " n " services"))
+      (name kind))))
+
+(defn- ear
+  "The plate's left ear, anodised in its kind's family colour; gold screws when :permanent."
+  [{:keys [kind]}]
+  (str "<span class=\"ear\" data-family=\"" (get kind-family kind "process") "\" title=\"" (esc (str (name kind) "\n" (kind-tip kind)))
+       "\"><i></i><i></i></span>"))
+
+(defn- ports-of
+  "Its ports, as [port live? service]: its own :port, or a compose one's published ports. live?: something
+  listens on it (:listening, the ports this machine listens on) - when that isn't known, its container
+  runs, or it is up."
+  [{:keys [port service-status status listening]}]
+  (let [live? (fn [p guess] (if listening (contains? listening (str p)) guess))]
+    (distinct (or (seq (for [{:keys [service ports state]} service-status, p ports] [p (live? p (= "running" state)) (name service)]))
+                  (when port [[port (live? port (contains? #{:up :external} status))]])))))
+
+(defn- port-sockets
+  "Its ports, as sockets on the plate's right edge, the number beside each, lit when something listens."
+  [c]
+  (when-let [ports (seq (ports-of c))]
+    ;; .room: a zero-width float as tall as the sockets, so the plate never ends above its last one
+    ;; past four, they sit closer: a plate with nine ports stays its own height
+    (apply str "<i class=\"room" (when (> (count ports) 4) " dense") "\" style=\"--n:" (count ports) "\"></i>"
+           (map-indexed (fn [i [p live?]]
+                          (str "<span class=\"socket" (when live? " live") "\" style=\"--i:" i "\" title=\"localhost:" (esc p)
+                               (if live? "\nSomething listens here" "\nNothing listens yet: the ring lights once it does") "\"><b>" (esc p) "</b></span>"))
+                        ports))))
 
 (defn- tildify [path]
   (let [home (System/getenv "HOME")]
@@ -81,11 +130,6 @@
     (= health "starting") "wait"
     :else "ok"))
 
-(defn- port-tag [ports]
-  (if (seq ports)
-    (str "<span class=\"ports\">" (str/join " " (map #(str ":" (esc %)) ports)) "</span>")
-    ""))
-
 (defn- service-rows
   "Per-container status/health for a compose-backed component; declared
   names only, before the stack is up or when docker didn't answer."
@@ -94,10 +138,10 @@
     (if (seq rows)
       (str "<span class=\"services\">"
            (apply str
-                  (map (fn [{:keys [service state health ports]}]
+                  (map (fn [{:keys [service state health]}]
                          (str "<span class=\"svc\" data-health=\"" (svc-class {:state state :health health}) "\" title=\""
                               (esc (when state (str state (when health (str " / " health)))))
-                              "\"><span class=\"svc-name\">" (esc (name service)) "</span>" (port-tag ports) "</span>"))
+                              "\"><span class=\"svc-name\">" (esc (name service)) "</span></span>"))
                        rows))
            "</span>")
       "")))
@@ -172,11 +216,16 @@
              :deployed-sha deployed-sha
              :preview-of preview-of))))
 
+(defn- bare-branch
+  "A branch without its feature/, bug/... prefix."
+  [branch]
+  (str/replace (str branch) #"^(feature|bugfix|bug|fix|hotfix|chore|release)/" ""))
+
 (defn short-branch
   "A branch as a card can show it: no feature/, bug/... prefix, cut in the middle - a ticket number
   usually starts it, what it's about ends it."
   [branch]
-  (let [b (str/replace (str branch) #"^(feature|bugfix|bug|fix|hotfix|chore|release)/" "")]
+  (let [b (bare-branch branch)]
     (if (<= (count b) 22) b (str (subs b 0 12) "\u2026" (subs b (- (count b) 9))))))
 
 (defn- git-facts
@@ -308,9 +357,10 @@
       (str "<span class=\"git\">"
            (when-not default?
              (str (span (str "branch" (when wt? " wt") (when off? " off")) :branch
-                        (str "&#9095; " (esc (if branch (short-branch branch) (short-sha sha)))))
+                        ;; its window is the plate's width: the name whole, cut by the window
+                        (esc (if branch (bare-branch branch) (short-sha sha))))
                   (when off? (str (span "want" (str "the preset wants " wanted-branch ", this is " branch)
-                                        (str "&#8800; " (esc (short-branch wanted-branch))))
+                                        (str "Wants " (esc (bare-branch wanted-branch))))
                                   (checkout-button cname chip)))
                   (cond (not wt?) (span "from clone" :from "&#9998; clone")
                         test? (span "from origin test" :from (str "&#10548; " (esc base) " (test)"))
@@ -343,19 +393,46 @@
                   (sort-by key source-env))))
 
 (defn- facts
-  "A card's one line of facts, the details on hover: the kind as its glyph, its checkout, ↗ (the repo), its
-  own port - then the state."
-  [{:keys [kind status repo repo-url port services service-status source] :as c} cd-title]
+  "A card's one line of facts, the details on hover: its checkout, ↗ (the repo) - then the state."
+  [{:keys [kind status repo repo-url source] :as c} cd-title]
   (str "<span class=\"meta\">"
-       "<i class=\"glyph\" title=\"" (esc (name kind)) "\">" (esc (get kind-glyph kind "·")) "</i>"
        (checkout source cd-title)
        (when repo
          (if repo-url
            (str "<a class=\"repo-link\" href=\"" (esc repo-url) "\" target=\"_blank\" rel=\"noopener\" title=\"" (esc repo) "\">&#8599;</a>")
            (str "<span class=\"repo-link\" title=\"" (esc repo) "\">&#8599;</span>")))
-       (when (and port (not (or (seq service-status) (seq services))))
-         (str "<span class=\"ports own\">:" (esc port) "</span>"))
        "<span class=\"state\">" (esc (label-of kind status)) (clock c) "</span></span>"))
+
+(def ^:private shot-state
+  "A one-shot's button, by :status: what its pip and its press say."
+  {:done "done" :deploying "running" :ready "ondemand" :failed "failed" :skipped "failed" :unready "failed"})
+
+(defn- shot-state-of
+  "on demand until it runs: an apply never starts it."
+  [{:keys [status on-demand]}]
+  (get shot-state status (if on-demand "ondemand" "idle")))
+
+(defn- shot-buttons
+  "A host's :attached-to one-shots (:shots, [name c] pairs), as buttons in a recess of its plate: the pip
+  is the state, pressed in once done, hatched when on demand; what it does and why it failed on hover. A
+  click selects it; its ▶ runs it (again), asking first when it has a :confirm."
+  [shots preview?]
+  (when (seq shots)
+    (str "<span class=\"shots\">"
+         (apply str
+                (map (fn [[n {:keys [kind status description error confirm] :as shot}]]
+                       (str "<span class=\"shot\" data-shot=\"" (esc (name n)) "\" data-state=\"" (shot-state-of shot) "\" title=\""
+                            (esc (str (name n) " - " (label-of kind status)
+                                      (when description (str "\n" description))
+                                      (when (and error (error-shown? status)) (str "\n" error))))
+                            "\"><i></i><span>" (esc (name n)) "</span>"
+                            (when (and (not preview?) (can-reload? status) (not= :deploying status))
+                              (str "<button type=\"button\" class=\"act run\" title=\"" (if (= :ready status) "Run" "Run again") "\" hx-post=\"/api/trigger/"
+                                   (esc (name n)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\""
+                                   (when confirm (str " hx-confirm=\"" (esc confirm) "\"")) ">&#9654;</button>"))
+                            "</span>"))
+                     shots))
+         "</span>")))
 
 (defn- card-body
   "A full card's content - everything but the error and the actions. :now: the render's clock (ms)."
@@ -363,10 +440,14 @@
   (let [chip (git-chip c)
         cd-title (when chip (git-title chip (:dir source) now))]
     (str
+     (ear c)
      "<span class=\"head\"><span class=\"name\">" (esc (name cname)) "</span>"
+     "<span class=\"led\" title=\"" (esc (label-of (:kind c) status)) "\"></span></span>"
      (when permanent
-       "<span class=\"permanent\" title=\"Permanent: stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">&#8734;</span>")
-     "</span>"
+       "<span class=\"permanent\" title=\"Permanent: stays up across preset switches, stop-everything and zent exiting - only its own Stop reaches it\">Permanent</span>")
+     "<span class=\"kind\">" (esc (kind-line c)) "</span>"
+     (port-sockets c)
+     (when-let [dep (:waits-for c)] (str "<span class=\"note wait\">Waits for " (esc (name dep)) "</span>"))
      (facts c cd-title)
      (usage-row (:usage c))
      (if chip
@@ -380,11 +461,18 @@
                     (str "origin/" (esc b) " - what's pushed there, nothing local"))
                 "\">&#9888; created at apply from " (if local? (esc b) (str "origin/" (esc b))) "</span></span>"))))
      (service-rows c)
+     (shot-buttons (:shots c) (:preview? c))
      (source-env-rows source-env)
-     (when (and (links-visible? status) (seq links))
+     ;; always listed, a link only once reachable: what you'll open is part of what the card says
+     (when (seq links)
        (str "<span class=\"endpoints\">"
             (apply str (map (fn [{:keys [url label]}]
-                               (str "<a class=\"endpoint\" href=\"" (esc url) "\" target=\"_blank\" rel=\"noopener\">" (esc label) "</a>"))
+                               ;; reachable: its port listens - or, when that isn't known, the component is up
+                               (if (if-let [port (and (:listening c) (second (re-find #":(\d+)" (str url))))]
+                                     (contains? (:listening c) port)
+                                     (links-visible? status))
+                                 (str "<a class=\"endpoint\" href=\"" (esc url) "\" target=\"_blank\" rel=\"noopener\" title=\"" (esc url) "\">" (esc label) "</a>")
+                                 (str "<span class=\"endpoint idle\" title=\"Not served yet: opens once it is up\">" (esc label) "</span>")))
                              links))
             "</span>")))))
 
@@ -399,12 +487,18 @@
   (let [reload? (and (not preview?) (can-reload? status))
         stop? (and (not preview?) (can-stop? status))]
     (str
-     (if attached-to
-       (str "<i class=\"glyph\">" (esc (get kind-glyph kind "·")) "</i>"
-            "<span class=\"name\" title=\"" (esc (name cname)) "\">"
-            (esc (if (seq scripts) (str/join " → " (map script-name scripts)) (name cname))) "</span>"
-            "<span class=\"state\">" (esc (label-of kind status)) (clock c) "</span>"
-            (when description (str "<span class=\"desc\">" (esc description) "</span>"))
+     ;; a one-shot with a place of its own (no host, or waiting for several others): a capsule
+     (if (= :one-shot kind)
+       (str "<span class=\"capsule\" data-state=\"" (shot-state-of c) "\" title=\""
+            (esc (str/join "\n" (remove nil? [description (when (seq scripts) (str "runs " (str/join " → " (map script-name scripts))))])))
+            "\"><i></i><span class=\"name\">" (esc (name cname)) "</span>"
+            "<span class=\"state\">"
+            ;; until it runs: what it is to the stack, rather than "queued"
+            (cond (not (#{:pending :down :off :ready} status)) (str (esc (label-of kind status)) (clock c))
+                  (:terminus c) "the point of it"
+                  (:on-demand c) "on demand"
+                  :else (str (esc (label-of kind status)) (clock c)))
+            "</span></span>"
             (source-env-rows source-env))
        (card-body cname c))
      (when (and error (error-shown? status)) (str "<span class=\"fray\">" (esc error) "</span>"))
@@ -510,16 +604,45 @@
   [cname c]
   (if-not c
     "<div id=\"detail\" class=\"quiet\">Select a component to see its status.</div>"
-    (str "<div id=\"detail\">"
-         "<dl class=\"facts\">"
-         "<dt>name</dt><dd>" (esc (name cname)) "</dd>"
-         "<dt>kind</dt><dd>" (esc (name (:kind c))) "</dd>"
-         "<dt>state</dt><dd>" (esc (label-of (:kind c) (:status c))) "</dd>"
-         "<dt>waits for</dt><dd>" (esc (if-let [deps (seq (:deps c))] (str/join ", " (map name deps)) "nothing")) "</dd>"
-         (when-let [hs (:handle-summary c)] (str "<dt>handle</dt><dd>" (esc hs) "</dd>"))
-         (when (and (:error c) (error-shown? (:status c))) (str "<dt>error</dt><dd>" (esc (:error c)) "</dd>"))
-         "</dl>"
-         ;; its output lives in the Logs tab, opened on this component alone
-         "<button type=\"button\" class=\"open-logs\" data-name=\"" (esc (name cname)) "\""
-         " title=\"Open the Logs tab on this component\">&#10530; Logs</button>"
-         "</div>")))
+    (let [{:keys [kind status deps error source]} c
+          {:keys [branch from behind base wanted-branch off?] :as chip} (git-chip c)
+          row (fn [k v & [cls]] (str "<div class=\"row\"><span>" k "</span><span" (when cls (str " class=\"" cls "\"")) ">" v "</span></div>"))
+          section (fn [title & rows] (when-let [rows (seq (remove nil? rows))] (str "<h3>" title "</h3><div class=\"rows\">" (apply str rows) "</div>")))
+          names #(if (seq %) (esc (str/join ", " (map name %))) "nothing")
+          act (fn [cls label path & [confirm]]
+                (str "<button type=\"button\" class=\"btn " cls "\" hx-post=\"" path (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\""
+                     (when confirm (str " hx-confirm=\"" (esc confirm) "\"")) ">" label "</button>"))]
+      (str "<div id=\"detail\">"
+           "<div class=\"head\"><span class=\"kind\">" (esc (kind-line c)) "</span>"
+           "<span class=\"led\" data-state=\"" (cond (#{:up :external :done} status) "up" (= :deploying status) "starting"
+                                                      (error-shown? status) "failed" :else "idle") "\"></span></div>"
+           "<h2 class=\"title\">" (esc (name cname)) "</h2>"
+           "<div class=\"kind" (when (error-shown? status) " bad") "\">"
+           (esc (or (when (error-shown? status) error) (label-of kind status))) (clock c) "</div>"
+           "<div class=\"btns\">"
+           ;; a preview: nothing is deployed, nothing to reload
+           (when (and (can-reload? status) (not (:preview? c)))
+             (act (if (= :failed status) "primary" "") (cond (not= :one-shot kind) "Reload" (= :ready status) "Run" :else "Run again")
+                  "/api/trigger/" (:confirm c)))
+           ;; its output lives in the Logs tab, opened on this component alone
+           "<button type=\"button\" class=\"btn open-logs\" data-name=\"" (esc (name cname)) "\">Show log</button>"
+           (when (can-stop? status) (act "danger" "Stop" "/api/stop/"))
+           "</div>"
+           (when-let [d (:description c)] (str "<p class=\"about\">" (esc d) "</p>"))
+           (section "Source"
+                    (when chip (row "Branch" (esc (or branch "detached")) (when off? "bad")))
+                    (when off? (row "Preset wants" (esc wanted-branch)))
+                    (when chip (row "Runs from" (case from :origin "origin, in a worktree" :local "your local branch, in a worktree" "your clone, as it is")))
+                    (when (and chip (pos? behind)) (row (str "Behind " (esc base)) (str behind " commit" (when (> behind 1) "s"))))
+                    (when-let [dir (:dir source)] (row "Folder" (esc (tildify dir)))))
+           (apply section "Ports"
+                  (for [[p live? svc] (ports-of c)]
+                    (row (str "localhost:" (esc p) (when svc (str " <small>" (esc svc) "</small>")))
+                         (if live? "Listening" "Closed") (when live? "ok"))))
+           (section "Connections"
+                    (row "Waits for" (names deps))
+                    (row "Waited for by" (names (:waited-by c))))
+           (apply section "Checks"
+                  (for [{check :name verdict :status} (:checks c)]
+                    (row (esc (name check)) (case verdict :pass "Passed" :fail "Failed" "Can't tell") (name (or verdict :unknown)))))
+           "</div>"))))

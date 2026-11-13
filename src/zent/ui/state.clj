@@ -4,6 +4,7 @@
   catalog and the control queue the HTTP API feeds."
   (:require [clojure.string :as str]
             [zent.engine :as engine]
+            [zent.shell :as shell]
             [zent.source :as source]
             [zent.usage :as usage]))
 
@@ -168,6 +169,7 @@
                                          :scripts (:scripts cfg)
                                          :description (:description cfg)
                                          :confirm (:confirm cfg)
+                                         :on-demand (:on-demand cfg)
                                          :repo-url (repo-url cfg repo-url-template)
                                          ;; replaced by the discovered list on deploy
                                          :services (:services cfg)
@@ -268,16 +270,28 @@
 (defonce ^:private usage-sample (atom nil))
 (defonce ^:private usage-sampling (atom false))
 
+(defn listening-ports
+  "The TCP ports something on this machine listens on, as strings, from `lsof -nP -iTCP -sTCP:LISTEN`'s
+  output: a published container port too, which its forwarder listens on."
+  [out]
+  (into #{} (keep #(second (re-find #":(\d+) \(LISTEN\)" %))) (str/split-lines (str out))))
+
 (defn- refresh-usage-async!
-  "A usage sample of `handles` on a thread of its own (docker stats takes ~2s), skipped while the
-  last one still runs. Swaps only on a visible change: a push per sample would redraw every card."
+  "A usage sample of `handles`, and the ports listened on, on a thread of its own (docker stats takes
+  ~2s), skipped while the last one still runs. Swaps only on a visible change: a push per sample would
+  redraw every card."
   [handles]
   (when (compare-and-set! usage-sampling false true)
     (future
       (try
         (let [s (usage/sample! handles @usage-sample)
-              shown (usage/shown (:usage s))]
+              shown (usage/shown (:usage s))
+              {:keys [exit out]} (shell/sh! ["lsof" "-nP" "-iTCP" "-sTCP:LISTEN"])
+              ;; nil when lsof didn't answer: a card then goes by the component's state
+              listening (when (zero? exit) (listening-ports out))]
           (reset! usage-sample s)
+          (when (not= listening (:listening @view-state))
+            (swap! view-state assoc :listening listening))
           (when (not= (set-usage @view-state shown) @view-state)
             (swap! view-state set-usage shown)))
         (catch Throwable e (println "[zent.ui] usage sample failed:" (ex-message e)))

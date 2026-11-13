@@ -12,6 +12,7 @@
             [ring-chez.websocket :as ws]
             [zent.checks :as checks]
             [zent.compose :as compose]
+            [zent.kinds :as kinds]
             [zent.logs :as logs]
             [zent.presets :as presets]
             [zent.schema :as schema]
@@ -87,9 +88,28 @@
   card) alongside its raw data - the client still needs :status/:deps as
   structured data to run the DAG layout, so this adds to the payload
   rather than replacing it."
-  [components]
-  (let [now (System/currentTimeMillis)]
-    (reduce-kv (fn [acc name c] (assoc acc name (assoc c :card (render/component-card name (assoc c :now now)))))
+  [components & [members]]
+  (let [now (System/currentTimeMillis)
+        members (some-> members seq set)
+        listening (:listening @state/view-state)
+        host #(or (:attached-to (get components %)) %)
+        ;; :lone - an :attached-to one-shot waiting for several components besides its host: drawn on
+        ;; its own, with its wires, where a button on the host's plate couldn't show them
+        lone? (fn [[_ c]] (boolean (when-let [h (:attached-to c)] (next (disj (set (map host (:deps c))) h)))))
+        ;; a host's card carries its other one-shots, as buttons - the preset's own, and any that ran
+        shown? (fn [[k c]] (or (nil? members) (members k) (not (#{:down :off} (:status c)))))
+        shots (group-by (comp :attached-to val) (filter shown? (remove lone? (sort-by key components))))
+        waited (set (mapcat :deps (vals components)))
+        settled? (comp #{:up :done :external :idle} :status)
+        ;; mid-apply: the first dependency a queued one still waits for
+        waits-for (fn [c] (when (and (= :pending (:status c)) (not (:preview? c)))
+                            (first (remove #(settled? (get components % {:status :up})) (:deps c)))))]
+    (reduce-kv (fn [acc name c]
+                 (assoc acc name (assoc c :lone (lone? [name c])
+                                        :card (render/component-card name (assoc c :now now :listening listening :shots (get shots name)
+                                                                                    ;; everything leads to it, nothing waits for it
+                                                                                    :terminus (and (lone? [name c]) (not (waited name)))
+                                                                                    :waits-for (waits-for c))))))
                {} components)))
 
 (defn- snapshot-message
@@ -102,9 +122,10 @@
     ;; :done, the recent ones: commands finish out of order, so a spinner
     ;; waits for its own id, not for the highest one done
     :data (-> state
-              (dissoc :events)
+              ;; :listening is already on the cards, as lit sockets
+              (dissoc :events :listening)
               (update :done #(take-last 200 (sort %)))
-              (update :components with-cards))
+              (update :components with-cards (:members state)))
     :summary-html (render/run-summary (state/shown-components state))
     :presets-html (render/preset-picker (keys (:presets @state/catalog)) (:preset state))}))
 
@@ -222,25 +243,33 @@
 ;; live cards, all :pending and :preview? - so no reload/stop buttons - plus
 ;; its :plan from what runs now.
 
+(defn- previewed
+  "`preset-name` as it would run, a view of its own (zent.ui.state/set-preset): every component
+  :preview?, with what's worth seeing before applying - :source-env (what a one-shot will read), the
+  services a compose one would run, and each checkout's git, read now (no fetch, in parallel): a wrong
+  branch, a delay or uncommitted files show while they're cheap to fix. Throws on a preset that
+  doesn't resolve."
+  [preset-name]
+  (let [catalog @state/catalog
+        resolved (compose/resolve-preset catalog preset-name)
+        preview (state/set-preset state/empty-state preset-name resolved
+                                  {:repo-url-template (get-in catalog [:defaults :repo-url-template])})]
+    (assoc preview :components
+           (into {} (pmap (fn [[k c]]
+                            (let [cfg (resolved k)]
+                              [k (cond-> (assoc c :preview? true :preview-of (name preset-name))
+                                   (:source-env cfg) (assoc :source-env (state/source-env-view cfg))
+                                   (= :compose-services (:kind cfg)) (assoc :services (kinds/planned-services k cfg))
+                                   (:repo cfg) (assoc :source (source/describe cfg)
+                                                      :git (source/checkout-git cfg)))]))
+                          (:components preview))))))
+
 (defn- preview-response [preset-name]
   (try
-    (let [catalog @state/catalog
-          resolved (compose/resolve-preset catalog preset-name)
-          template (get-in catalog [:defaults :repo-url-template])
-          preview (state/set-preset state/empty-state preset-name resolved
-                                    {:repo-url-template template})]
+    (let [preview (previewed preset-name)]
       (json-response
        {:preset preset-name
-        ;; :source-env too: what a one-shot will read is the point of looking first
-        ;; and each checkout's git, read now (no fetch, in parallel): a wrong branch, a delay or uncommitted
-        ;; files show before applying, when they're cheap to fix
-        :components (with-cards (into {} (pmap (fn [[k c]]
-                                                 (let [cfg (resolved k)]
-                                                   [k (cond-> (assoc c :preview? true :preview-of (name preset-name))
-                                                        (:source-env cfg) (assoc :source-env (state/source-env-view cfg))
-                                                        (:repo cfg) (assoc :source (source/describe cfg)
-                                                                           :git (source/checkout-git cfg)))]))
-                                               (:components preview))))
+        :components (with-cards (:components preview))
         :graph (:graph preview)
         :informational (:informational preview)
         :plan (when-let [f @state/planner] (f preset-name))}))
@@ -384,7 +413,17 @@
     (and (= (:request-method req) :get) (str/starts-with? (:uri req) "/api/detail/"))
     (let [name (keyword (subs (:uri req) (count "/api/detail/")))]
       {:status 200 :headers {"Content-Type" "text/html; charset=utf-8"}
-       :body (render/detail-panel name (get-in @state/view-state [:components name]))})
+       ;; selected in a preview: the component as that preset would run it, not as what runs now has it
+       :body (let [comps (:components (if-let [p (query-param req "preset")] (previewed (keyword p)) @state/view-state))
+                   [preset checks] (active-checks)]
+               (render/detail-panel
+                name
+                (some-> (get comps name)
+                        (assoc :listening (:listening @state/view-state)
+                               :waited-by (sort (for [[k c] comps :when (some #{name} (:deps c))] k))
+                               ;; the checks judging it (:zent/observes), each with its last verdict
+                               :checks (for [{check :name :keys [observes]} checks :when (some #{name} observes)]
+                                         {:name check :status (:status (checks/current (checks/history preset check check-history)))})))))})
 
     ;; ?c=a,b&from=a:123 - see zent.ui.logstream
     (and (= (:request-method req) :get) (= (:uri req) "/api/logs/stream"))

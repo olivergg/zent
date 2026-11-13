@@ -203,7 +203,7 @@
     (swap! state/view-state assoc-in [:components :svc] {:kind :process :status :up :deps []})
     (let [{:keys [status body]} (server/app {:request-method :get :uri "/api/detail/svc"})]
       (is (= 200 status))
-      (is (str/includes? body "<dt>kind</dt><dd>process</dd>")))))
+      (is (str/includes? body "<span class=\"kind\">process</span>")))))
 
 (deftest snapshot-message-carries-rendered-fragments-test
   (testing "the websocket push adds a rendered :card per component plus
@@ -219,6 +219,22 @@
       (is (= "up" (get-in msg [:data :components :svc :status])))
       (is (str/includes? (:summary-html msg) "1</b> up"))
       (is (str/includes? (:presets-html msg) "full"))))
+
+  (testing "given one-shots attached to a host, then they ride as buttons on its card - but one waiting for
+            several other components is :lone, drawn on its own; mid-apply a queued card says what it waits for"
+    (let [shot (fn [deps] {:kind :one-shot :status :pending :attached-to :db :deps deps})
+          state (assoc state/empty-state :preset :full
+                       :components {:db {:kind :process :status :up :deps []}
+                                    :api {:kind :process :status :deploying :deps [:db]}
+                                    :web {:kind :process :status :pending :deps [:db :api]}
+                                    :seed (shot [:db])
+                                    :replay (shot [:db :api :web])})
+          comps (get-in (json/read-str (snapshot-message state) :key-fn keyword) [:data :components])]
+      (is (str/includes? (get-in comps [:db :card]) "data-shot=\"seed\""))
+      (is (not (str/includes? (get-in comps [:db :card]) "data-shot=\"replay\"")))
+      (is (= [false true] (map #(get-in comps [% :lone]) [:seed :replay])))
+      (is (str/includes? (get-in comps [:web :card]) "<span class=\"note wait\">Waits for api</span>"))
+      (is (not (str/includes? (get-in comps [:api :card]) "Waits for")))))
 
   (testing "the done ids go out - the recent ones, in order - so a spinner waits for
             its own command: they finish out of order"

@@ -22,18 +22,17 @@ const STATE_CLASS = {
   skipped: "skipped"
 };
 const WOVEN = new Set(["up", "done", "external"]);
-// what isn't settled yet: blocking (madder) or on its way (weld) - a thread from it, a one-shot that never folds
+// what isn't settled yet: down (red) or on its way (amber) - the colour of a wire leaving it
 const UNSETTLED = { failed: "bad", unready: "bad", skipped: "bad", starting: "wait", queued: "wait" };
 
 /* Motion follows what the stack does, live view only: a card that joins
-   rises in, column by column; one that changes status is dyed its new
-   colour; a thread pulled taut gets a shuttle crossing it, from the
-   dependency to its dependent. Every push rebuilds the loom, so each change
-   keeps its time and a rebuilt card or thread resumes its animation where
-   it was (a negative delay) rather than restarting it. */
+   rises in, row by row; one that changes status is washed in its new
+   colour. Every push rebuilds the board, so each change keeps its time and a
+   rebuilt card resumes its animation where it was (a negative delay) rather
+   than restarting it. */
 const MOTION_MS = 1600;
-const seenStatus = {}, changedAt = {}, arrivedAt = {}, tautAt = {};
-let tautKeys = null, wasBusy = false;
+const seenStatus = {}, changedAt = {}, arrivedAt = {};
+let wasBusy = false;
 const since = (t) => `${Math.round(t - performance.now())}ms`;
 const recent = (t) => performance.now() - (t ?? -Infinity) < MOTION_MS;
 
@@ -152,7 +151,7 @@ function render() {
     htmx.process(document.getElementById("preset-picker"));
   }
   // only on change: a refetch replaces the panel
-  const detailKey = selected && selected + JSON.stringify(view.components[selected] ?? null);
+  const detailKey = selected && selected + JSON.stringify(activeData().components[selected] ?? null);
   if (selected && detailKey !== lastDetailKey) loadDetail(selected);
   lastDetailKey = detailKey;
   renderLogs();
@@ -186,8 +185,11 @@ async function refreshPreview() {
 
 // live <-> preview, or one preview to another: the loom blurs out, the next comes into focus
 function setPreview(name, data) {
+  if (name) lastPreviewed = name;
   transit("morph", () => { previewing = name; previewData = data; renderRun(); renderRunToggle(); markPreviewing(name); });
 }
+// the toolbar's Preview goes back to the last preset looked at, else the one running
+let lastPreviewed = null;
 
 /* `update` as a View Transition of `kind` (html's data-vt while it runs, so
    CSS names and animates only what this kind moves - a name left on, the
@@ -208,39 +210,19 @@ function markPreviewing(name) {
 
 const escHtml = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-/* what applying the previewed preset would do from what runs now (the
-   engine's plan-summary); a redeploy's reason is its tooltip */
-function planLine(plan) {
+/* What applying the previewed preset would do from what runs now (the engine's plan-summary), one
+   line per verb, a redeploy with its reason: what its Start says on hover. */
+function planText(plan) {
   if (!plan) return "";
-  const part = (verb, names) => names.length ? verb + " " + names.map(escHtml).join(", ") : null;
-  const redeploys = Object.entries(plan.redeploy || {})
-    .map(([n, why]) => '<span title="' + escHtml(why) + '">' + escHtml(n) + "</span>");
-  const parts = [part("stops", plan.stop), part("keeps warm", plan["keep-warm"]),
-                 redeploys.length ? "redeploys " + redeploys.join(", ") : null,
-                 part("starts", plan.start)].filter(Boolean);
-  return '<span class="plan">' + (parts.length ? parts.join(" · ") : "nothing to change") + "</span>";
-}
-
-function renderPreviewBanner() {
-  const box = document.getElementById("preview-banner");
-  if (!previewing) { box.hidden = true; return; }
-  box.hidden = false;
-  box.innerHTML =
-    "<span>Previewing " + previewing + "</span>" + planLine(previewData.plan) +
-    '<button type="button" class="play" hx-post="/api/apply/' + previewing + '" ' +
-    'hx-swap="none" hx-disabled-elt="this">Start</button>' +
-    '<button type="button" class="back">Back to live view</button>';
-  box.querySelector(".back").onclick = exitPreview;
-  // deferred: htmx handles this same click after us, and drops it if the
-  // button is no longer in the document
-  box.querySelector(".play").onclick = () => setTimeout(exitPreview);
-  htmx.process(box);
+  const part = (verb, names) => names.length ? verb + " " + names.join(", ") : null;
+  const redeploys = Object.entries(plan.redeploy || {}).map(([n, why]) => `${n} (${why})`);
+  return [part("stops", plan.stop), part("keeps warm", plan["keep-warm"]), part("redeploys", redeploys),
+          part("starts", plan.start)].filter(Boolean).join("\n") || "nothing to change";
 }
 
 /* The one big, hard-to-miss control next to the masthead's preset badge -
    Stop for whatever's actually live, or Start for a preset currently being
-   previewed (mirrors the preview banner's own Start button, so it's usable
-   without scrolling back to the loom). */
+   previewed - what that would do on hover. */
 function renderRunToggle() {
   // outerHTML, not attribute mutation - #run-toggle otherwise persists
   // across every push, and re-htmx.process()ing the same node repeatedly
@@ -254,10 +236,15 @@ function renderRunToggle() {
   run.dataset.state = state;
   if (health) run.dataset.health = health; else delete run.dataset.health;
   document.getElementById("run-caption").textContent = health || { preview: "preview", idle: "no run" }[state];
-  document.getElementById("preset").textContent = previewing || view.preset || "";
+  document.getElementById("preset").textContent = previewing || view.preset || "presets";
+  const [preview, running] = document.querySelectorAll("#mode button");
+  preview.setAttribute("aria-pressed", String(!!previewing));
+  running.setAttribute("aria-pressed", String(!previewing));
+  preview.disabled = !previewing && !lastPreviewed && !view.preset;
   const old = document.getElementById("run-toggle");
   if (previewing) {
     old.outerHTML = '<button type="button" class="run-toggle play" id="run-toggle" ' +
+      'title="' + escHtml("Start " + previewing + "\n" + planText(previewData.plan)) + '" ' +
       'hx-post="/api/apply/' + previewing + '" hx-swap="none" hx-disabled-elt="this">' +
       '▶ Start</button>';
     document.getElementById("run-toggle").addEventListener("click", () => setTimeout(exitPreview));
@@ -269,21 +256,24 @@ function renderRunToggle() {
   }
   htmx.process(document.getElementById("run-toggle"));
   markBusy();
+  // the live run in three figures: what's down, what's up, how far its steps are
+  const cs = (view.members || []).map((m) => view.components[m]).filter(Boolean), n = (pred) => cs.filter(pred).length;
+  const failed = n((c) => UNSETTLED[STATE_CLASS[c.status]] === "bad"), up = n((c) => c.status === "up" || c.status === "external");
+  const steps = cs.filter((c) => c.kind === "one-shot" && !c["on-demand"]);
+  document.getElementById("chips").innerHTML = !view.preset ? "" :
+    (failed ? `<span class="chip bad"><b>${failed}</b> failed</span>` : "") + `<span class="chip"><b>${up}</b> up</span>` +
+    (steps.length ? `<span class="chip"><b>${steps.filter((c) => c.status === "done").length}</b> of ${steps.length} steps</span>` : "");
 }
 
 function renderRun() {
   const host = document.getElementById("levels");
   document.getElementById("loom").dataset.preview = String(!!previewing);
-  renderPreviewBanner();
   if (!previewing) noteChanges(view.components);
 
   // a preview shows every one of the preset's own components, never
   // filtered by showStopped - nothing in it is "stopped", it just hasn't
   // run yet, so that toggle has no meaning here.
   const hiddenCount = weave(host, activeData(), showStopped || previewing);
-  // previewing: the live fabric stays under the sketch, out of focus (CSS) - no threads
-  const ghost = document.getElementById("ghost");
-  if (previewing) weave(ghost, view, showStopped); else ghost.replaceChildren();
 
   if (hiddenCount !== null) {
     host.innerHTML = hiddenCount
@@ -316,11 +306,6 @@ function weave(host, data, all) {
 
   // :attached-to one-shots ride under their host's card when it's shown, so
   // they leave the layout; a dependency on one counts as one on its host
-  const strips = {};
-  for (const name of Object.keys(visible)) {
-    const host = hostOf(name, visible);
-    if (host) (strips[host] ||= []).push(name);
-  }
   const layout = Object.fromEntries(Object.entries(visible)
     .filter(([name]) => !hostOf(name, visible))
     .map(([name, c]) => [name, { ...c, deps: (c.deps || []).map((d) => hostOf(d, visible) || d)
@@ -331,21 +316,18 @@ function weave(host, data, all) {
   levels.forEach((names, lvl) => {
     const col = document.createElement("div");
     col.className = "level";
+    const label = document.createElement("span");
+    label.className = "lane";
+    label.textContent = lvl === 0 ? "Starts first" : lvl === levels.length - 1 ? "Last" : "Then";
+    label.title = label.textContent + "\nComponents start a row at a time: a row starts once what it waits for in the rows above is ready";
+    col.appendChild(label);
 
     for (const name of names) {
       const stack = document.createElement("div");
       stack.className = "stack";
       stack.style.setProperty("--lvl", lvl);
-      stack.appendChild(nodeEl(name, data.components[name], false));
-      const own = (strips[name] || []).sort();
-      if (own.length) {
-        // folded: one summary line, plus whatever is running or failed - that one always shows
-        const open = openStrips.has(name);
-        stack.appendChild(stripsFold(name, own, data.components, open));
-        for (const s of own) {
-          if (open || UNSETTLED[STATE_CLASS[data.components[s].status]]) stack.appendChild(nodeEl(s, data.components[s], true));
-        }
-      }
+      // its :attached-to one-shots are buttons on its own plate (zent.ui.render/shot-buttons)
+      stack.appendChild(nodeEl(name, data.components[name]));
       col.appendChild(stack);
     }
     host.appendChild(col);
@@ -372,50 +354,23 @@ function tickClocks() {
 }
 setInterval(tickClocks, 1000);
 
-/* A host's one-shots, folded by default: the hosts unfolded, in localStorage. */
-const openStrips = new Set(JSON.parse(localStorage.getItem("zent.openStrips") || "[]"));
-// a one-shot's state in the summary, most urgent first - the line takes the dye of the first present
-const STRIP_TALLY = { failed: "failed", unready: "unready", skipped: "skipped", starting: "running", queued: "queued",
-                      ready: "on demand", done: "done", stopped: "not run", off: "not run" };
-
-/* The line a host's one-shots fold into: how many, and how many per state. */
-function stripsFold(host, names, components, open) {
-  const counts = {};
-  for (const n of names) { const s = STATE_CLASS[components[n].status] || "queued"; counts[s] = (counts[s] || 0) + 1; }
-  const parts = new Map();
-  for (const [s, label] of Object.entries(STRIP_TALLY)) if (counts[s]) parts.set(label, (parts.get(label) || 0) + counts[s]);
-  const el = document.createElement("button");
-  el.type = "button";
-  el.className = "strips-fold";
-  el.dataset.status = Object.keys(STRIP_TALLY).find((s) => counts[s]) || "done";
-  el.setAttribute("aria-expanded", String(open));
-  el.dataset.holds = names.join(",");
-  el.onmouseenter = el.onmouseleave = () => drawWarp();
-  el.title = (open ? "Fold" : "Show") + " the one-shots: " + names.join(", ");
-  el.innerHTML = `<span class="fold-mark">${open ? "▾" : "▸"}</span>↓ ${names.length}` +
-    [...parts].map(([label, n]) => ` <span class="fold-part">· ${n} ${label}</span>`).join("");
-  el.onclick = () => {
-    if (openStrips.has(host)) openStrips.delete(host); else openStrips.add(host);
-    localStorage.setItem("zent.openStrips", JSON.stringify([...openStrips]));
-    renderRun();
-  };
-  return el;
-}
 
 /* The one-shot `name` is drawn under, or null: its :attached-to, when that
    component is itself among `components`. */
 function hostOf(name, components) {
   const host = components[name]?.["attached-to"];
-  return host && host !== name && components[host] ? host : null;
+  // :lone (zent.ui.server/with-cards): it waits for several others, so it's drawn on its own
+  return host && host !== name && components[host] && !components[name].lone ? host : null;
 }
 
-function nodeEl(name, c, satellite) {
+function nodeEl(name, c) {
   const status = STATE_CLASS[c.status] || "queued";
   const el = document.createElement("div");
-  el.className = satellite ? "node satellite" : "node";
+  el.className = "node";
   el.setAttribute("role", "button");
   el.tabIndex = 0;
   el.dataset.status = status;
+  el.dataset.kind = c.kind;
   el.dataset.name = name;
   el.dataset.selected = String(selected === name);
   for (const [attr, at] of [["arrived", arrivedAt[name]], ["changed", changedAt[name]]]) {
@@ -434,7 +389,12 @@ function nodeEl(name, c, satellite) {
   // stopPropagation: it can't be forgotten when new controls are added.
   // a second click on the selected card deselects it
   const select = () => setSelected(selected === name ? null : name);
-  el.onclick = (e) => { if (!e.target.closest("a, button")) select(); };
+  el.onclick = (e) => {
+    if (e.target.closest("a, button")) return;
+    // a one-shot's button selects that one-shot
+    const shot = e.target.closest("[data-shot]")?.dataset.shot;
+    if (shot) setSelected(selected === shot ? null : shot); else select();
+  };
   el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(); } };
   el.onmouseenter = el.onmouseleave = () => drawWarp();
   // its own checkout and, for a :source-env one, every dir it reads
@@ -442,161 +402,157 @@ function nodeEl(name, c, satellite) {
   return el;
 }
 
-/* The warp lines, the dependency threads, and the zent: one pass of drawing,
-   because all three are positioned from the same measured node boxes. */
+/* An orthogonal path through `pts`, its corners rounded by `r` (less where a leg is short). */
+function route(pts, r = 8) {
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+    const a = Math.min(r, Math.hypot(x1 - x0, y1 - y0) / 2, Math.hypot(x2 - x1, y2 - y1) / 2);
+    d += ` L${x1 - Math.sign(x1 - x0) * a},${y1 - Math.sign(y1 - y0) * a}` +
+         ` Q${x1},${y1} ${x1 + Math.sign(x2 - x1) * a},${y1 + Math.sign(y2 - y1) * a}`;
+  }
+  return d + ` L${pts.at(-1)[0]},${pts.at(-1)[1]}`;
+}
+
+/* A plug at (`x`, `mouth`), pushed into a socket's mouth and leaving it in direction `d` (1 down, -1
+   up): its metal tip in the socket, a moulded body, a band in its `end`'s colour (in, out), a ribbed
+   strain relief the wire leaves by, PLUG px from the mouth. */
+const PLUG = 16;
+function plug(x, mouth, d, end) {
+  const top = (a, b) => Math.min(mouth + d * a, mouth + d * b);
+  return `<g class="plug"><rect class="tip" x="${x - 2}" y="${top(-2, 2)}" width="4" height="4"/>` +
+    `<rect class="body" x="${x - 4.5}" y="${top(2, 12)}" width="9" height="10" rx="2"/>` +
+    `<rect class="band ${end}" x="${x - 4.5}" y="${top(4, 6)}" width="9" height="2"/>` +
+    `<line class="relief" x1="${x}" y1="${mouth + d * 12}" x2="${x}" y2="${mouth + d * PLUG}"/></g>`;
+}
+// the plugs' finishes: brushed metal, and a dark moulding with a gloss down its length
+const PLUG_DEFS = '<defs><linearGradient id="plug-metal"><stop offset="0" stop-color="#7f858f"/><stop offset=".45" stop-color="#f6f7f9"/>' +
+  '<stop offset="1" stop-color="#8d929c"/></linearGradient><linearGradient id="plug-body"><stop offset="0" stop-color="#5d616c"/>' +
+  '<stop offset=".3" stop-color="#2a2c33"/><stop offset=".7" stop-color="#101114"/><stop offset="1" stop-color="#3d4049"/></linearGradient></defs>';
+
+/* The wiring: one bus per source. It drops from the source's plate - under its button when the
+   source is a one-shot riding there - into the gap below its row, runs along it, and rises into an
+   input socket of each plate waiting for it. Its colour is the source's state: ready, still waited
+   for, down. Sockets and wires are positioned from the same measured boxes, so one pass draws both. */
 function drawWarp() {
-  const data = activeData();
+  const data = activeData(), comps = data.components;
   const loom = document.getElementById("loom");
-  const svg = document.getElementById("warp");
-  const fabric = document.getElementById("levels");     // not the ghost under a preview
+  const svg = document.getElementById("warp"), flow = document.getElementById("warp-flow");
+  const fabric = document.getElementById("levels");
+  const rows = [...fabric.querySelectorAll(".level")];
+  // the widest row fits the board: its plates draw closer, then the whole graph scales down a little
+  const most = Math.max(1, ...rows.map((row) => row.querySelectorAll(".stack").length));
+  const room = loom.clientWidth - 80, gap = Math.max(38, Math.min(48, (room - most * 186 - 40) / Math.max(1, most - 1)));
+  fabric.style.setProperty("--gap", gap + "px");
+  fabric.style.zoom = zoom * Math.max(.7, Math.min(1, room / (most * 186 + (most - 1) * gap + 40)));
+  const rowOf = {};
+  rows.forEach((row, i) => row.querySelectorAll(".node").forEach((n) => { rowOf[n.dataset.name] = i; }));
+  // the plate a component is drawn on: its own, or its host's when it's a button there
+  const plateOf = (n) => rowOf[n] !== undefined ? n : comps[n]?.["attached-to"];
+  const buses = new Map(), inputs = {};
+  for (const [to, from] of data.graph || []) {
+    const src = plateOf(from), dst = plateOf(to);
+    if (rowOf[src] === undefined || rowOf[dst] === undefined || src === dst) continue;
+    if (!buses.has(from)) buses.set(from, new Set());
+    if (!buses.get(from).has(dst)) { buses.get(from).add(dst); (inputs[dst] ||= []).push(from); }
+  }
+  // each row leaves room under it for the buses that run there, one track each
+  const tracks = rows.map(() => []);
+  for (const from of buses.keys()) tracks[rowOf[plateOf(from)]].push(from);
+  // (70: a plug's length under this row and over the next, and their sockets)
+  rows.forEach((row, i) => { row.style.marginBottom = (i < rows.length - 1 ? 70 + tracks[i].length * 11 : 0) + "px"; });
+
+  // sockets, where a wire's plug goes in: one input per source on the top edge, its link light on once
+  // that source is ready; an output under the plate - under its button, for a one-shot riding there
+  const ready = (n) => WOVEN.has(comps[n]?.status);
+  const socket = {};
+  fabric.querySelectorAll(".node").forEach((n) => {
+    n.querySelectorAll(":scope > .pin").forEach((p) => p.remove());
+    const name = n.dataset.name, pin = (key, cls, style, title) => {
+      const p = document.createElement("span");
+      p.className = "pin " + cls; p.style.cssText = style; p.title = title; n.appendChild(p);
+      socket[key] = p;
+    };
+    (inputs[name] || []).forEach((from, k) => pin(from + ">" + name, "in" + (ready(from) && !previewing ? " ok" : ""), `left:${23 + k * 17}px`,
+      `Input: ${from}\n${name} starts once ${from} is ${comps[from]?.kind === "one-shot" ? "done" : "ready"} - its light is on when it is`));
+    if (buses.has(name)) pin(name, "out", "", `Output\nEvery wire plugged here is something waiting for ${name}`);
+    for (const b of n.querySelectorAll("[data-shot]")) {
+      if (!buses.has(b.dataset.shot)) continue;
+      const x = (b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2 - n.getBoundingClientRect().left) / (n.getBoundingClientRect().width / n.offsetWidth);
+      pin(b.dataset.shot, "out", `left:${Math.round(x - 7)}px`, `Output of ${b.dataset.shot}\nEvery wire plugged here waits for that step`);
+    }
+  });
+
   const box = loom.getBoundingClientRect();
   const w = loom.scrollWidth, h = Math.max(loom.scrollHeight, box.height);
-  svg.setAttribute("width", w);
-  svg.setAttribute("height", h);
-  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-
+  for (const s of [svg, flow]) { s.setAttribute("width", w); s.setAttribute("height", h); s.setAttribute("viewBox", `0 0 ${w} ${h}`); }
   const place = (el) => {
     const r = el.getBoundingClientRect();
     return {
       l: r.left - box.left + loom.scrollLeft,
-      r: r.right - box.left + loom.scrollLeft,
       cx: r.left + r.width / 2 - box.left + loom.scrollLeft,
+      top: r.top - box.top + loom.scrollTop,
       y: r.top - box.top + loom.scrollTop + r.height / 2,
       bottom: r.bottom - box.top + loom.scrollTop
     };
   };
   const at = {};
   fabric.querySelectorAll(".node").forEach((n) => { at[n.dataset.name] = place(n); });
-  // a folded one-shot has no card: its threads end on the line it folds into
-  const folded = new Set();
-  fabric.querySelectorAll(".strips-fold").forEach((f) => {
-    const p = place(f);
-    for (const n of f.dataset.holds.split(",")) if (!at[n]) { at[n] = p; folded.add(n); }
-  });
+  const rowBottom = rows.map((row) => place(row).bottom);
 
-  const parts = [];
-  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  // arrowheads - one per thread state, so direction reads even before colour
-  // does. Defined once per draw (cheap, and drawWarp already rebuilds the
-  // whole <svg> every render). Colours are the theme's (index.css :root),
-  // through style: an SVG presentation attribute doesn't resolve var().
-  const arrow = (id, size, colour) =>
-    `<marker id="arrow-${id}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="${size}" markerHeight="${size}" ` +
-    `orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" style="fill:var(--${colour})"/></marker>`;
-  parts.push("<defs>" + arrow("taut", 7, "indigo") + arrow("slack", 6, "slack") + arrow("related", 8, "related") +
-             arrow("in", 6, "indigo") + arrow("out", 6, "weld") + arrow("wait", 6, "weld") + arrow("bad", 7, "madder") +
-             "</defs>");
-
-  // warp: one vertical hairline per level, behind everything
-  fabric.querySelectorAll(".level").forEach((col) => {
-    const r = col.getBoundingClientRect();
-    const x = Math.round(r.left + r.width / 2 - box.left + loom.scrollLeft);
-    parts.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}" style="stroke:var(--hairline)" stroke-width="1"/>`);
-  });
-
-  /* The zent itself: dependency threads crossing the warp. A thread is slack
-     grey until both ends are up, then it pulls taut in indigo - so the fabric
-     closes as the stack comes up, and health reads as how much of the graph
-     is woven rather than as a row of status dots. An arrowhead makes the
-     direction ("this depends on that") readable without hovering, and a taut
-     thread of the hovered or selected card carries a moving dash - current
-     flowing through a closed circuit. */
-  // a strip already sits on its host: its own dependency threads are hidden,
-  // only the ones of components depending on it are drawn - unless it's
-  // selected, and even then not the one to its host, which it already hangs from
-  const strips = new Set([...fabric.querySelectorAll(".node.satellite")].map((n) => n.dataset.name).concat([...folded]));
-  // the flowing dash is kept to the selected or hovered card's threads: a
-  // whole fabric animating keeps the GPU busy for nothing
   const hovered = fabric.querySelector(".node:hover")?.dataset.name;
-  // a hovered, else selected, card's threads stand out - what it waits for
-  // in indigo, what waits for it in weld - and every other thread fades back;
-  // a hovered fold line stands for every one-shot it holds
+  // a hovered, else selected, plate's wires stand out and every other one fades back
   const focus = at[hovered] ? hovered : at[selected] ? selected : null;
-  const fold = fabric.querySelector(".strips-fold:hover");
-  const focused = new Set(fold ? fold.dataset.holds.split(",") : focus ? [focus] : []);
-  // hovering also steps back every card but it, its neighbours and their strips
-  const near = new Set(hovered ? [hovered, ...(data.graph || []).flatMap(([to, from]) =>
-    to === hovered ? [from] : from === hovered ? [to] : [])] : []);
+  // hovering also steps back every plate but it and its neighbours
+  const near = new Set(hovered ? [hovered, ...[...buses].flatMap(([from, to]) =>
+    plateOf(from) === hovered ? [...to] : to.has(hovered) ? [plateOf(from)] : [])] : []);
   loom.dataset.hovering = String(!!hovered);
-  fabric.querySelectorAll(".node").forEach((n) => {
-    n.dataset.near = String(near.has(n.dataset.name) || near.has(data.components[n.dataset.name]?.["attached-to"]));
-  });
-  const nowTaut = new Set();
-  for (const [to, from] of data.graph || []) {
-    const a = at[from], b = at[to];
-    if (!a || !b || (strips.has(to) && (!focused.has(to) || data.components[to]["attached-to"] === from))) continue;
-    const taut = WOVEN.has(data.components[from]?.status) && WOVEN.has(data.components[to]?.status);
-    const key = from + ">" + to;
-    if (taut && !previewing) {
-      nowTaut.add(key);
-      if (tautKeys && !tautKeys.has(key)) tautAt[key] = performance.now();
-    }
-    const role = !focused.size ? null : focused.has(to) ? "in" : focused.has(from) ? "out" : "faded";
-    // a slack thread says why, from its dependency's side
-    const state = taut ? "taut" : UNSETTLED[STATE_CLASS[data.components[from]?.status]] || "slack";
-    const mid = a.r + (b.l - a.r) / 2;
-    const d = `M${a.r} ${a.y} C${mid} ${a.y} ${mid} ${b.y} ${b.l} ${b.y}`;
-    const flow = !reduceMotion && (state === "wait" || taut && (focused.has(to) || focused.has(from)))
-      ? '<animate attributeName="stroke-dashoffset" values="12;0" dur="700ms" repeatCount="indefinite"/>'
-      : "";
-    const lit = role === "in" || role === "out";
-    const dye = role === "out" ? "weld" : role === "in" ? "indigo" : { taut: "indigo", bad: "madder", wait: "weld", slack: "slack" }[state];
-    const marker = lit ? "arrow-" + role : "arrow-" + state;
+  fabric.querySelectorAll(".node").forEach((n) => { n.dataset.near = String(near.has(n.dataset.name)); });
+
+  const parts = [PLUG_DEFS], waiting = [], labels = [];
+  for (const [from, to] of buses) {
+    const src = plateOf(from), row = rowOf[src];
+    const state = previewing ? "idle" : ready(from) ? "ok" : UNSETTLED[STATE_CLASS[comps[from]?.status]] || "idle";
+    // each end is a plug pushed into its socket's mouth (6px past the nut): the wire runs between their tails
+    const out = place(socket[from]), sx = Math.round(out.cx), sy = out.bottom + 6;
+    const y = rowBottom[row] + 16 + tracks[row].indexOf(from) * 11 + PLUG;
+    const lit = focus && (src === focus || to.has(focus));
+    const plugs = [plug(sx, sy, 1, "out")];
+    const paths = [...to].map((dst) => {
+      const pin = place(socket[from + ">" + dst]), tx = Math.round(pin.cx), ty = pin.top - 6;
+      plugs.push(plug(tx, ty, -1, "in"));
+      return route(tx === sx ? [[sx, sy + PLUG], [tx, ty - PLUG]] : [[sx, sy + PLUG], [sx, y], [tx, y], [tx, ty - PLUG]]);
+    });
+    if (state === "wait") waiting.push(...paths);
+    const label = from + (to.size > 1 ? " ×" + to.size : ""), width = label.length * 6 + 16;
+    // beside its junction - past any label already there
+    let lx = sx + 8;
+    for (let hit; (hit = labels.find((l) => Math.abs(l.y - y) < 15 && lx < l.x + l.width + 4 && lx + width > l.x - 4));) lx = hit.x + hit.width + 6;
+    if (lx + width > w - 8) lx = sx - 8 - width;        // at the board's edge: on the junction's other side
+    labels.push({ x: lx, y, width });
     parts.push(
-      `<path class="thread" d="${d}" ` +
-      `fill="none" style="stroke:var(--${dye})" stroke-width="${lit ? 2.6 : state === "slack" ? 1 : 1.6}" ` +
-      `stroke-dasharray="${state === "slack" && !lit ? "3 5" : "5 7"}" opacity="${role === "faded" ? 0.2 : 1}" ` +
-      `marker-end="url(#${marker})"><title>${escHtml(to)} waits for ${escHtml(from)} ` +
-      `(${escHtml(data.components[from]?.status || "?")})</title>${flow}</path>`
+      `<g class="bus ${state}${lit ? " lit" : ""}">` + paths.map((d) => `<path d="${d}"/>`).join("") + plugs.join("") +
+      `<circle cx="${sx}" cy="${y}" r="3.5"/>` +
+      `<g class="tag" data-tip="${escHtml(`Bus: ${from}\nOne wire from ${from}, split to ${[...to].join(", ")}. ` +
+        `Green: ready. Amber dashes: still waited for. Red dots: ${from} is down.`)}">` +
+      `<rect x="${lx}" y="${y - 17}" width="${width}" height="14" rx="7"/>` +
+      `<text x="${lx + 7}" y="${y - 7}">${escHtml(label)}</text></g></g>`
     );
-    if (taut && recent(tautAt[key])) {
-      parts.push(`<path class="shuttle" d="${d}" style="animation-delay:${since(tautAt[key])}"/>`);
-    }
   }
-  // the baseline is taken once the live view has components: the page's
-  // first draw, before any push, would make every taut thread look new
-  if (!previewing && Object.keys(view.components).length) tautKeys = nowTaut;
+  svg.dataset.focus = String(!!focus);
+  // what's still waited for breathes while something starts: opacity only, on a layer of its own
+  flow.innerHTML = Object.values(comps).some((c) => c.status === "deploying") ? waiting.map((d) => `<path d="${d}"/>`).join("") : "";
 
-  /* :related edges (zent.schema) - a declared
-     coupling zent never orchestrates (e.g. an :external Tomcat expected to
-     be launched by hand with a flag pointing at another component). Always
-     the weak/dashed style, never taut/animated - unlike a real dependency
-     thread, nothing here is ever "confirmed wired" by zent's own doing.
-
-     Routed via each node's LEFT edge, bowing further left, never the right
-     edge a real dependency thread already uses - :related has no bearing on
-     levelsOf (only :deps does), so the two ends can land in the same
-     column, a reversed one, or anywhere really. Tried the right edge first
-     (crossed a real thread using the same gap) and the bottom edge next
-     (invisible whenever both ends share a column - the path ran straight
-     behind the very card sitting between them, same x on both ends); the
-     left side has neither problem since nothing else is routed there. */
+  /* :related (zent.schema): a declared coupling zent never orchestrates, so never a bus - a dotted
+     line bowing out by the plates' left edges, where no wire runs. */
   for (const [to, from] of data.informational || []) {
     const a = at[from], b = at[to];
     if (!a || !b) continue;
     const bow = Math.min(a.l, b.l) - 26;
-    parts.push(
-      `<path class="thread" d="M${a.l} ${a.y} C${bow} ${a.y} ${bow} ${b.y} ${b.l} ${b.y}" ` +
-      `fill="none" style="stroke:var(--related)" stroke-width="1.4" stroke-dasharray="4 4" ` +
-      `opacity="${focus && to !== focus && from !== focus ? 0.2 : 1}" ` +
-      `marker-end="url(#arrow-related)"/>`
-    );
+    parts.push(`<path class="related${focus && to !== focus && from !== focus ? " faded" : ""}" ` +
+               `d="M${a.l} ${a.y} C${bow} ${a.y} ${bow} ${b.y} ${b.l} ${b.y}"/>`);
   }
-
-  // where the weave broke: the thread frays at the failed component
-  for (const [name, c] of Object.entries(data.components)) {
-    if (c.status !== "failed" || !at[name]) continue;
-    const p = at[name];
-    parts.push(
-      `<g style="stroke:var(--madder)" stroke-width="1.3" fill="none" class="fray-mark">` +
-      `<path d="M${p.r} ${p.y} l13 -9"/><path d="M${p.r} ${p.y} l15 1"/>` +
-      `<path d="M${p.r} ${p.y} l12 10"/></g>`
-    );
-  }
-
   svg.innerHTML = parts.join("");
-  for (const s of svg.querySelectorAll(".shuttle")) s.style.setProperty("--len", s.getTotalLength());
 }
 
 /* Server-rendered (zent.ui.render/detail-panel, GET /api/detail/:name) -
@@ -621,9 +577,10 @@ document.addEventListener("keydown", (e) => {
 let detailShown = null;                             // whose detail last came in, to animate a new one only
 async function loadDetail(name) {
   try {
-    const res = await fetch("/api/detail/" + name);
+    const res = await fetch("/api/detail/" + name + (previewing ? "?preset=" + encodeURIComponent(previewing) : ""));
     if (selected !== name) return;                  // selection moved mid-fetch
     document.getElementById("detail").outerHTML = await res.text();
+    htmx.process(document.getElementById("detail"));
     if (detailShown !== name) document.getElementById("detail").classList.add("enter");
     detailShown = name;
   } catch {
@@ -1248,8 +1205,8 @@ function setRail(px) {
 
 function setZoom(z) {
   zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-  document.getElementById("levels").style.zoom = zoom;
   localStorage.setItem("zent.zoom", zoom);
+  // drawWarp applies it, times what fits the widest row to the board
   drawWarp();
 }
 
@@ -1266,7 +1223,7 @@ function initViewControls() {
   // delegated: #preset-picker's own content is replaced wholesale on every
   // push (render()'s outerHTML assignment), so a listener on it directly
   // wouldn't survive past the first snapshot.
-  document.getElementById("rail-run").addEventListener("click", (e) => {
+  document.getElementById("run-menu").addEventListener("click", (e) => {
     const name = e.target.closest(".preset-name")?.dataset.preset;
     if (name) previewPreset(name);
   });
@@ -1407,6 +1364,40 @@ function initLogControls() {
     location.hash = "#logs";
   });
 }
+
+// the toolbar: Preview | Running, and the presets under the preset's name
+document.getElementById("mode").onclick = (e) => {
+  const mode = e.target.closest("button")?.dataset.mode;
+  if (mode === "run" && previewing) exitPreview();
+  if (mode === "preview" && !previewing) previewPreset(lastPreviewed || view.preset);
+};
+{
+  const label = document.getElementById("run-label"), menu = document.getElementById("run-menu");
+  const open = (on) => { menu.hidden = !on; label.setAttribute("aria-expanded", String(on)); };
+  label.onclick = () => open(menu.hidden);
+  // a pick, a click elsewhere or Escape closes it - the checkbox in it doesn't
+  document.addEventListener("click", (e) => {
+    if (menu.hidden || label.contains(e.target)) return;
+    if (!menu.contains(e.target) || e.target.closest(".preset-name, .act")) open(false);
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") open(false); });
+}
+
+/* Explanations on hover: in the graph, the legend and the toolbar, a title is shown as one tip that
+   follows the pointer, its first line the heading - the browser's own comes late and can't be read
+   at a glance. Each push re-renders the titles, so they're taken over as the pointer meets them. */
+const tipEl = document.getElementById("tip");
+document.addEventListener("mousemove", (e) => {
+  const t = e.target.closest?.(":is(.loom, .legend, .masthead) :is([title], [data-tip])");
+  if (!t) { tipEl.classList.remove("on"); return; }
+  if (t.title) { t.dataset.tip = t.title; t.removeAttribute("title"); }
+  const [head, ...rest] = t.dataset.tip.split("\n");
+  tipEl.replaceChildren(Object.assign(document.createElement("b"), { textContent: head }),
+                        Object.assign(document.createElement("span"), { textContent: rest.join("\n") }));
+  tipEl.style.left = Math.min(e.clientX + 14, innerWidth - 300) + "px";
+  tipEl.style.top = Math.min(e.clientY + 18, innerHeight - tipEl.offsetHeight - 8) + "px";
+  tipEl.classList.add("on");
+});
 
 connect();
 initViewControls();

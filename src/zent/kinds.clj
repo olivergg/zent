@@ -217,6 +217,13 @@
                       {:component name :services services :exclude exclude})))
     chosen))
 
+(defn planned-services
+  "The services a :compose-services component would run, asked of compose without starting anything -
+  nil when it can't say: what a preview shows."
+  [name cfg]
+  (try (services-to-run name (checkout-dir cfg) (compose-opts cfg) cfg)
+       (catch Exception _ nil)))
+
 (defmethod engine/already-running? :compose-services
   [name cfg]
   (let [dir (checkout-dir cfg)
