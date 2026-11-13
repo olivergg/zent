@@ -32,7 +32,7 @@ const UNSETTLED = { failed: "bad", unready: "bad", skipped: "bad", starting: "wa
    than restarting it. */
 const MOTION_MS = 1600;
 const seenStatus = {}, changedAt = {}, arrivedAt = {};
-let wasBusy = false;
+let wasBusy = false, selectedAt = -Infinity, unlit = null, unlitAt = -Infinity;
 const since = (t) => `${Math.round(t - performance.now())}ms`;
 const recent = (t) => performance.now() - (t ?? -Infinity) < MOTION_MS;
 
@@ -75,7 +75,7 @@ function toast(kind, title, detail, name) {
   el.innerHTML = "<b>" + escHtml(title) + "</b>" +
     (detail ? "<span>" + escHtml(String(detail).split("\n")[0]) + "</span>" : "");
   const leave = () => { el.classList.add("leaving"); setTimeout(() => el.remove(), 240); };
-  el.onclick = () => { if (name && view.components[name]) { location.hash = "#graph"; setSelected(name); } leave(); };
+  el.onclick = () => { if (name && view.components[name]) { location.hash = "#stack"; setSelected(name); } leave(); };
   document.getElementById("toasts").appendChild(el);
   setTimeout(leave, kind === "failed" ? 9000 : 5000);
 }
@@ -208,6 +208,10 @@ function markPreviewing(name) {
     .forEach((row) => { row.dataset.previewing = String(row.querySelector(".preset-name")?.dataset.preset === name); });
 }
 
+/* The hover explanations' texts (zent.ui.render/tips, sent with the page): `tip(key, {x})` fills its {x}. */
+// a daemon older than the page leaves {{TIPS}} unfilled: no explanations then, the page still works
+const TIPS = (() => { try { return JSON.parse(document.getElementById("tips")?.textContent || "{}"); } catch { return {}; } })();
+const tip = (key, vars = {}) => (TIPS[key] || "").replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
 const escHtml = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 /* What applying the previewed preset would do from what runs now (the engine's plan-summary), one
@@ -244,7 +248,7 @@ function renderRunToggle() {
   const old = document.getElementById("run-toggle");
   if (previewing) {
     old.outerHTML = '<button type="button" class="run-toggle play" id="run-toggle" ' +
-      'title="' + escHtml("Start " + previewing + "\n" + planText(previewData.plan)) + '" ' +
+      'title="' + escHtml(tip("run/start", { preset: previewing, plan: planText(previewData.plan) })) + '" ' +
       'hx-post="/api/apply/' + previewing + '" hx-swap="none" hx-disabled-elt="this">' +
       '▶ Start</button>';
     document.getElementById("run-toggle").addEventListener("click", () => setTimeout(exitPreview));
@@ -261,13 +265,65 @@ function renderRunToggle() {
   const failed = n((c) => UNSETTLED[STATE_CLASS[c.status]] === "bad"), up = n((c) => c.status === "up" || c.status === "external");
   const steps = cs.filter((c) => c.kind === "one-shot" && !c["on-demand"]);
   document.getElementById("chips").innerHTML = !view.preset ? "" :
-    (failed ? `<span class="chip bad"><b>${failed}</b> failed</span>` : "") + `<span class="chip"><b>${up}</b> up</span>` +
-    (steps.length ? `<span class="chip"><b>${steps.filter((c) => c.status === "done").length}</b> of ${steps.length} steps</span>` : "");
+    (failed ? `<span class="chip bad" data-tip-key="chip/failed">` +
+              `<b>${failed}</b> failed</span>` : "") +
+    `<span class="chip" data-tip-key="chip/up"><b>${up}</b> up</span>` +
+    (steps.length ? `<span class="chip" data-tip-key="chip/steps">` +
+                    `<b>${steps.filter((c) => c.status === "done").length}</b> of ${steps.length} steps</span>` : "");
+}
+
+/* A preview's verdict, over the board where the side panel was: what applying it does (the engine's
+   plan), what stops it - each with the click that unblocks it - and what's worth a look first. */
+function renderVerdict() {
+  const box = document.getElementById("verdict");
+  if (!previewing || !previewData) { box.hidden = true; return; }
+  const comps = previewData.components, plan = previewData.plan || {}, q = "?preset=" + encodeURIComponent(previewing);
+  const act = (verb, n, label, confirm) => `<button type="button" class="act-btn" hx-post="/api/${verb}/${escHtml(n)}${q}" hx-swap="none"` +
+    ` hx-disabled-elt="this"${confirm ? ` hx-confirm="${escHtml(confirm)}"` : ""}>${label}</button>`;
+  const blocks = [], looks = [];
+  for (const [n, c] of Object.entries(comps)) {
+    const g = c.git || {}, want = c["wanted-branch"], from = c.from, at = `<b>${escHtml(n)}</b>`;
+    if (from === "clone" && want && g.branch && g.branch !== want) {
+      blocks.push(`${at} runs your clone, on <code>${escHtml(g.branch)}</code> - the preset wants <code>${escHtml(want)}</code>` +
+        (g.dirty ? ` <span class="why">commit or stash its ${g.dirty} uncommitted file(s) first</span>`
+                 : act("checkout", n, "Check out", `Check out ${want} in your clone? Every component running it moves with it.`)));
+    }
+    if ((from === "origin" || from === "local") && (g.dirty || g.unreachable)) {
+      blocks.push(`${at}'s worktree holds ${g.dirty ? g.dirty + " uncommitted file(s)" : ""}${g.dirty && g.unreachable ? " and " : ""}` +
+        `${g.unreachable ? g.unreachable + " commit(s) on no branch" : ""}: the apply refuses to sync it <span class="why">keep or drop them first</span>`);
+    }
+    if (want && g.behind > 0) {
+      looks.push(`${at} is ${g.behind} commit${g.behind > 1 ? "s" : ""} behind <code>${escHtml(g.base)}</code>` +
+        (g.dirty ? "" : act("rebase", n, from === "origin" ? "Test on " + escHtml(g.base) : "Rebase")));
+    }
+    if (g.pull > 0) looks.push(`${at}: origin has ${g.pull} new commit(s) - the apply resets its worktree to them`);
+    if (!want && g.dirty) looks.push(`${at} runs your clone as it is, with ${g.dirty} uncommitted file(s)`);
+  }
+  const steps = Object.entries(comps).filter(([, c]) => c.kind === "one-shot");
+  const demand = steps.filter(([, c]) => c["on-demand"]).map(([n]) => n);
+  const restarts = Object.entries(plan.redeploy || {});
+  const count = (xs, verb) => xs.length ? `<span class="n"><b>${xs.length}</b> ${verb}</span>` : "";
+  const services = (plan.start || []).filter((n) => comps[n]?.kind !== "one-shot");
+  box.hidden = false;
+  box.innerHTML = `<div class="v-head ${blocks.length ? "bad" : "ok"}">
+      <h2>${blocks.length ? `${blocks.length} thing${blocks.length > 1 ? "s" : ""} stop${blocks.length > 1 ? "" : "s"} this apply` : "Nothing stops this apply"}</h2>
+      <span class="does">${count(services, "start")}${count(restarts, "restart")}${count(plan.stop || [], "stop")}${count(plan["keep-warm"] || [], "kept warm")}` +
+      `${count((plan.unchanged || []), "stay as they are")}${count(steps.filter(([, c]) => !c["on-demand"]), "steps run")}</span></div>
+    ${restarts.length ? `<p class="v-line">Restarts: ${restarts.map(([n, why]) => `<b>${escHtml(n)}</b> <span class="why">${escHtml(why)}</span>`).join(", ")}</p>` : ""}
+    ${(plan.stop || []).length ? `<p class="v-line">Stops: ${plan.stop.map((n) => `<b>${escHtml(n)}</b>`).join(", ")}</p>` : ""}
+    ${blocks.length ? `<ul class="v-list bad">${blocks.map((b) => `<li>${b}</li>`).join("")}</ul>` : ""}
+    ${looks.length ? `<details class="v-more"${blocks.length ? "" : " open"}><summary>${looks.length} thing${looks.length > 1 ? "s" : ""} worth a look</summary>` +
+      `<ul class="v-list">${looks.map((l) => `<li>${l}</li>`).join("")}</ul></details>` : ""}
+    ${demand.length ? `<p class="v-line quiet">Only when you ask: ${demand.map((n) => `<b>${escHtml(n)}</b>`).join(", ")}</p>` : ""}`;
+  htmx.process(box);
 }
 
 function renderRun() {
   const host = document.getElementById("levels");
   document.getElementById("loom").dataset.preview = String(!!previewing);
+  // a preview has its verdict over the board: the side panel steps aside
+  document.getElementById("shell").dataset.preview = String(!!previewing);
+  renderVerdict();
   if (!previewing) noteChanges(view.components);
 
   // a preview shows every one of the preset's own components, never
@@ -319,7 +375,7 @@ function weave(host, data, all) {
     const label = document.createElement("span");
     label.className = "lane";
     label.textContent = lvl === 0 ? "Starts first" : lvl === levels.length - 1 ? "Last" : "Then";
-    label.title = label.textContent + "\nComponents start a row at a time: a row starts once what it waits for in the rows above is ready";
+    label.title = tip("lane", { row: label.textContent });
     col.appendChild(label);
 
     for (const name of names) {
@@ -376,6 +432,8 @@ function nodeEl(name, c) {
   for (const [attr, at] of [["arrived", arrivedAt[name]], ["changed", changedAt[name]]]) {
     if (!previewing && recent(at)) { el.dataset[attr] = "true"; el.style.setProperty(`--${attr}-at`, since(at)); }
   }
+  if (selected === name && recent(selectedAt)) { el.dataset.lighting = "true"; el.style.setProperty("--lit-at", since(selectedAt)); }
+  else if (unlit === name && recent(unlitAt)) { el.dataset.dimming = "true"; el.style.setProperty("--unlit-at", since(unlitAt)); }
   // the card's own inner markup - name/kind/state/repo/services/ports/
   // source/links/error/reload-stop buttons - is server-rendered
   // (zent.ui.render/component-card, see its docstring on the split);
@@ -420,8 +478,11 @@ function route(pts, r = 8) {
 const PLUG = 16;
 function plug(x, mouth, d, end) {
   const top = (a, b) => Math.min(mouth + d * a, mouth + d * b);
-  return `<g class="plug"><rect class="tip" x="${x - 2}" y="${top(-2, 2)}" width="4" height="4"/>` +
-    `<rect class="body" x="${x - 4.5}" y="${top(2, 12)}" width="9" height="10" rx="2"/>` +
+  // pushed home: its metal tip is inside the jack, out of sight; a metal collar seats on the jack's
+  // mouth, a soft shadow under it where it meets the jack
+  return `<g class="plug"><ellipse class="seat" cx="${x}" cy="${mouth + d}" rx="7" ry="1.6"/>` +
+    `<rect class="tip" x="${x - 5.5}" y="${top(1, 3.2)}" width="11" height="2.2" rx=".8"/>` +
+    `<rect class="body" x="${x - 4.5}" y="${top(3, 12)}" width="9" height="9" rx="2"/>` +
     `<rect class="band ${end}" x="${x - 4.5}" y="${top(4, 6)}" width="9" height="2"/>` +
     `<line class="relief" x1="${x}" y1="${mouth + d * 12}" x2="${x}" y2="${mouth + d * PLUG}"/></g>`;
 }
@@ -442,7 +503,8 @@ function drawWarp() {
   const rows = [...fabric.querySelectorAll(".level")];
   // the widest row fits the board: its plates draw closer, then the whole graph scales down a little
   const most = Math.max(1, ...rows.map((row) => row.querySelectorAll(".stack").length));
-  const room = loom.clientWidth - 80, gap = Math.max(38, Math.min(48, (room - most * 186 - 40) / Math.max(1, most - 1)));
+  // (the gap: a box's depth to its right, then its ports' numbers)
+  const room = loom.clientWidth - 80, gap = Math.max(54, Math.min(64, (room - most * 186 - 40) / Math.max(1, most - 1)));
   fabric.style.setProperty("--gap", gap + "px");
   fabric.style.zoom = zoom * Math.max(.7, Math.min(1, room / (most * 186 + (most - 1) * gap + 40)));
   const rowOf = {};
@@ -459,8 +521,8 @@ function drawWarp() {
   // each row leaves room under it for the buses that run there, one track each
   const tracks = rows.map(() => []);
   for (const from of buses.keys()) tracks[rowOf[plateOf(from)]].push(from);
-  // (70: a plug's length under this row and over the next, and their sockets)
-  rows.forEach((row, i) => { row.style.marginBottom = (i < rows.length - 1 ? 70 + tracks[i].length * 11 : 0) + "px"; });
+  // (78: a plug's length under this row and over the next, and the next one's top face)
+  rows.forEach((row, i) => { row.style.marginBottom = (i < rows.length - 1 ? 78 + tracks[i].length * 11 : 0) + "px"; });
 
   // sockets, where a wire's plug goes in: one input per source on the top edge, its link light on once
   // that source is ready; an output under the plate - under its button, for a one-shot riding there
@@ -474,18 +536,19 @@ function drawWarp() {
       socket[key] = p;
     };
     (inputs[name] || []).forEach((from, k) => pin(from + ">" + name, "in" + (ready(from) && !previewing ? " ok" : ""), `left:${23 + k * 17}px`,
-      `Input: ${from}\n${name} starts once ${from} is ${comps[from]?.kind === "one-shot" ? "done" : "ready"} - its light is on when it is`));
-    if (buses.has(name)) pin(name, "out", "", `Output\nEvery wire plugged here is something waiting for ${name}`);
+      tip("jack/in", { from, to: name, ready: comps[from]?.kind === "one-shot" ? "done" : "ready" })));
+    if (buses.has(name)) pin(name, "out", "", tip("jack/out", { name }));
     for (const b of n.querySelectorAll("[data-shot]")) {
       if (!buses.has(b.dataset.shot)) continue;
       const x = (b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2 - n.getBoundingClientRect().left) / (n.getBoundingClientRect().width / n.offsetWidth);
-      pin(b.dataset.shot, "out", `left:${Math.round(x - 7)}px`, `Output of ${b.dataset.shot}\nEvery wire plugged here waits for that step`);
+      pin(b.dataset.shot, "out", `left:${Math.round(x - 7)}px`, tip("jack/out-step", { name: b.dataset.shot }));
     }
   });
 
   const box = loom.getBoundingClientRect();
   const w = loom.scrollWidth, h = Math.max(loom.scrollHeight, box.height);
-  for (const s of [svg, flow]) { s.setAttribute("width", w); s.setAttribute("height", h); s.setAttribute("viewBox", `0 0 ${w} ${h}`); }
+  const plugLayer = document.getElementById("warp-plugs");
+  for (const s of [svg, flow, plugLayer]) { s.setAttribute("width", w); s.setAttribute("height", h); s.setAttribute("viewBox", `0 0 ${w} ${h}`); }
   const place = (el) => {
     const r = el.getBoundingClientRect();
     return {
@@ -509,7 +572,7 @@ function drawWarp() {
   loom.dataset.hovering = String(!!hovered);
   fabric.querySelectorAll(".node").forEach((n) => { n.dataset.near = String(near.has(n.dataset.name)); });
 
-  const parts = [PLUG_DEFS], waiting = [], labels = [];
+  const parts = [], plugParts = [], waiting = [], labels = [];
   for (const [from, to] of buses) {
     const src = plateOf(from), row = rowOf[src];
     const state = previewing ? "idle" : ready(from) ? "ok" : UNSETTLED[STATE_CLASS[comps[from]?.status]] || "idle";
@@ -519,7 +582,7 @@ function drawWarp() {
     const lit = focus && (src === focus || to.has(focus));
     const plugs = [plug(sx, sy, 1, "out")];
     const paths = [...to].map((dst) => {
-      const pin = place(socket[from + ">" + dst]), tx = Math.round(pin.cx), ty = pin.top - 6;
+      const pin = place(socket[from + ">" + dst]), tx = Math.round(pin.cx), ty = Math.round(pin.top) + 2;  // pushed home: its body down on the jack's mouth
       plugs.push(plug(tx, ty, -1, "in"));
       return route(tx === sx ? [[sx, sy + PLUG], [tx, ty - PLUG]] : [[sx, sy + PLUG], [sx, y], [tx, y], [tx, ty - PLUG]]);
     });
@@ -531,15 +594,16 @@ function drawWarp() {
     if (lx + width > w - 8) lx = sx - 8 - width;        // at the board's edge: on the junction's other side
     labels.push({ x: lx, y, width });
     parts.push(
-      `<g class="bus ${state}${lit ? " lit" : ""}">` + paths.map((d) => `<path d="${d}"/>`).join("") + plugs.join("") +
+      `<g class="bus ${state}${lit ? " lit" : ""}">` + paths.map((d) => `<path d="${d}"/>`).join("") +
       `<circle cx="${sx}" cy="${y}" r="3.5"/>` +
-      `<g class="tag" data-tip="${escHtml(`Bus: ${from}\nOne wire from ${from}, split to ${[...to].join(", ")}. ` +
-        `Green: ready. Amber dashes: still waited for. Red dots: ${from} is down.`)}">` +
+      `<g class="tag" data-tip="${escHtml(tip("bus", { from, to: [...to].join(", ") }))}">` +
       `<rect x="${lx}" y="${y - 17}" width="${width}" height="14" rx="7"/>` +
       `<text x="${lx + 7}" y="${y - 7}">${escHtml(label)}</text></g></g>`
     );
+    plugParts.push(`<g class="bus ${state}${lit ? " lit" : ""}">${plugs.join("")}</g>`);
   }
-  svg.dataset.focus = String(!!focus);
+  svg.dataset.focus = plugLayer.dataset.focus = String(!!focus);
+  plugLayer.innerHTML = PLUG_DEFS + plugParts.join("");
   // what's still waited for breathes while something starts: opacity only, on a layer of its own
   flow.innerHTML = Object.values(comps).some((c) => c.status === "deploying") ? waiting.map((d) => `<path d="${d}"/>`).join("") : "";
 
@@ -565,7 +629,10 @@ function drawWarp() {
 const detailPlaceholder = document.getElementById("detail").outerHTML;
 
 function setSelected(name) {
+  // the one let go dims from now, the new one lights up from now (nodeEl)
+  if (selected && selected !== name) { unlit = selected; unlitAt = performance.now(); }
   selected = name;
+  selectedAt = performance.now();
   if (!name) { document.getElementById("detail").outerHTML = detailPlaceholder; detailShown = null; }
   render();
 }
@@ -866,8 +933,9 @@ function writeLogFilter(changes) {
   readLogFilter();
 }
 
-const TABS = ["graph", "logs", "checks"];
-const tabOf = () => TABS.find((t) => location.hash.startsWith("#" + t)) || "graph";
+const TABS = ["stack", "logs", "checks"];
+// #graph: the stack tab's former name, kept for links and bookmarks made before
+const tabOf = () => TABS.find((t) => location.hash.startsWith("#" + t)) || "stack";
 
 // a tab change slides the old tab out the way you went, the new one in
 function switchTab() {
@@ -1186,8 +1254,20 @@ function setRailCollapsed(collapsed) {
   toggle.setAttribute("aria-pressed", String(!collapsed));
   toggle.title = collapsed ? "Show the side panel" : "Hide the side panel";
   localStorage.setItem("zent.railCollapsed", collapsed);
-  drawWarp();                       // the loom just changed width
+  drawWarp();                       // the loom changes width - again once the panel has arrived (below)
 }
+// the light on the metal follows the pointer across the plate under it (index.css .sheen/.rim)
+document.getElementById("levels").addEventListener("pointermove", (e) => {
+  const plate = e.target.closest(".node");
+  if (!plate) return;
+  const r = plate.getBoundingClientRect();
+  plate.style.setProperty("--mx", ((e.clientX - r.left) / r.width * 100).toFixed(1) + "%");
+  plate.style.setProperty("--my", ((e.clientY - r.top) / r.height * 100).toFixed(1) + "%");
+});
+// the board's width eases with the panel (index.css): the wires follow it once it's settled
+document.getElementById("shell").addEventListener("transitionend", (e) => {
+  if (e.target.id === "shell" && e.propertyName === "grid-template-columns") drawWarp();
+});
 
 function setShowStopped(shown) {
   showStopped = shown;
@@ -1388,9 +1468,10 @@ document.getElementById("mode").onclick = (e) => {
    at a glance. Each push re-renders the titles, so they're taken over as the pointer meets them. */
 const tipEl = document.getElementById("tip");
 document.addEventListener("mousemove", (e) => {
-  const t = e.target.closest?.(":is(.loom, .legend, .masthead) :is([title], [data-tip])");
+  const t = e.target.closest?.(":is(.loom, .legend, .masthead) :is([title], [data-tip], [data-tip-key])");
   if (!t) { tipEl.classList.remove("on"); return; }
   if (t.title) { t.dataset.tip = t.title; t.removeAttribute("title"); }
+  if (t.dataset.tipKey) t.dataset.tip = tip(t.dataset.tipKey);
   const [head, ...rest] = t.dataset.tip.split("\n");
   tipEl.replaceChildren(Object.assign(document.createElement("b"), { textContent: head }),
                         Object.assign(document.createElement("span"), { textContent: rest.join("\n") }));

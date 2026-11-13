@@ -202,11 +202,15 @@ body[data-tab="logs"] .rail-toggle, body[data-tab="checks"] .rail-toggle { displ
   display: grid;
   grid-template-columns: 1fr 5px var(--rail);
   height: calc(100% - var(--head));
+  /* the board widens or narrows as the panel goes or comes, in step with it */
+  transition: grid-template-columns 480ms cubic-bezier(.32, .72, 0, 1);
 }
 
-.shell[data-rail-collapsed="true"] { grid-template-columns: 1fr 0 0; }
-.shell[data-rail-collapsed="true"] .grip,
-.shell[data-rail-collapsed="true"] .rail { display: none; }
+/* hidden, the panel slides off to the right and fades, rather than vanishing */
+.shell:is([data-rail-collapsed="true"], [data-preview="true"]) { grid-template-columns: 1fr 0 0; }
+.shell:is([data-rail-collapsed="true"], [data-preview="true"]) .grip { visibility: hidden; }
+.shell:is([data-rail-collapsed="true"], [data-preview="true"]) .rail { transform: translateX(calc(100% + 24px)) scale(.97); opacity: 0; visibility: hidden; pointer-events: none;
+  transition: transform 420ms cubic-bezier(.32, .72, 0, 1), opacity 260ms ease, visibility 0s 420ms; }
 
 /* the grip sits in its own grid column rather than being positioned over
    the rail's border, so nothing inside either pane can be under it */
@@ -226,6 +230,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
   /* the bottom: room for the legend floating there */
   padding: 34px 40px 80px;
   display: flex;
+  /* a preview's verdict above the graph, not beside it */
+  flex-direction: column;
   /* the drawing board's grid; `local` so it scrolls with the graph */
   background: var(--board) radial-gradient(circle, var(--board-dot) 1px, transparent 1.2px) 0 0 / 16px 16px;
   background-attachment: local;
@@ -233,6 +239,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 /* the wiring (index.js drawWarp): one bus per source, in its source's state */
 .warp { position: absolute; inset: 0; pointer-events: none; }
+.warp.plugs { z-index: 3; }
 .warp path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .warp .bus { --w: #b8b8bf; transition: opacity 200ms ease; }
 .warp .bus.ok { --w: #28b463; }
@@ -262,6 +269,38 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .loom[data-panning="true"] { cursor: grabbing; }
 .loom[data-panning="true"] .node { pointer-events: none; }
 
+/* a preview's verdict, floating at the top of the board: the outcome first, red when something
+   stops the apply, then the lines that say what and how to unblock it */
+.verdict { position: sticky; top: 0; left: 0; z-index: 4; align-self: flex-start; width: min(760px, 100%); margin: -18px 0 22px -24px;
+  padding: 12px 16px 12px 18px; border-radius: 14px; font-size: 12px; color: var(--ink);
+  background: rgba(255, 255, 255, .82); -webkit-backdrop-filter: blur(16px) saturate(1.5); backdrop-filter: blur(16px) saturate(1.5);
+  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .12), 0 12px 32px rgba(0, 0, 0, .12);
+  animation: verdict-in 520ms cubic-bezier(.32, .72, 0, 1) backwards; }
+.verdict[hidden] { display: none; }
+@keyframes verdict-in { from { opacity: 0; transform: translateY(-10px) scale(.98); } }
+.verdict .v-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-left: 12px; border-left: 4px solid #28b463; border-radius: 2px; }
+.verdict .v-head.bad { border-left-color: #e5463b; }
+.verdict h2 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.verdict .v-head.bad h2 { color: #c0392b; }
+.verdict .does { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); }
+.verdict .does b { color: var(--ink); }
+.verdict .v-line { margin: 8px 0 0 16px; color: var(--muted); }
+.verdict .v-line b { color: var(--ink); font-weight: 600; }
+.verdict .v-line.quiet { font-size: 11px; }
+.verdict .v-list { margin: 8px 0 0; padding: 0 0 0 16px; list-style: none; display: grid; gap: 6px; }
+.verdict .v-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.verdict .v-list li::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #e8a200; flex: none; transform: translateY(-1px); }
+.verdict .v-list.bad li::before { background: #e5463b; box-shadow: 0 0 6px rgba(229, 70, 59, .6); }
+.verdict code { font: 10.5px var(--mono); padding: 1px 5px; border-radius: 4px; background: rgba(0, 0, 0, .05); }
+.verdict .why { color: var(--muted); font-size: 11px; }
+.verdict .act-btn { margin-left: auto; padding: 3px 10px; border: 0; border-radius: 7px; font: inherit; font-size: 11px; font-weight: 600; color: #fff; background: #0a84ff; cursor: pointer;
+  transition: transform 160ms cubic-bezier(.32, .72, 0, 1), background 160ms ease; }
+.verdict .act-btn:hover { background: #3b9bff; transform: translateY(-1px); }
+.verdict .v-list:not(.bad) .act-btn { color: #0a6fe0; background: rgba(10, 132, 255, .1); }
+.verdict .v-more { margin: 8px 0 0 16px; }
+.verdict .v-more summary { cursor: pointer; color: var(--muted); font-weight: 600; font-size: 11.5px; }
+.verdict .v-more .v-list { padding-left: 0; }
+
 /* previewing a preset that isn't running: a sketch, not a report - dashed outlines, LEDs and wires
    unlit (nothing IS healthy yet, this is a plan) - so it can't be mistaken for the live view */
 .loom[data-preview="true"] #levels .node {
@@ -280,12 +319,28 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
      justify-content: center would once it overflows */
   margin: auto;
 }
-.level { position: relative; display: flex; gap: var(--gap, 48px); align-items: flex-start; padding-top: 26px; border-top: 1px dashed rgba(0, 0, 0, .1); }
+.level { position: relative; display: flex; gap: var(--gap, 48px); align-items: flex-start; padding-top: 40px; border-top: 1px dashed rgba(0, 0, 0, .1); }
 .level .lane { position: absolute; left: 0; top: 5px; font-size: 11px; font-weight: 600; color: #a1a1a6; cursor: help; }
 .stack { width: 186px; flex: none; }
 
 /* a one-shot with a place of its own: a capsule - its pip the state, hatched while on demand */
-.node[data-kind="one-shot"] { width: auto; padding: 7px 12px 7px 10px; border-radius: 8px; white-space: nowrap; }
+/* --d 0: a flat capsule, no top face - its input jacks sit on its top edge */
+/* a one-shot drawn on its own: a small box of the same metal, 8px deep, its kind strip amber */
+.node[data-kind="one-shot"] { --d: 8px; width: auto; padding: 8px 13px 8px 20px; border-radius: 9px; white-space: nowrap;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.3' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 .32 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E"),
+    linear-gradient(168deg, #f5f6f8 0%, #e5e7ea 55%, #d8dbdf 100%);
+  box-shadow:
+    inset 0 1px 0 #fff, inset 1px 0 0 rgba(255, 255, 255, .7), inset 0 -1px 1px rgba(0, 0, 0, .10), inset 0 0 0 .5px rgba(0, 0, 0, .22),
+    1px -1px 0 #bdc0c7, 2px -2px 0 #c3c6cc, 3px -3px 0 #c9ccd2, 4px -4px 0 #cfd2d7, 5px -5px 0 #d5d7dc, 6px -6px 0 #dbdde2,
+    7px -7px 0 #e0e2e6, 8px -8px 0 #e6e8ec, 8.5px -8.5px 0 .5px rgba(0, 0, 0, .14),
+    2px 3px 3px rgba(0, 0, 0, .26), 12px 16px 20px -6px rgba(20, 20, 30, .22); }
+.node[data-kind="one-shot"] .ear { border-radius: 9px 0 0 9px; }
+/* its right side, as a unit's */
+.node[data-kind="one-shot"]::after {
+  content: ""; position: absolute; left: 100%; top: 0; width: var(--d); height: 100%; pointer-events: none;
+  transform-origin: 0 0; transform: skewY(-45deg); border-radius: 0 7px 7px 0;
+  background: linear-gradient(90deg, rgba(40, 44, 54, .16), rgba(40, 44, 54, .30)); }
 /* its run and stop come beside it, not over its words */
 .node[data-kind="one-shot"] > .actions { top: 5px; right: auto; left: calc(100% + 4px); }
 .stack:has(> .node[data-kind="one-shot"]) { width: auto; }
@@ -296,7 +351,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .capsule[data-state="done"] i { background: #28b463; }
 .node .capsule[data-state="running"] i { background: var(--weld); animation: led 1s steps(2, jump-none) infinite; }
 .node .capsule[data-state="failed"] i { background: #e5463b; }
-.node:has(.capsule[data-state="ondemand"]) { background: repeating-linear-gradient(135deg, #fff7e8 0 4px, #fde9c4 4px 8px); box-shadow: 0 0 0 1px rgba(255, 159, 10, .7); }
+/* on demand: its amber strip hatched - an apply never runs it */
+.node:has(.capsule[data-state="ondemand"]) .ear { background: repeating-linear-gradient(135deg, #ffb340 0 3px, #fde9c4 3px 6px); }
 .node .capsule[data-state="ondemand"] { color: #b06d00; }
 .node .capsule[data-state="ondemand"] i { background: transparent; box-shadow: inset 0 0 0 1.5px #ff9f0a; }
 /* what a one-shot reads (:source-env): one checkout per row, once selected */
@@ -326,6 +382,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 /* a wire's plug (drawWarp): a metal tip in the socket, a moulded body with a gloss down its length,
    a band in its end's colour - blue at an input, brass at an output - and a ribbed strain relief */
 .warp .plug .tip { fill: url(#plug-metal); stroke: rgba(0, 0, 0, .4); stroke-width: .5; }
+.warp .plug .seat { fill: rgba(0, 0, 0, .35); filter: blur(.8px); }
 .warp .plug .body { fill: url(#plug-body); stroke: rgba(0, 0, 0, .55); stroke-width: .5; }
 .warp .plug .band.in { fill: #2f93ff; } .warp .plug .band.out { fill: #e2bd5c; }
 .warp .bus .plug .relief { stroke: #2a2c33; stroke-width: 4.5; stroke-dasharray: 1.1 .8; stroke-linecap: butt; }
@@ -492,7 +549,6 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
    stopped keeps its reload button (faded like the rest of the card until
    hovered, same as any other node) so a manual stop is reversible. */
 .node[data-status="off"] .actions { display: none; }
-.node[data-selected="true"]   { box-shadow: inset 0 1px 0 #fff, 0 0 0 2px #0a84ff, 0 10px 30px rgba(10, 132, 255, .2); }
 
 /* motion follows the stack (index.js noteChanges): a card joining rises in,
    column after column, in dependency order; a status change washes the card
@@ -563,44 +619,6 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .svc[data-health="bad"]  { border-left-color: var(--madder); color: var(--madder); }
 .node .svc[data-health="bad"]::before  { background: var(--madder); }
 
-/* CPU and memory, two hairline meters on one line: grey while calm - a calm stack shows no
-   colour at all - weld when busy, madder when stressed; the figures on hover */
-.node .usage {
-  /* a level meter, as on an amplifier: two rows of segments in a window milled into the plate -
-     green, then amber, then red as the load climbs - each with its engraved label; the figures on hover */
-  display: grid;
-  gap: 2px;
-  margin-top: 7px;
-  padding: 3px 5px 3px 4px;
-  border-radius: 4px;
-  /* milled into the plate, like the branch's window: the same metal, a shade down */
-  background: #e3e5e9;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .14), 0 1px 0 #fff;
-  font: 600 7.5px/1 var(--mono);
-  cursor: help;
-}
-.node .meter { display: flex; flex-direction: row-reverse; align-items: center; gap: 5px; min-width: 0; color: #7c8089; }
-.node .meter i { position: relative; flex: 1; height: 5px; }
-/* the segments: unlit ones barely there, lit ones up to --v, cut from one green-amber-red strip */
-.node .meter i::before, .node .meter i::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  -webkit-mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 5.5px);
-  mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 5.5px);
-}
-.node .meter i::before { background: #c9ccd2; }
-.node .meter i::after {
-  background: linear-gradient(90deg, #28b463 0 62%, #e8a200 62% 82%, #e5463b 82%);
-  clip-path: inset(0 calc((1 - var(--v, 0)) * 100%) 0 0);
-  transition: clip-path 600ms ease;
-}
-.node .meter b { flex: none; width: 17px; font-weight: inherit; font-size: 0; letter-spacing: .04em; text-transform: uppercase; }
-.node .meter b::before { font-size: 7.5px; }
-.node .meter.cpu b::before { content: "cpu"; }
-.node .meter.rss b::before { content: "mem"; }
-.node .meter[data-level="busy"] { color: #a37200; }
-.node .meter[data-level="stressed"] { color: #e5463b; }
 
 
 /* a checkout in one line: the branch as a label (the one thing here you might be surprised by), cut, its
@@ -755,6 +773,162 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .preset-row .act:disabled { opacity: 0.35; cursor: default; }
 .preset-row[data-active="true"] .play { opacity: 0.5; }
 
+/* ------------------------------------------------------- the aluminium unit */
+/* A card is a box milled from one block of bead-blasted aluminium, seen from above right: the plate
+   extruded --d back (twelve stacked shadows, so its rounded edges stay exact), the side shaded, four
+   screws, the kind as an anodised strip let into the left edge. Its inputs sit on the top face, its
+   output under it, its ports on the right side. A one-shot drawn alone stays a flat capsule. */
+.node:not([data-kind="one-shot"]) {
+  --d: 12px;
+  padding: 12px 14px 12px 24px;
+  border-radius: 11px;
+  background:
+    var(--screw-tl), var(--screw-tr), var(--screw-bl), var(--screw-br),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.3' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 .32 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E"),
+    linear-gradient(168deg, #f5f6f8 0%, #e5e7ea 55%, #d8dbdf 100%);
+  box-shadow:
+    inset 0 1px 0 #fff, inset 1px 0 0 rgba(255, 255, 255, .7), inset 0 -1px 1px rgba(0, 0, 0, .10), inset 0 0 0 .5px rgba(0, 0, 0, .22),
+    1px -1px 0 #bdc0c7, 2px -2px 0 #c1c4ca, 3px -3px 0 #c4c7ce, 4px -4px 0 #c8cbd1, 5px -5px 0 #cccfd4, 6px -6px 0 #d0d2d8,
+    7px -7px 0 #d3d6db, 8px -8px 0 #d7d9df, 9px -9px 0 #dbdde2, 10px -10px 0 #dfe1e5, 11px -11px 0 #e2e4e9, 12px -12px 0 #e6e8ec,
+    12.5px -12.5px 0 .5px rgba(0, 0, 0, .14),
+    2px 3px 3px rgba(0, 0, 0, .28), 16px 22px 26px -6px rgba(20, 20, 30, .26);
+}
+/* the right side, in the plate's shade */
+.node:not([data-kind="one-shot"])::after {
+  content: ""; position: absolute; left: 100%; top: 0; width: var(--d); height: 100%; pointer-events: none;
+  transform-origin: 0 0; transform: skewY(-45deg); border-radius: 0 9px 9px 0;
+  background: linear-gradient(90deg, rgba(40, 44, 54, .16), rgba(40, 44, 54, .30));
+}
+.node:not([data-kind="one-shot"]) {
+  --screw-tl: var(--screw-slot) left 14px top 7px / 7px 7px no-repeat, var(--screw-head) left 14px top 7px / 7px 7px no-repeat;
+  --screw-tr: var(--screw-slot) right 7px top 7px / 7px 7px no-repeat, var(--screw-head) right 7px top 7px / 7px 7px no-repeat;
+  --screw-bl: var(--screw-slot) left 14px bottom 7px / 7px 7px no-repeat, var(--screw-head) left 14px bottom 7px / 7px 7px no-repeat;
+  --screw-br: var(--screw-slot) right 7px bottom 7px / 7px 7px no-repeat, var(--screw-head) right 7px bottom 7px / 7px 7px no-repeat;
+  --screw-slot: linear-gradient(-40deg, transparent 44%, rgba(0, 0, 0, .5) 44% 56%, transparent 56%);
+  --screw-head: radial-gradient(circle closest-side, #fff 0, #d3d6db 35%, #8a8e96 78%, rgba(0, 0, 0, .35) 92%, transparent 100%);
+}
+/* gold screws: a permanent unit, never taken down by a preset switch */
+.node:not([data-kind="one-shot"]):has(.permanent) {
+  --screw-head: radial-gradient(circle closest-side, #fff6d6 0, #e8c060 35%, #9c7420 78%, rgba(0, 0, 0, .35) 92%, transparent 100%);
+}
+/* selected: the unit lit from inside - its kind strip is a light pipe; it lights up in the kind's
+   colour (--k), its glow spilling onto the face beside it. Fades up as a device powering on. */
+.node .ear { --k: 154, 157, 165; transition: box-shadow 400ms ease, filter 400ms ease; }
+.node .ear[data-family="compose"] { --k: 43, 140, 255; }
+.node .ear[data-family="quarkus"] { --k: 181, 92, 240; }
+.node .ear::after { content: ""; position: absolute; left: 100%; top: 0; bottom: 0; width: 56px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(var(--k), .17), rgba(var(--k), .05) 50%, transparent);
+  opacity: 0; transition: opacity 400ms ease; }
+/* lit: a softer, wider-spread glow, close to the strip */
+.node[data-selected="true"] .ear { filter: brightness(1.18) saturate(1.1);
+  box-shadow: inset -.6px 0 0 rgba(0, 0, 0, .3), 1px 0 0 rgba(255, 255, 255, .55), inset 0 0 4px rgba(255, 255, 255, .6),
+              0 0 5px 1px rgba(var(--k), .5), 0 0 16px 3px rgba(var(--k), .16); }
+.node[data-selected="true"] .ear::after { opacity: 1; }
+/* just selected (index.js data-lighting): the light comes up, the strip first, then its spill on the
+   face - resumed where it was if the card is rebuilt meanwhile (--lit-at, a negative delay) */
+.node[data-lighting="true"] .ear { animation: pipe-on 700ms cubic-bezier(.32, .72, 0, 1) var(--lit-at, 0ms) backwards; }
+.node[data-lighting="true"] .ear::after { animation: spill-on 900ms cubic-bezier(.32, .72, 0, 1) calc(var(--lit-at, 0ms) + 120ms) backwards; }
+@keyframes pipe-on { from { filter: brightness(1) saturate(1); box-shadow: inset -.6px 0 0 rgba(0, 0, 0, .45), 1px 0 0 rgba(255, 255, 255, .55), inset 0 0 0 rgba(255, 255, 255, 0),
+                                                                            0 0 0 0 rgba(var(--k), 0), 0 0 0 0 rgba(var(--k), 0); } }
+@keyframes spill-on { from { opacity: 0; transform: scaleX(.4); transform-origin: left; } }
+/* just let go (data-dimming): the same light going down - the spill first, then the strip */
+.node[data-dimming="true"] .ear { animation: pipe-off 650ms cubic-bezier(.4, 0, .2, 1) calc(var(--unlit-at, 0ms) + 100ms) backwards; }
+.node[data-dimming="true"] .ear::after { animation: spill-off 450ms cubic-bezier(.4, 0, .2, 1) var(--unlit-at, 0ms) backwards; }
+@keyframes pipe-off { from { filter: brightness(1.18) saturate(1.1); box-shadow: inset -.6px 0 0 rgba(0, 0, 0, .3), 1px 0 0 rgba(255, 255, 255, .55), inset 0 0 4px rgba(255, 255, 255, .6),
+                                                                                 0 0 5px 1px rgba(var(--k), .5), 0 0 16px 3px rgba(var(--k), .16); } }
+@keyframes spill-off { from { opacity: 1; } to { opacity: 0; transform: scaleX(.5); transform-origin: left; } }
+/* and its pilot light answers: a brighter bloom */
+.node[data-selected="true"] .led::before { filter: brightness(1.15) saturate(1.2); }
+/* the kind: a strip of anodised colour along the left edge, a dark line where it meets the plate */
+.node .ear { width: 9px; border-radius: 11px 0 0 11px; cursor: help;
+  box-shadow: inset -.6px 0 0 rgba(0, 0, 0, .45), 1px 0 0 rgba(255, 255, 255, .55), inset 1px 1px 0 rgba(255, 255, 255, .35); }
+.node .ear i { display: none; }
+.node .ear[data-family="compose"] { background: linear-gradient(90deg, #7fbcff, #2b8cff 35%, #0a63d6); }
+.node .ear[data-family="quarkus"] { background: linear-gradient(90deg, #d9a2fb, #b55cf0 35%, #8a2fd0); }
+.node .ear[data-family="process"], .node .ear:not([data-family]) { background: linear-gradient(90deg, #c9cbd1, #9a9da5 35%, #6f727a); }
+.node .name { font-size: 14px; text-shadow: 0 1px 0 rgba(255, 255, 255, .75); }
+.node .kind { font: 600 8px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: #6a6d75; text-shadow: 0 1px 0 rgba(255, 255, 255, .75); }
+/* the pilot light: a domed lens in a turned bezel, lit from inside */
+.node .led { position: relative; width: 15px; height: 15px; margin-right: 0;
+  background: conic-gradient(from 210deg, #f6f7f9, #9a9da6, #e9ebee, #7d818b, #f6f7f9);
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, .45), inset 0 0 0 .5px rgba(0, 0, 0, .35); }
+.node .led::before { content: ""; position: absolute; inset: 2.5px; border-radius: 50%;
+  background: radial-gradient(circle at 42% 34%, rgba(255, 255, 255, .9) 0 9%, transparent 22%),
+              radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--led, #9a9da4) 45%, #fff), var(--led, #9a9da4) 45%, color-mix(in srgb, var(--led, #9a9da4) 55%, #000));
+  box-shadow: inset 0 -1px 1.5px rgba(0, 0, 0, .35); }
+.node:is([data-status="up"], [data-status="external"], [data-status="failed"], [data-status="starting"]) .led::before {
+  box-shadow: inset 0 -1px 1.5px rgba(0, 0, 0, .35), 0 0 8px 2px color-mix(in srgb, var(--led) 60%, transparent); }
+.node:is([data-status="up"], [data-status="external"], [data-status="failed"], [data-status="starting"]) .led {
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, .45), inset 0 0 0 .5px rgba(0, 0, 0, .35); }
+/* the display: a vacuum fluorescent display behind a smoked strip, as on a hi-fi - its blue-green
+   glow (--lit) shining from inside, amber when a figure is busy, red when stressed; unlit segments
+   stay a faint ghost */
+.node .screen { --lit: 122, 247, 232; position: relative; display: block; margin-top: 10px; padding: 6px 9px 6px; border-radius: 4px; overflow: hidden;
+  color: rgb(var(--lit)); font: 600 8.5px/1 var(--mono); letter-spacing: .08em;
+  background: radial-gradient(120% 90% at 50% 0%, #2c3e40, #1c2829 70%);
+  box-shadow: inset 0 1px 3px #000, inset 0 0 0 .5px #000, 0 0 0 1.5px #c5c8ce, 0 0 0 2px rgba(0, 0, 0, .3), 0 1px 0 2px rgba(255, 255, 255, .8); }
+/* the smoked glass over it: a soft reflection */
+.node .screen::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, .03) 30%, transparent 30.5%); }
+.node .screen .line { display: flex; align-items: baseline; text-shadow: 0 0 4px rgba(var(--lit), .7); }
+.node .screen .line .clock { margin-left: auto; color: rgba(var(--lit), .75); opacity: 1; }
+.node[data-status="starting"] .screen .line b { color: #ffd36b; text-shadow: 0 0 4px rgba(255, 211, 107, .8); }
+.node:is([data-status="failed"], [data-status="unready"], [data-status="skipped"]) .screen .line b { color: #ff8a80; text-shadow: 0 0 4px rgba(255, 106, 94, .8); }
+.node:has(.screen) .meta .state { display: none; }
+.node .screen .readout { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; margin-top: 5px; cursor: help; }
+.node .screen .fig { --c: var(--lit); display: grid; justify-items: start; gap: 2px; }
+.node .screen .fig[data-level="busy"] { --c: 255, 211, 107; }
+.node .screen .fig[data-level="stressed"] { --c: 255, 106, 94; }
+.node .screen .fig small { font: 600 7px/1 var(--mono); letter-spacing: .16em; color: rgba(var(--c), .6); }
+.node .screen .digits { height: 20px; width: auto; overflow: visible; }
+.node .screen .digits .on { fill: rgb(var(--c)); filter: drop-shadow(0 0 1.5px rgba(var(--c), 1)) drop-shadow(0 0 4px rgba(var(--c), .65)); }
+.node .screen .digits .off { fill: rgba(var(--c), .07); }
+.node .screen .digits .unit { font: 700 9px var(--mono); }
+/* the branch: a paper strip in a label holder */
+.node .branch { color: #2b2620; border-radius: 1.5px; background: linear-gradient(#fbf8f0, #efeadc);
+  box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .3), inset 0 1px 1.5px rgba(0, 0, 0, .18), 0 0 0 1.5px #b9bcc3, 0 0 0 2px rgba(0, 0, 0, .28), 0 1px 0 2px rgba(255, 255, 255, .85); }
+.node .branch.off { color: #b0281d; background: linear-gradient(#fff3f1, #f7dfdb); }
+.node .git { margin-top: 10px; }
+/* steps: low round keys, a light pipe in each, in a milled pocket */
+.node .shots { margin-top: 10px; padding: 5px; border-radius: 6px; background: linear-gradient(#cfd2d7, #dadde1);
+  box-shadow: inset 0 1.5px 2.5px rgba(0, 0, 0, .28), inset 0 0 0 .5px rgba(0, 0, 0, .16), 0 1px 0 rgba(255, 255, 255, .9); }
+.node .shot { border-radius: 999px; padding: 3px 9px 3.5px 7px; background: linear-gradient(#fdfdfe, #dfe1e5 60%, #cfd2d7);
+  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .38), inset 0 1px 0 #fff, inset 0 -1px 1px rgba(0, 0, 0, .12), 0 1.5px 2px rgba(0, 0, 0, .28); }
+.node .shot[data-state="done"] { background: linear-gradient(#e9ebee, #f5f6f8); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .38), inset 0 1px 2px rgba(0, 0, 0, .22); }
+.node .shot i { background: radial-gradient(circle at 40% 35%, #9a9ca3, #55575e); box-shadow: inset 0 .5px .5px rgba(0, 0, 0, .5); }
+.node .shot[data-state="done"] i { background: radial-gradient(circle at 40% 35%, #c9ffe0, #2fd873 60%); box-shadow: 0 0 5px 1px rgba(47, 216, 115, .7); }
+/* links: a milled pocket */
+.node .endpoints { margin-top: 10px; border-radius: 6px; background: linear-gradient(#cfd2d7, #dadde1);
+  box-shadow: inset 0 1.5px 2.5px rgba(0, 0, 0, .28), inset 0 0 0 .5px rgba(0, 0, 0, .16), 0 1px 0 rgba(255, 255, 255, .9); }
+.node .endpoint { color: #0a6fe0; font-weight: 600; }
+/* inputs: steel panel-mount jacks standing on the top face, as the legend draws them - a blue
+   insulating ring at the mouth over a faceted nut; the ring turns green and glows once what it
+   waits for is ready (the wire's plug sits in its mouth, drawWarp) */
+.node > .pin.in { --ring: #3d9bff; top: calc(var(--d) / -2 - 9px); margin-left: calc(var(--d) / 2); width: 16px; height: 9px; border-radius: 1.5px;
+  background: linear-gradient(var(--ring) 0 2.5px, rgba(0, 0, 0, .35) 2.5px 3px, transparent 3px),
+              linear-gradient(90deg, #7d838e 0 14%, #f4f6f8 14% 20%, #dfe2e7 20% 42%, #a9aeb8 42% 60%, #eceef2 60% 82%, #747a85 82%);
+  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .45), 0 1px 2px rgba(0, 0, 0, .3); }
+.node > .pin.in::before, .node > .pin.in::after { display: none; }
+/* ready: the ring lit from inside - no glow spilling out, so nothing shows between it and the plug */
+.node > .pin.in.ok { --ring: #3fd27c; }
+/* ports: jacks on the right side, the same ring, lit when something listens; the number beside */
+.node .socket { right: calc(var(--d) / -2 - 4px); top: calc(11px + var(--i) * var(--pitch, 24px) - var(--d) / 2); width: 8px; height: 15px; border-radius: 50%;
+  --ring: #5d6068; background: radial-gradient(ellipse at center, #0a0b0d 0 27%, var(--ring) 30% 47%, #f1f3f6 51% 63%, #8f939c 67%);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .4), inset 0 0 0 .5px rgba(0, 0, 0, .45); }
+.node .socket::before { display: none; }
+.node .socket.live { --ring: #34c46c; box-shadow: 0 1px 1px rgba(0, 0, 0, .4), inset 0 0 0 .5px rgba(0, 0, 0, .45), 0 0 6px rgba(52, 196, 108, .85); }
+.node .socket b { left: 13px; top: 2px; }
+.node .room.dense ~ .socket { height: 12px; }
+
+/* the light on the metal: a soft sheen on the face and a glint along its edge, both following the
+   pointer (index.js sets --mx/--my), at rest from the top left - under the plate's content (z -1
+   in the plate's own layer), so it lights the metal, never the text */
+.node { --mx: 28%; --my: 18%; }
+.node > :is(.sheen, .rim) { position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; }
+.node > .sheen { background: radial-gradient(70% 70% at var(--mx) var(--my), rgba(255, 255, 255, .78), rgba(255, 255, 255, 0) 70%); mix-blend-mode: screen; }
+.node > .rim { padding: 1.5px; background: radial-gradient(45% 45% at var(--mx) var(--my), rgba(255, 255, 255, .95), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+
 /* ------------------------------------------------------------------ rail */
 
 /* the inspector: a frosted panel floating over the board */
@@ -770,9 +944,30 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 }
 
 #rail-run { display: flex; flex-direction: column; gap: 22px; }
-/* a newly selected component's detail comes in; a refresh of the same one doesn't move */
-#detail.enter { animation: detail-in 320ms cubic-bezier(.215, .61, .355, 1); }
-@keyframes detail-in { from { opacity: 0; transform: translateY(6px); } }
+/* the panel itself: it slides in from the right, on the page's first draw and each time it's shown */
+.rail { transform-origin: 100% 50%;
+  transition: transform 520ms cubic-bezier(.32, .72, 0, 1), opacity 360ms ease 60ms, visibility 0s;
+  /* backwards, not both: once in, it lets the show/hide transitions move it */
+  animation: rail-in 620ms cubic-bezier(.32, .72, 0, 1) backwards; }
+@keyframes rail-in { from { opacity: 0; transform: translateX(32px) scale(.98); } }
+/* a newly selected component's detail comes in a section at a time, each a beat after the one above;
+   a refresh of the same one doesn't move */
+#detail.enter > * { animation: detail-in 460ms cubic-bezier(.32, .72, 0, 1) both; }
+#detail.enter > :nth-child(1) { animation-delay: 0ms; }   #detail.enter > :nth-child(2) { animation-delay: 30ms; }
+#detail.enter > :nth-child(3) { animation-delay: 60ms; }  #detail.enter > :nth-child(4) { animation-delay: 90ms; }
+#detail.enter > :nth-child(5) { animation-delay: 120ms; } #detail.enter > :nth-child(6) { animation-delay: 150ms; }
+#detail.enter > :nth-child(7) { animation-delay: 180ms; } #detail.enter > :nth-child(8) { animation-delay: 210ms; }
+#detail.enter > :nth-child(9) { animation-delay: 240ms; } #detail.enter > :nth-child(n+10) { animation-delay: 270ms; }
+@keyframes detail-in { from { opacity: 0; transform: translateX(14px); filter: blur(3px); } }
+/* nothing selected: the hint fades in, a touch smaller */
+#detail.quiet { animation: hint-in 420ms ease both; }
+@keyframes hint-in { from { opacity: 0; transform: scale(.98); } }
+/* rows answer the pointer: a soft highlight; buttons lift a hair */
+#detail .row { transition: background 180ms ease; }
+#detail .row:hover { background: rgba(10, 132, 255, .06); }
+#detail .btn { transition: transform 160ms cubic-bezier(.32, .72, 0, 1), box-shadow 160ms ease, background 160ms ease; }
+#detail .btn:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0, 0, 0, .12); }
+#detail .btn:active { transform: translateY(0) scale(.97); box-shadow: none; }
 
 .rail :is(h2, h3) { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
 #detail h3 { margin-top: 18px; }
@@ -873,8 +1068,11 @@ body:is([data-tab="logs"], [data-tab="checks"]) .legend { display: none; }
 .tabs a {
   color: var(--muted); text-decoration: none; padding: 4px 12px; border-radius: 6px; font-weight: 500;
 }
-.tabs a:hover { color: var(--ink); }
-.tabs a[aria-current="page"] { color: var(--ink); background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.tabs a { position: relative; transition: color 200ms ease, background 200ms ease, box-shadow 200ms ease; }
+.tabs a:hover { color: var(--ink); background: rgba(255, 255, 255, .55); }
+/* the tab you're on can't be missed: filled, as the Preview / Running switch */
+.tabs a[aria-current="page"] { color: #fff; background: linear-gradient(#3b8cff, #1f74f0); box-shadow: 0 1px 3px rgba(10, 100, 230, .35), inset 0 1px 0 rgba(255, 255, 255, .25); }
+.tabs a[aria-current="page"] .tab-badge { box-shadow: 0 0 0 1.5px #fff; }
 body[data-tab="logs"] .shell, body[data-tab="checks"] .shell { display: none; }
 /* View Transitions (index.js transit, html[data-vt] while one runs): only
    what moves is named; the rest of the page swaps in place */

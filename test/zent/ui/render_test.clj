@@ -100,6 +100,11 @@
       (is (str/includes? (render/component-card :svc (assoc cfg :status :off)) "<span class=\"endpoint idle\" title=\"Not served yet: opens once it is up\">admin</span>")
           "listed all the same, not clickable"))))
 
+(deftest tips-test
+  (testing "every explanation has a heading line then a body"
+    (doseq [[k t] render/tips]
+      (is (re-matches #"[^\n]+\n[^\n]+" t) k))))
+
 (deftest component-card-shots-test
   (let [shots [[:seed {:kind :one-shot :status :done :description "Load the data"}]
                [:purge {:kind :one-shot :status :ready :confirm "Delete rows?"}]
@@ -433,18 +438,38 @@
       (is (str/includes? html ">skipped<"))
       (is (str/includes? html "skipped: alerte failed")))))
 
-(deftest usage-row-test
-  (testing "given a card's :usage, then two meters with their figures, each in its own level, the
-            exact figures and the per-service split on hover"
+(deftest card-screen-test
+  (testing "given a deployed card, then its display says its state, in capitals, its load under it - none in a preview"
+    (let [card #(render/component-card :svc (merge {:kind :process :status :up :usage {:cpu 12 :rss 1048576 :level :calm}} %))]
+      (is (str/includes? (card {}) "<span class=\"screen\"><span class=\"line\"><b>UP</b>"))
+      (is (re-find #"class=\"screen\">.*class=\"readout\"" (card {})))
+      (is (not (str/includes? (card {:preview? true}) "class=\"screen\"")))
+      (testing "and each figure in seven segments, coloured by its own level"
+        (is (str/includes? (card {:usage {:cpu 200 :rss 1048576 :level :stressed}}) "<span class=\"fig\" data-level=\"stressed\">"))))))
+
+(deftest vfd-figure-test
+  (testing "given 2.1G, then a lit 2, a dot, a lit 1 and the unit beside them"
+    (let [svg (render/vfd-figure "2.1G")
+          lit (fn [part] (count (re-seq #"<polygon class=\"on\"" part)))
+          [two one] (str/split svg #"<circle")]
+      (is (= 5 (lit two)) "2: a b g e d")
+      (is (= 2 (lit one)) "1: b c")
+      (is (= 14 (count (re-seq #"<polygon" svg))) "every segment drawn, the unlit ones as a ghost")
+      (is (str/includes? svg "<text class=\"on unit\" x=\"38\" y=\"9\">G</text>")))))
+
+(deftest readout-test
+  (testing "given a card's :usage, then two figures, each in its own level, the exact figures and the
+            per-service split on hover"
     (let [html (render/component-card :kafka {:kind :docker-compose :status :up
                                               :usage {:cpu 295 :rss (* 1800 1048576) :level :stressed
                                                       :parts [{:name :kafka :cpu 290 :rss (* 1200 1048576)}]}})]
-      (is (str/includes? html "<span class=\"usage\" data-level=\"stressed\""))
-      (is (str/includes? html "<span class=\"meter cpu\" data-level=\"stressed\"><i style=\"--v:1.00\"></i><b>295%</b></span>"))
-      (is (str/includes? html "<span class=\"meter rss\" data-level=\"busy\"><i style=\"--v:0.44\"></i><b>1.8G</b></span>"))
+      (is (str/includes? html "<span class=\"fig\" data-level=\"stressed\"><svg"))
+      (is (str/includes? html ">%</text></svg><small>CPU</small>"))
+      (is (str/includes? html "<span class=\"fig\" data-level=\"busy\"><svg"))
+      (is (str/includes? html ">G</text></svg><small>MEM</small>"))
       (is (str/includes? html "kafka: 290%, 1.2G"))))
-  (testing "given no :usage (stopped, a one-shot, :external), then no row"
-    (is (not (str/includes? (render/component-card :svc {:kind :process :status :up}) "class=\"usage\""))))
+  (testing "given no :usage (stopped, a one-shot, :external), then no figures"
+    (is (not (str/includes? (render/component-card :svc {:kind :process :status :up}) "class=\"readout\""))))
   (testing "memory below a gigabyte in megabytes"
     (is (= "640M" (render/mem-text (* 640 1048576))))
     (is (= "1.2G" (render/mem-text (* 1229 1048576))))))

@@ -365,7 +365,9 @@
     (and (= (:request-method req) :get) (contains? #{"/" "/index.html"} (:uri req)))
     (update (resource-page "zent/ui/index.html") :body
             #(-> % (str/replace "{{CSRF_TOKEN}}" (or @csrf-token ""))
-                 (str/replace "{{VERSION}}" (render/esc (or (version) "")))))
+                 (str/replace "{{VERSION}}" (render/esc (or (version) "")))
+                 ;; in a script tag: no "</" may close it early
+                 (str/replace "{{TIPS}}" (str/replace (json/write-str render/tips) "</" "<\\/"))))
 
     ;; the page's own style and code: read on each request, and no-cache, so
     ;; an edit shows on the next reload

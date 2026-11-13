@@ -153,6 +153,12 @@
       (is (str/includes? body "content=\"test-token\""))
       (is (not (str/includes? body "{{CSRF_TOKEN}}")))))
 
+  (testing "the explanations' texts come with the page, as JSON the page reads"
+    (let [{:keys [body]} (server/app {:request-method :get :uri "/"})]
+      (is (not (str/includes? body "{{TIPS}}")))
+      (is (str/includes? body "<script id=\"tips\" type=\"application/json\">{\""))
+      (is (str/includes? body "\"tab\\/stack\":\"Stack\\n"))))
+
   (testing "the daemon's version is shown in the masthead, escaped"
     (with-redefs [server/version (constantly "HEAD-abc1234<")]
       (is (str/includes? (:body (server/app {:request-method :get :uri "/"}))

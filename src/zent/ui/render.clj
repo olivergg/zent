@@ -64,6 +64,36 @@
   [s]
   (-> s (str/split #"\s+") first (str/replace #"^.*/" "") (str/replace #"\.[^.]*$" "")))
 
+(def tips
+  "Every explanation the dashboard shows on hover that isn't a card's own - one place to read and
+  word them. Heading, newline, body; {x}: filled in by the page (index.js `tip`). Sent with the page
+  (zent.ui.server, {{TIPS}}); the cards' own, which depend on their component, stay with their markup."
+  {"tab/stack" "Stack\nEvery component as a unit, wired to what it waits for: its state, its load, its branch and its ports"
+   "tab/logs" "Logs\nWhat the components print, interleaved and coloured per component - pick some, filter by text or level"
+   "tab/checks" "Checks\nThe preset's checks against the running stack: what passed, what failed and why. The red count: how many fail"
+   "run/presets" "Presets\nPick one to preview it, ▶ to apply it"
+   "run/start" "Start {preset}\n{plan}"
+   "mode/preview" "Preview\nThe preset as it would run: nothing is started"
+   "mode/run" "Running\nWhat runs now"
+   "link" "Connection\nThe dashboard's link to the zent daemon: live while it pushes every change as it happens"
+   "chip/failed" "Failed\nComponents that died or never got ready: what waits for them can't start"
+   "chip/up" "Up\nComponents running and answering their readiness check"
+   "chip/steps" "Steps\nThe one-shots the apply runs, and how many are done - those run only on demand aren't counted"
+   "lane" "{row}\nComponents start a row at a time: a row starts once what it waits for in the rows above is ready"
+   "jack/in" "Input: {from}\n{to} starts once {from} is {ready} - its ring turns green when it is"
+   "jack/out" "Output\nEvery wire plugged here is something waiting for {name}"
+   "jack/out-step" "Output of {name}\nEvery wire plugged here waits for that step"
+   "bus" "Bus: {from}\nOne wire from {from}, split to {to}. Green: ready. Amber dashes: still waited for. Red dots: {from} is down."
+   "legend/compose" "Blue strip\nDocker containers, run by Docker Compose - a whole compose file, or only some of its services"
+   "legend/quarkus" "Purple strip\nA JVM service zent builds with Maven, then runs"
+   "legend/process" "Grey strip\nA command run from its repo, as a plain process"
+   "legend/step" "A one-shot\nA script that runs once: a button on its host's plate, pressed in once done, hatched while it only runs on demand"
+   "legend/ready" "Green wire\nWhat it leaves from is ready"
+   "legend/wait" "Amber dashes\nStill waited for"
+   "legend/down" "Red dots\nWhat it leaves from is down: nothing after it can start"
+   "legend/input" "Input\nA steel jack on a unit's top face, one per thing it waits for: its blue ring turns green once that is ready"
+   "legend/output" "Output\nA brass jack under a unit: every wire plugged there is something waiting for it"})
+
 (def ^:private kind-family
   "The ear's colour: what runs it, as you'd say it - compose-services is still Docker containers."
   {:docker-compose "compose" :compose-services "compose" :quarkus-app "quarkus" :process "process"
@@ -78,6 +108,11 @@
    :one-shot "A script that runs once and exits"
    :external "Started outside zent (your IDE): zent only checks that it answers"
    :k8s "Kubernetes workloads zent rolls out to the cluster"})
+
+(def ^:private metal-light
+  "The plate's light: a sheen on its face and a glint along its edge, both at the pointer (index.js
+  sets --mx/--my on the plate under it), at rest from the top left."
+  "<i class=\"sheen\" aria-hidden=\"true\"></i><i class=\"rim\" aria-hidden=\"true\"></i>")
 
 (defn- kind-line
   "Under the name: the kind as you'd say it - for a compose one, how much of the file runs."
@@ -154,18 +189,8 @@
   (let [mib (/ (double rss) 1048576)]
     (if (< mib 1000) (str (long mib) "M") (format "%.1fG" (/ mib 1024)))))
 
-(def ^:private meter-full
-  "What fills a meter: two cores, 4 GiB - past that it stays full, its colour says the rest."
-  {:cpu 200 :rss (* 4096 1048576)})
-
-(defn- meter
-  [metric v text]
-  (str "<span class=\"meter " (name metric) "\" data-level=\"" (name (usage/level metric v)) "\">"
-       "<i style=\"--v:" (format "%.2f" (min 1.0 (/ (double v) (meter-full metric)))) "\"></i>"
-       "<b>" text "</b></span>"))
-
 (defn- usage-title
-  "The meters' hover: the exact figures, what they mean, then per service or the process count."
+  "The readout's hover: the exact figures, what they mean, then per service or the process count."
   [{:keys [cpu rss procs parts]}]
   (let [{{cb :busy cs :stressed} :cpu {mb :busy ms :stressed} :rss} usage/thresholds]
     (->> (concat [(str "CPU " (cpu-text cpu) " of one core (busy from " cb "%, stressed from " cs "%)")
@@ -175,13 +200,44 @@
          (map esc)
          (str/join "&#10;"))))
 
-(defn usage-row
-  "A card's CPU and memory, two small meters - grey while calm, weld when busy, madder when
-  stressed - the exact figures on hover. nil without :usage."
+(def ^:private segments
+  "A seven-segment digit's segments, as polygons in a 14 x 24 cell."
+  {:a "2,0 12,0 10,2 4,2" :b "12.5,0.5 12.5,11 11,12 10.5,2.5" :c "12.5,13 12.5,23.5 10.5,21.5 11,14"
+   :d "2,24 12,24 10,22 4,22" :e "1.5,13 1.5,23.5 3.5,21.5 3,14" :f "1.5,0.5 1.5,11 3,12 3.5,2.5"
+   :g "2.5,12 4,11 10,11 11.5,12 10,13 4,13"})
+
+(def ^:private lit-segments
+  {\0 #{:a :b :c :d :e :f} \1 #{:b :c} \2 #{:a :b :g :e :d} \3 #{:a :b :g :c :d} \4 #{:f :g :b :c}
+   \5 #{:a :f :g :c :d} \6 #{:a :f :g :e :d :c} \7 #{:a :b :c} \8 #{:a :b :c :d :e :f :g} \9 #{:a :b :c :d :f :g}})
+
+(defn vfd-figure
+  "`text` (cpu-text's or mem-text's: digits, a dot, then a unit) as seven-segment digits - unlit
+  segments kept as a ghost - the unit set small beside them: an SVG the screen lights."
+  [text]
+  (let [[_ number unit] (re-matches #"([\d.]+)(.*)" text)
+        [x svg] (reduce (fn [[x out] ch]
+                          (if (= \. ch)
+                            [(+ x 5) (str out "<circle class=\"on\" cx=\"" (+ x 2) "\" cy=\"22.5\" r=\"1.6\"/>")]
+                            [(+ x 16) (apply str out (for [[s pts] segments]
+                                                       (str "<polygon class=\"" (if (contains? (lit-segments ch) s) "on" "off")
+                                                            "\" points=\"" (str/join " " (for [p (str/split pts #" ")
+                                                                                             :let [[px py] (str/split p #",")]]
+                                                                                         (str (+ x (parse-double px)) "," py)))
+                                                            "\"/>")))]))
+                        [0 ""] number)]
+    (str "<svg class=\"digits\" viewBox=\"0 -1 " (+ x 9) " 26\" width=\"" (+ x 9) "\" aria-hidden=\"true\">" svg
+         "<text class=\"on unit\" x=\"" (+ x 1) "\" y=\"9\">" (esc unit) "</text></svg>")))
+
+(defn readout
+  "The screen's figures: CPU and memory in fluorescent digits, each coloured by its own level,
+  the exact figures on hover. nil without :usage."
   [{:keys [cpu rss] :as u}]
   (when u
-    (str "<span class=\"usage\" data-level=\"" (name (:level u)) "\" title=\"" (usage-title u) "\">"
-         (meter :cpu cpu (cpu-text cpu)) (meter :rss rss (mem-text rss)) "</span>")))
+    (str "<span class=\"readout\" title=\"" (usage-title u) "\">"
+         "<span class=\"fig\" data-level=\"" (name (usage/level :cpu cpu)) "\">" (vfd-figure (cpu-text cpu)) "<small>CPU</small></span>"
+         "<span class=\"fig\" data-level=\"" (name (usage/level :rss rss)) "\">" (vfd-figure (mem-text rss)) "<small>MEM</small></span>"
+         "</span>")))
+
 
 (defn- can-reload? [status] (not (contains? #{:off :external :stopping} status)))
 (defn- can-stop? [status] (contains? #{:up :deploying :idle :unready} status))
@@ -440,6 +496,7 @@
   (let [chip (git-chip c)
         cd-title (when chip (git-title chip (:dir source) now))]
     (str
+     metal-light
      (ear c)
      "<span class=\"head\"><span class=\"name\">" (esc (name cname)) "</span>"
      "<span class=\"led\" title=\"" (esc (label-of (:kind c) status)) "\"></span></span>"
@@ -449,7 +506,10 @@
      (port-sockets c)
      (when-let [dep (:waits-for c)] (str "<span class=\"note wait\">Waits for " (esc (name dep)) "</span>"))
      (facts c cd-title)
-     (usage-row (:usage c))
+     ;; the display: its state and how long, then its load when it runs - smoked glass on the plate
+     (when-not (:preview? c)
+       (str "<span class=\"screen\"><span class=\"line\"><b>" (esc (str/upper-case (label-of (:kind c) status))) "</b>"
+            (clock c) "</span>" (readout (:usage c)) "</span>"))
      (if chip
        (git-row cname chip now)
        ;; a preview's :branch never deployed: its worktree doesn't exist yet
@@ -487,9 +547,10 @@
   (let [reload? (and (not preview?) (can-reload? status))
         stop? (and (not preview?) (can-stop? status))]
     (str
-     ;; a one-shot with a place of its own (no host, or waiting for several others): a capsule
+     ;; a one-shot with a place of its own (no host, or waiting for several others): a small unit, its
+     ;; kind strip like a full one's
      (if (= :one-shot kind)
-       (str "<span class=\"capsule\" data-state=\"" (shot-state-of c) "\" title=\""
+       (str metal-light (ear c) "<span class=\"capsule\" data-state=\"" (shot-state-of c) "\" title=\""
             (esc (str/join "\n" (remove nil? [description (when (seq scripts) (str "runs " (str/join " → " (map script-name scripts))))])))
             "\"><i></i><span class=\"name\">" (esc (name cname)) "</span>"
             "<span class=\"state\">"
