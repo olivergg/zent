@@ -40,7 +40,7 @@
   ([repo] (resolve-source repo {}))
   ([repo {:keys [workspace-dir branch org] :as opts}]
    ;; resolving leaves the main clone's files and branches alone: a worktree for :origin/:local
-   ;; (zent.branch), as it is for :clone, which must have the branch checked out - zent never switches it
+   ;; (zent.branch), as it is for :clone, which must have the branch checked out - only checkout! switches it
    (let [dir (main-clone-dir repo workspace-dir)
          mode (from opts)]
      (cond
@@ -240,6 +240,35 @@
         {:ok true
          :message (str "rebased " (:branch st) done " - undo: git -C " dir " reset --hard ORIG_HEAD"
                        (when pushed (str "; origin/" (:branch st) " is now behind it: push --force-with-lease")))}))))
+
+(defn checkout-refusal
+  "Why the clone of `st` (checkout-git's, with the preset's :wanted-branch) can't be switched to that
+  branch - nil when it can: :from :clone, on another branch, nothing uncommitted (untracked files
+  included: git might carry them over, zent doesn't guess)."
+  [{:keys [from wanted-branch branch dirty]}]
+  (cond (not= :clone from) "only :from :clone runs the clone's own branch: nothing to check out"
+        (= wanted-branch branch) (str "already on " branch)
+        (pos? (or dirty 0)) (str dirty " uncommitted file(s): commit or stash them first")))
+
+(defn checkout!
+  "Checks the preset's :branch out in `cfg`'s main clone, when checkout-refusal has nothing against
+  it - fetched from origin first (that branch only, no prune) when there's no local one. Every
+  component running that clone moves with it. {:ok true :message} or {:ok false :message}: what
+  happened, the undo included, or why not."
+  [{:keys [branch] :as cfg}]
+  (let [dir (checkout-dir cfg)
+        st (git-status dir)
+        why (if st
+              (checkout-refusal (assoc st :from (from cfg) :wanted-branch branch))
+              (str dir " isn't a checkout"))]
+    (if why
+      {:ok false :message why}
+      (do (when-not (git dir "rev-parse" "--verify" "--quiet" (str "refs/heads/" branch))
+            (shell/sh! ["git" "-C" dir "fetch" "--quiet" "--no-prune" "origin" branch]))
+          (let [{:keys [exit err]} (shell/sh! ["git" "-C" dir "checkout" "--quiet" branch "--"])]
+            (if (zero? exit)
+              {:ok true :message (str "checked out " branch " - undo: git -C " dir " checkout " (or (:branch st) (:sha st)))}
+              {:ok false :message (str branch " can't be checked out (" (str/trim (str err)) ")")}))))))
 
 (defn describe
   "Where a component's code actually comes from, for display:

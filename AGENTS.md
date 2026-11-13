@@ -24,7 +24,8 @@ smaller change.
 5. **Never touch what zent can't prove it owns.** A PID is re-checked by `ps` identity
    before a kill; `:permanent` survives every implicit teardown; a deploy or a sync
    never touches the main clone's files or branches (`:branch` runs from a worktree, only
-   `origin/*` refs get fetched), only an explicit `zent rebase` moves them; no auto-clone.
+   `origin/*` refs get fetched), only an explicit `zent rebase` or the card's `checkout`
+   (`:from :clone`) moves them; no auto-clone.
 6. **Security defaults on.** Every kubectl pins `--context`, which must be in the catalog's
    allowlist (the kubeconfig may hold prod). Runtime presets (CLI, MCP) pick components
    and branch/image/port/context, never what code runs (`:cmd`, `:env`, `:scripts`), and
@@ -150,7 +151,8 @@ What a catalog's components themselves need is listed in that catalog's repo.
 - `:branch` runs, by `:from`, a worktree in `~/.cache/zent/worktrees/<repo>-<branch>` detached
   at `origin/<branch>` (`:origin`, the default: pushed code, fetched first) or at the local
   `<branch>` (`:local`: committed code, no fetch), or the main clone as it is (`:clone`, refused
-  unless it has `<branch>` checked out). A worktree is synced (reset --hard) by an apply that
+  unless it has `<branch>` checked out - the card's `checkout` does it, on a clone with nothing
+  uncommitted). A worktree is synced (reset --hard) by an apply that
   (re)deploys it or a `zent pull` - a reload keeps its commit - and the sync refuses one holding
   uncommitted files or commits on no branch (`zent.branch/at-risk`). No sync moves or holds a
   local branch; only `zent rebase` of a `:local` one moves it. `zent worktrees [prune]` lists /

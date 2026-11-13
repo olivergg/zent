@@ -98,6 +98,7 @@ that observes a component its preset doesn't run.
 | iterate on a component | `zent reload <c>`, then `zent logs [-f] <c>` | `reload`, `logs` |
 | run what's new on a `:branch` (origin's or your local one, by `:from`) | `zent pull <c>` (or the card's `pull`) | - |
 | catch a branch up with origin's default one - the clone's, your local one (`:from :local`), or as a local test (`:origin`, reverted at the next sync) | `zent rebase <c>` (or the card's `rebase` / `test on <default>`), then `zent reload <c>` | - |
+| put a `:from :clone` component's clone on the preset's `:branch` (nothing uncommitted; fetched when only origin has it) | the card's `checkout`, also in a preview | - |
 | list / clean up the `:branch` worktrees | `zent worktrees`, `zent worktrees prune` | - |
 | stop some / all but `:permanent` | `zent stop <c>...` / `zent stop` | `stop` |
 | judge the running stack | `zent verify [<preset> [<check>...]]` | `verify` |

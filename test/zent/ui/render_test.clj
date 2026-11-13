@@ -305,12 +305,19 @@
       (is (str/includes? html "&#10227; origin +3</span>"))
       (is (str/includes? html "hx-post=\"/api/pull/svc\""))
       (is (str/includes? html "origin has 3 more commit(s)"))))
-  (testing "given :from :clone and the clone on another branch, then red, saying the deploy refuses"
-    (let [html (render/component-card :svc {:kind :process :status :up :wanted-branch "feature/w" :from :clone
-                                            :source {:dir "/w/svc"} :git {:sha "abc" :branch "main" :base "main"}})]
+  (testing "given :from :clone and the clone on another branch, then red, saying the deploy refuses, and a
+            checkout a click away - unless something is uncommitted, or it runs from a worktree"
+    (let [card #(render/component-card :svc (merge {:kind :process :status :up :wanted-branch "feature/w" :from :clone
+                                                    :source {:dir "/w/svc"} :git {:sha "abc" :branch "main" :base "main"}} %))
+          html (card {})]
       (is (str/includes? html "class=\"branch off\""))
       (is (str/includes? html "the preset's :from :clone wants feature/w checked out here"))
-      (is (str/includes? html "&#9998; clone</span>"))))
+      (is (str/includes? html "&#9998; clone</span>"))
+      (is (str/includes? html "hx-post=\"/api/checkout/svc\""))
+      (is (str/includes? html "hx-confirm=\"Check out feature/w in your clone, now on main? Every component running this clone moves with it.\""))
+      (is (str/includes? (card {:preview-of "mine"}) "hx-post=\"/api/checkout/svc?preset=mine\""))
+      (is (not (str/includes? (card {:git {:sha "abc" :branch "main" :base "main" :dirty 1}}) "/api/checkout/")))
+      (is (not (str/includes? (card {:from :origin :source {:dir "/wt/svc" :worktree "/wt/svc"}}) "/api/checkout/")))))
   (testing "in a preview: the rebase names its preset, a :branch never deployed shows its worktree to come, and
             an existing one what the apply would do to it"
     (is (str/includes? (render/component-card :svc {:kind :process :status :off :preview? true :preview-of "mine"

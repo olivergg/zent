@@ -392,17 +392,20 @@
 (defn request-shutdown! [] (enqueue! {:action :shutdown}))
 (defn request-reload-code! [] (enqueue! {:action :reload-code}))
 
-(defn request-rebase!
-  "Queues zent.source/rebase! of `k`'s checkout as a job: git writes there, so never next to a deploy.
-  What it did lands in :command-messages under the id, why not in :command-errors; its :git is re-read
-  (the card shows ≠ reload: the disk moved on from what runs). `cfg`: `k` as a previewed preset resolves
-  it, else the applied one's. The id, or nil when `k` has no repo there."
-  [k & [cfg]]
+(defn request-git!
+  "Queues `op` (:rebase or :checkout: zent.source/rebase!, checkout!) on `k`'s checkout as a job: git
+  writes there, so never next to a deploy. What it did lands in :command-messages under the id, why
+  not in :command-errors; its :git is re-read (the card shows ≠ reload: the disk moved on from what
+  runs). `cfg`: `k` as a previewed preset resolves it, else the applied one's. The id, or nil when `k`
+  has no repo there."
+  [op k & [cfg]]
   (let [cfg (or cfg (get @described k))]
     (when (:repo cfg)
       (enqueue! {:action :job :name k
                  :run (fn [id]
-                        (let [{:keys [ok message]} (source/rebase! cfg)]
+                        (let [{:keys [ok message]} (case op
+                                                     :rebase (source/rebase! cfg)
+                                                     :checkout (source/checkout! cfg))]
                           (try-set-git! k cfg)
                           (when-not ok (throw (ex-info message {})))
                           (swap! view-state assoc-in [:command-messages id] message)))}))))

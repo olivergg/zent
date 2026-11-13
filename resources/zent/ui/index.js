@@ -177,7 +177,7 @@ async function previewPreset(name) {
 
 function exitPreview() { setPreview(null, null); }
 
-// the previewed preset read again in place (a rebase from it moved a checkout)
+// the previewed preset read again in place (a rebase or a checkout from it moved a clone)
 async function refreshPreview() {
   if (!previewing) return;
   const res = await fetch("/api/preview/" + encodeURIComponent(previewing));
@@ -1146,19 +1146,21 @@ document.body.addEventListener("htmx:configRequest", (e) => { e.detail.headers["
    since each push re-renders the buttons themselves. Infinity while the POST
    is still in flight (no id yet). */
 const pending = new Map();
-// queued rebases, id -> component: once handled, say what happened, the undo command included
-const rebases = new Map();
+// a git write's past participle, by its /api/<verb>/<component> path
+const gitDone = { rebase: "rebased", checkout: "checked out" };
+// queued git writes, id -> [done, component]: once handled, say what happened, the undo command included
+const gitJobs = new Map();
 
 function markBusy() {
   const done = new Set(view.done || []);
   for (const [path, id] of pending) if (done.has(id)) pending.delete(path);
-  for (const [id, name] of rebases) {
+  for (const [id, [did, name]] of gitJobs) {
     if (!done.has(id)) continue;
-    rebases.delete(id);
+    gitJobs.delete(id);
     const message = view["command-messages"]?.[id];
-    if (message) { refreshPreview(); toast("up", "rebased " + name, message, name); continue; }
+    if (message) { refreshPreview(); toast("up", did + " " + name, message, name); continue; }
     // neither means no job ran it: a shutdown took it, or a daemon older than :job
-    toast("failed", "not rebased: " + name,
+    toast("failed", "not " + did + ": " + name,
           view["command-errors"]?.[id] || "the daemon didn't run it - restart it and try again", name);
   }
   document.querySelectorAll("[hx-post]").forEach((b) => {
@@ -1176,10 +1178,10 @@ document.body.addEventListener("htmx:afterRequest", (e) => {
   if (!path) return;
   let id, reply;
   try { reply = JSON.parse(e.detail.xhr.responseText); id = reply.id; } catch { /* not a queued write */ }
-  if (path.startsWith("/api/rebase/") && reply) {
-    const name = path.slice("/api/rebase/".length).split("?")[0];
-    if (Number.isInteger(id)) rebases.set(id, name);
-    else toast("failed", "not rebased: " + name, reply.error, name);
+  const [, verb, name] = path.match(/^\/api\/(rebase|checkout)\/([^?]*)/) || [];
+  if (verb && reply) {
+    if (Number.isInteger(id)) gitJobs.set(id, [gitDone[verb], name]);
+    else toast("failed", "not " + gitDone[verb] + ": " + name, reply.error, name);
   }
   if (e.detail.successful && Number.isInteger(id)) pending.set(path, id);
   else pending.delete(path);
@@ -1339,7 +1341,7 @@ function connect() {
     // command ids from 0 - refresh one, forget pending spinners of the other
     if (reconnecting) {
       pending.clear();
-      rebases.clear();
+      gitJobs.clear();
       try {
         const { token } = await (await fetch("/api/token")).json();
         document.querySelector('meta[name="csrf-token"]').content = token;

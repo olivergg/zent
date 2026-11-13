@@ -213,6 +213,42 @@
       (is (not (:ok (source/rebase! (cfg-of clone)))))
       (is (= before (git! clone "rev-parse" "HEAD"))))))
 
+(deftest checkout-refusal-test
+  (let [st {:from :clone :wanted-branch "feature/x" :branch "master" :dirty 0}]
+    (is (nil? (source/checkout-refusal st)))
+    (is (nil? (source/checkout-refusal (dissoc st :branch))) "detached")
+    (is (re-find #"uncommitted" (source/checkout-refusal (assoc st :dirty 1))))
+    (is (re-find #"already" (source/checkout-refusal (assoc st :branch "feature/x"))))
+    (is (re-find #":from :clone" (source/checkout-refusal (assoc st :from :origin))))
+    (is (re-find #":from :clone" (source/checkout-refusal (dissoc st :from :wanted-branch))) "no :branch")))
+
+(deftest checkout-test
+  (let [clone (repos "g.txt")
+        other (str (.getParent (File. clone)) "/other")
+        on #(git! clone "rev-parse" "--abbrev-ref" "HEAD")]
+    (testing "given an untracked file, then nothing moves"
+      (spit (str clone "/wip.txt") "wip\n")
+      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "master" :from :clone))]
+        (is (not ok))
+        (is (re-find #"uncommitted" message))
+        (is (= "feature" (on))))
+      (.delete (File. (str clone "/wip.txt"))))
+    (testing "given a clean clone on another branch, then the preset's is checked out, the undo told"
+      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "master" :from :clone))]
+        (is ok message)
+        (is (re-find #"undo: git -C .*clone checkout feature$" message))
+        (is (= "master" (on)))))
+    (testing "given a branch only origin has, then it is fetched and tracked"
+      (git! other "push" "--quiet" "origin" "master:remote-only")
+      (is (:ok (source/checkout! (cfg-of clone :branch "remote-only" :from :clone))))
+      (is (= "remote-only" (on)))
+      (is (= "origin/remote-only" (git! clone "rev-parse" "--abbrev-ref" "@{upstream}"))))
+    (testing "given a branch nobody has, then git's own refusal, nothing moved"
+      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "nope" :from :clone))]
+        (is (not ok))
+        (is (re-find #"nope can't be checked out" message))
+        (is (= "remote-only" (on)))))))
+
 (deftest rebase-local-test
   (let [clone (repos "g.txt")
         wt (str (.getParent (File. clone)) "/wt")

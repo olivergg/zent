@@ -109,10 +109,11 @@
 
 (deftest post-rebase-queues-test
   (testing "a rebase is queued like any write, not run in the request; no checkout there: refused"
-    (with-redefs [state/request-rebase! (fn [k _] (when (= :svc k) 7))]
+    (with-redefs [state/request-git! (fn [op k _] (when (= :svc k) ({:rebase 7 :checkout 8} op)))]
       (let [[status body] (post-json "/api/rebase/svc" :token "test-token")]
         (is (= 200 status))
         (is (= 7 (:id body))))
+      (is (= 8 (:id (second (post-json "/api/checkout/svc" :token "test-token")))) "a checkout too")
       (is (= 404 (first (post-json "/api/rebase/none" :token "test-token")))))))
 
 (deftest post-from-a-foreign-origin-is-rejected-even-with-the-right-token-test

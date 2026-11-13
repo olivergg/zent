@@ -4,14 +4,14 @@
 
 (defn- step [s at components] (state/record-transitions at s (assoc s :components components)))
 
-(deftest request-rebase-test
-  (let [queue! (fn [cfg] (state/request-rebase! :svc cfg)
+(deftest request-git-test
+  (let [queue! (fn [cfg] (state/request-git! :rebase :svc cfg)
                  (last @state/control))
         cfg {:repo "svc"}]
     (reset! state/control [])
     (with-redefs [zent.source/checkout-git (constantly nil)]
       (testing "given no repo there, then nothing queued"
-        (is (nil? (state/request-rebase! :nope {:kind :process})))
+        (is (nil? (state/request-git! :rebase :nope {:kind :process})))
         (is (empty? @state/control)))
       (testing "given a repo, then queued as a job: nothing runs until the engine takes it"
         (let [ran (atom 0)]
@@ -26,7 +26,12 @@
         (with-redefs [zent.source/rebase! (constantly {:ok false :message "2 uncommitted"})]
           (let [{:keys [run id]} (queue! cfg)]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo #"2 uncommitted" (run id)))
-            (is (nil? (get-in @state/view-state [:command-messages id])))))))
+            (is (nil? (get-in @state/view-state [:command-messages id]))))))
+      (testing "given a checkout, then the same job runs zent.source/checkout!"
+        (with-redefs [zent.source/checkout! (constantly {:ok true :message "checked out x"})]
+          (let [id (state/request-git! :checkout :svc cfg)]
+            ((:run (last @state/control)) id)
+            (is (= "checked out x" (get-in @state/view-state [:command-messages id])))))))
     (reset! state/control [])))
 
 (deftest set-preset-members-test

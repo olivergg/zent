@@ -412,12 +412,12 @@
     ;; (this ns never requires zent.engine). Each answers {:ok true :id n :seq s}:
     ;; done once n is in :done; /api/events from s shows what it caused
     ;; (zent.client/await!).
-    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/rebase/"))
-    (let [n (subs (:uri req) (count "/api/rebase/"))
+    (and (= (:request-method req) :post) (re-matches #"/api/(rebase|checkout)/.*" (:uri req)))
+    (let [[_ op n] (re-matches #"/api/(rebase|checkout)/(.*)" (:uri req))
           ;; from a preview: the component as that preset resolves it, not as the applied one does
           previewed (some-> (query-param req "preset") keyword)]
-      (if-let [id (state/request-rebase! (keyword n)
-                                         (when previewed (get (compose/resolve-preset @state/catalog previewed) (keyword n))))]
+      (if-let [id (state/request-git! (keyword op) (keyword n)
+                                      (when previewed (get (compose/resolve-preset @state/catalog previewed) (keyword n))))]
         (queued id)
         (error-response 404 (str n ": no checkout in the preset"))))
 

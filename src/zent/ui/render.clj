@@ -190,7 +190,8 @@
                   " - refused while it holds uncommitted files or commits on no branch; a reload keeps its commit")]
     {:branch (str (or branch (str "detached at " (short-sha sha))) "\n"
                   (cond (and off? (= :clone from)) (str "the preset's :from :clone wants " wanted-branch " checked out here:"
-                                                        " the deploy refuses until you git checkout it")
+                                                        " the deploy refuses until it is (the checkout button, once nothing"
+                                                        " is uncommitted)")
                         off? (str "the preset wants " wanted-branch " - not this one")
                         (= :clone from) "the preset's :branch, :from :clone: your clone runs it as it is"
                         (= :local from) "the preset's :branch, :from :local: your local branch, in a worktree"
@@ -266,6 +267,17 @@
                     path (str "Rebase " branch " onto " onto "?" (when pushed " It is on origin: push --force-with-lease afterwards."))
                     "rebase")))))
 
+(defn- checkout-button
+  "The preset's :branch a click away when a :from :clone runs another one and nothing refuses it
+  (zent.source/checkout-refusal)."
+  [cname {:keys [wanted-branch branch preview-of] :as chip}]
+  (when-not (source/checkout-refusal chip)
+    (git-button (str "Check out " wanted-branch " in your clone, fetched from origin when you have no local one")
+                (str "/api/checkout/" (name cname) (when preview-of (str "?preset=" preview-of)))
+                (str "Check out " wanted-branch " in your clone" (when branch (str ", now on " branch))
+                     "? Every component running this clone moves with it.")
+                "checkout")))
+
 (defn- git-row
   "The chip, a section of its own - nil when it has nothing to say: the branch unless the default one
   (red when not the preset's :branch, dashed in a worktree), where the code comes from (origin's or
@@ -297,8 +309,9 @@
            (when-not default?
              (str (span (str "branch" (when wt? " wt") (when off? " off")) :branch
                         (str "&#9095; " (esc (if branch (short-branch branch) (short-sha sha)))))
-                  (when off? (span "want" (str "the preset wants " wanted-branch ", this is " branch)
-                                   (str "&#8800; " (esc (short-branch wanted-branch)))))
+                  (when off? (str (span "want" (str "the preset wants " wanted-branch ", this is " branch)
+                                        (str "&#8800; " (esc (short-branch wanted-branch))))
+                                  (checkout-button cname chip)))
                   (cond (not wt?) (span "from clone" :from "&#9998; clone")
                         test? (span "from origin test" :from (str "&#10548; " (esc base) " (test)"))
                         (= :local from) (span (str "from local" (when (pos? pull) " moved")) :from
