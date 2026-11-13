@@ -1108,88 +1108,114 @@ body:not([data-tab="checks"]) .checks-view { display: none; }
   background: var(--madder); color: #fff; font-size: 10.5px; text-align: center;
 }
 .tab-badge.ok { background: var(--verdigris); }
-.checks-view { height: calc(100vh - var(--head)); display: grid; grid-template-columns: minmax(360px, 42%) 1fr; }
-.checks-view .left { border-right: .5px solid rgba(0, 0, 0, .14); display: flex; flex-direction: column; overflow: auto; background: rgba(255, 255, 255, .7); }
-.checks-view .right { overflow: auto; padding: 14px 20px; background: rgba(255, 255, 255, .7); }
-.checks-bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; background: var(--glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: .5px solid rgba(0, 0, 0, .12); position: sticky; top: 0; z-index: 1; }
-.checks-bar button, .chk-cmd button {
-  font: inherit; font-size: 11.5px; font-weight: 500; padding: 4px 11px; border: 0;
-  background: rgba(0, 0, 0, .06); color: var(--ink); border-radius: 7px; cursor: pointer;
-}
-.checks-bar button:disabled, .chk-cmd button:disabled { opacity: .45; cursor: default; }
-.checks-bar label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: var(--muted); }
-.chk { padding: 12px 14px 6px; }
-.chk-head { display: flex; gap: 8px; align-items: baseline; }
-.chk-head .name { font-weight: 600; }
-.chk-meta { color: var(--muted); font-size: 11.5px; margin: 2px 0 4px 22px; }
-.chk-chips { margin: 2px 0 8px 22px; display: flex; flex-wrap: wrap; gap: 4px; color: var(--muted); }
-.chk-chips span { border: 1px solid var(--grey); border-radius: 9px; padding: 0 7px; font-size: 10.5px; }
-.chk-chips span.writes { border-color: var(--madder); color: var(--madder); }
-/* what kind of oracle a test is (:zent/kind), from the strongest to the weakest - hues of their
-   own, not the status colors; an unknown kind keeps the plain grey badge */
-.chk-tests .kind { margin-left: 6px; border: 1px solid var(--grey); border-radius: 9px; padding: 0 6px;
-  font-size: 10px; color: var(--muted); }
-.chk-tests .kind[data-kind="invariant"]     { border-color: #3b4a8f; color: #3b4a8f; background: #eceef7; }
-.chk-tests .kind[data-kind="pseudo-oracle"] { border-color: #4a6b78; color: #4a6b78; background: #ebf1f3; }
-.chk-tests .kind[data-kind="metamorphic"]   { border-color: #6b4a8f; color: #6b4a8f; background: #f1ecf6; }
-.chk-tests .kind[data-kind="business-rule"] { border-color: #7d5f25; color: #7d5f25; background: #f6f0e4; }
-.chk-tests .kind[data-kind="heuristic"]     { border-style: dashed; font-style: italic; }
-.gl { display: inline-block; width: 14px; text-align: center; font-weight: 700; }
-.st-pass { color: var(--verdigris); } .st-fail { color: var(--madder); } .st-accepted { color: var(--weld); }
-.st-error, .st-unknown { color: var(--weld); } .st-run { color: var(--muted); }
-ul.chk-tests { list-style: none; margin: 0 0 0 14px; padding: 0; border-left: 1px solid var(--grey); }
-ul.chk-tests li { display: flex; gap: 8px; align-items: baseline; padding: 3px 8px; cursor: pointer; border-radius: 3px; }
-ul.chk-tests li:hover { background: var(--card); }
-ul.chk-tests li[aria-selected="true"] { background: #fff; outline: 1px solid var(--grey); }
-ul.chk-tests li .n { flex: 1; overflow-wrap: anywhere; }
-/* descriptions are read, not glanced at: near the ink, not muted */
-ul.chk-tests li .doc, .chk-meta .desc, .chk-doc { color: #33364a; }
-ul.chk-tests li .doc { display: block; font-size: 11px; line-height: 1.4; margin-top: 1px; }
-.chk-doc { white-space: pre-line; margin: 0 0 12px; max-width: 80ch; }
-/* a test's description takes its verdict's colour: what holds, what doesn't */
-ul.chk-tests li[data-status="pass"] .doc, .chk-doc[data-status="pass"] { color: var(--verdigris); }
-ul.chk-tests li[data-status="fail"] .doc, .chk-doc[data-status="fail"] { color: var(--madder); }
-ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
-.chk-problem { margin: 4px 0 8px 22px; color: var(--madder); }
-.chk-history { margin-top: auto; padding: 10px 14px 14px; border-top: 1px solid var(--grey); }
-.checks-view h3 { font-family: var(--display); font-weight: 400; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
-.chk-runs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
-.chk-runs button { width: 22px; height: 22px; border: 0; border-radius: 3px; color: #fff; font-size: 11px; cursor: pointer; padding: 0; }
-.chk-runs .pass { background: var(--verdigris); } .chk-runs .fail { background: var(--madder); } .chk-runs .unknown { background: var(--weld); color: var(--ink); }
+/* the run's summary on top, the tests | the one picked: frosted panes on the board */
+.checks-view { --red: #e5463b; --red-ink: #b8322a; --green: #28b463; --green-ink: #1e7a46; --amber: #e8a200; --faint: #8a8d98;
+  height: calc(100vh - var(--head)); display: grid; grid-template: auto 1fr / minmax(340px, 30%) 1fr; gap: 12px; padding: 0 16px 16px; }
+.chk-summary { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; padding: 12px 16px; border-radius: 14px;
+  background: var(--glass); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: var(--glass-edge); }
+.chk-summary .headline { font-size: 15px; font-weight: 600; white-space: nowrap; }
+.chk-summary .headline b { color: var(--red-ink); }
+.chk-bar { flex: 1; max-width: 360px; display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: rgba(0, 0, 0, .06); }
+.chk-bar i { display: block; } .chk-bar .pass { background: var(--green); } .chk-bar .accepted { background: var(--amber); }
+.chk-bar :is(.fail, .error) { background: var(--red); } .chk-bar .unknown { background: #c9cbd1; }
+.chk-legend { display: flex; gap: 12px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.chk-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; background: var(--c); }
+.chk-summary label { margin-left: auto; display: flex; gap: 5px; align-items: center; color: var(--muted); white-space: nowrap; }
+.checks-view button { font: 500 12px var(--font); padding: 6px 12px; border: 0; border-radius: 8px; background: rgba(0, 0, 0, .06); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.checks-view button.primary { background: #0a84ff; color: #fff; }
+.checks-view button:disabled { opacity: .45; cursor: default; }
+.chk-pane { min-height: 0; overflow: auto; border-radius: 14px; background: var(--glass); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: var(--glass-edge); }
+
+/* the list: a check, then a line per test - its state, what it says, its outcome in a few words */
+.chk-list { padding: 8px; }
+.chk { margin: 2px 0 8px; }
+.chk > .h { display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; font-weight: 600; }
+.chk > .h small { margin-left: auto; font-weight: 400; color: var(--faint); font-size: 11px; white-space: nowrap; }
+.chk > .h small b { color: var(--red-ink); font: 600 11px var(--mono); }
+.chk-problem { margin: 0 8px 6px; color: var(--red-ink); font-size: 12px; }
+.chk-t { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 22px; border-radius: 8px; cursor: pointer; }
+.chk-t:hover { background: rgba(0, 0, 0, .04); }
+.chk-t[aria-selected="true"] { background: rgba(10, 132, 255, .10); box-shadow: inset 2px 0 0 #0a84ff; }
+.chk-t .what { flex: 1; min-width: 0; }
+.chk-t .what div, .chk-t .what small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chk-t .what small { display: block; color: var(--faint); font-size: 11px; }
+.chk-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 18%, transparent); }
+.st-pass { --c: var(--green); } .st-fail, .st-error { --c: var(--red); } .st-accepted { --c: var(--amber); }
+.st-unknown { --c: #a5a5ab; } .st-run { --c: #0a84ff; }
+.st-run .chk-dot { animation: chk-run 1s ease-in-out infinite alternate; }
+@keyframes chk-run { to { opacity: .35; } }
+/* what kind of oracle a test is (:zent/kind) */
+.chk .kind { font: 500 9.5px var(--mono); padding: 1px 6px; border-radius: 9px; background: rgba(0, 0, 0, .05); color: var(--muted); white-space: nowrap; }
+.chk .writes { color: var(--red-ink); background: rgba(229, 70, 59, .1); }
+
+/* the detail: the outcome in a sentence, then what was judged, then the gaps, grouped */
+.chk-detail { padding: 22px 26px 30px; }
+.chk-verdict { display: flex; gap: 12px; align-items: flex-start; }
+.chk-verdict .chk-dot { width: 12px; height: 12px; margin-top: 7px; }
+.chk-verdict h2 { margin: 0; font-size: 19px; font-weight: 650; line-height: 1.35; letter-spacing: -.01em; }
+.chk-verdict p { margin: 3px 0 0; color: var(--muted); }
+.chk-verdict p code { font: 11px var(--mono); color: var(--faint); }
+.chk-why { display: grid; grid-template-columns: 74px 1fr; gap: 3px 12px; margin: 16px 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(0, 0, 0, .035); font-size: 12px; }
+.chk-why dt { color: var(--faint); font-weight: 600; font-size: 11px; }
+.chk-why dd { margin: 0; color: var(--muted); white-space: pre-line; }
+.chk-why.closed .more { display: none; }
+.chk-why button { grid-column: 2; justify-self: start; padding: 0; background: none; color: #0a84ff; font-size: 11px; }
+.chk-detail h3 { margin: 22px 0 8px; font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.chk-facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.chk-fact { min-width: 120px; padding: 8px 12px; border-radius: 10px; background: #fff; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .1); }
+.chk-fact b { display: block; font-size: 18px; font-weight: 650; }
+.chk-fact span { color: var(--muted); font-size: 11.5px; }
+.chk-fact.bad b { color: var(--red-ink); }
+.chk-notes { margin: 0; padding-left: 18px; color: var(--muted); }
+.chk-notes li { white-space: pre-wrap; overflow-wrap: anywhere; margin: 2px 0; }
+.chk-accepted { padding: 8px 12px; border-radius: 10px; background: rgba(232, 162, 0, .1); color: #7a5300; }
+
+/* a group of gaps sharing one shape (zent.checks groups) */
+.chk-group { margin-bottom: 12px; border-radius: 12px; background: #fff; box-shadow: 0 0 0 .5px rgba(0, 0, 0, .12), inset 3px 0 0 var(--red); overflow: hidden; }
+.chk-group.err { box-shadow: 0 0 0 .5px rgba(0, 0, 0, .12), inset 3px 0 0 var(--amber); }
+.chk-group > .h { display: flex; align-items: baseline; gap: 10px; padding: 12px 14px 4px 16px; }
+.chk-group > .h b { font-size: 13.5px; overflow-wrap: anywhere; }
+.chk-group > .h .n { margin-left: auto; font: 600 12px var(--mono); color: var(--red-ink); white-space: nowrap; }
+.chk-group > .sub { padding: 0 16px; color: var(--muted); font-size: 12px; }
+.chk-group > .body { padding: 10px 16px 12px; }
+.chk-group .raw { margin: 0; font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }
+.chk-ex { border-top: .5px solid rgba(0, 0, 0, .08); }
+.chk-ex summary { padding: 8px 16px; color: #0a84ff; font-size: 12px; cursor: pointer; list-style: none; }
+.chk-ex summary::-webkit-details-marker { display: none; }
+.chk-ex .ex { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 5px 16px; border-top: .5px solid rgba(0, 0, 0, .05); font-size: 12px; }
+.chk-ex .ex .v { margin-left: auto; font: 11.5px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.chk-chip { display: inline-flex; gap: 4px; padding: 1px 7px; border-radius: 9px; background: rgba(0, 0, 0, .05); font-size: 11.5px; white-space: nowrap; }
+.chk-chip span { color: var(--faint); }
+
+/* a failed (= expected actual): side by side, what differs marked (index.js diffHtml) */
+.chk-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font: 12.5px/1.6 var(--mono); }
+.chk-diff h4 { margin: 0 0 3px; font: 600 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.chk-diff .exp h4 { color: var(--red-ink); } .chk-diff .got h4 { color: var(--green-ink); }
+.chk-diff .v { padding: 3px 9px; border-radius: 7px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chk-diff .exp .v { background: rgba(229, 70, 59, .09); } .chk-diff .got .v { background: rgba(40, 180, 99, .10); }
+.chk-detail :is(del, ins) { text-decoration: none; border-radius: 3px; }
+.chk-detail del { color: var(--red-ink); background: rgba(229, 70, 59, .28); }
+.chk-detail ins { color: var(--green-ink); background: rgba(40, 180, 99, .30); }
+.chk-detail .none { color: var(--faint); font-style: italic; font-family: var(--font); }
+.chk-keys { border-collapse: collapse; font: 12px var(--mono); }
+.chk-keys td { padding: 3px 10px 3px 0; vertical-align: baseline; overflow-wrap: anywhere; }
+.chk-keys .k { color: var(--muted); white-space: nowrap; }
+.chk-keys .mark { width: 14px; font-weight: 700; }
+.chk-keys tr[data-op="add"] .mark { color: var(--green-ink); } .chk-keys tr[data-op="del"] .mark { color: var(--red-ink); }
+.chk-keys tr[data-op="changed"] .mark { color: #c58a00; } .chk-keys tr[data-op="same"] td:last-child { color: var(--faint); }
+
+/* when it last ran, how it went before, and how to run it again */
+.chk-since { margin-top: 22px; color: var(--muted); font-size: 12px; }
+.chk-since .new { color: var(--red-ink); font-weight: 700; } .chk-since .fixed { color: var(--green-ink); font-weight: 700; }
+.chk-runs { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+.chk-runs button { width: 20px; height: 20px; padding: 0; border-radius: 5px; color: #fff; font-size: 10px; }
+.chk-runs .pass, .chk-runs .accepted { background: var(--green); } .chk-runs .fail { background: var(--red); } .chk-runs .unknown { background: var(--amber); }
 /* a partial run (--only): hatched rather than faded, so its glyph stays readable */
 .chk-runs .partial { background-image: repeating-linear-gradient(135deg, transparent 0 3px, rgb(255 255 255 / .3) 3px 5px); }
 .chk-runs [aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
-.chk-detail-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; font-size: 15px; font-weight: 600; }
-.chk-where { color: var(--muted); margin-bottom: 12px; }
-.chk-failure { background: var(--card); border: 1px solid var(--grey); border-left: 3px solid var(--madder); border-radius: 3px; padding: 9px 12px; margin-bottom: 10px; }
-.chk-failure.err { border-left-color: var(--weld); }
-.chk-failure .msg { font-weight: 600; margin-bottom: 6px; overflow-wrap: anywhere; }
-.chk-failure dl { display: grid; grid-template-columns: 72px 1fr; gap: 2px 10px; margin: 0; }
-.chk-failure dt { color: var(--muted); text-align: right; }
-.chk-failure dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-/* a failed (= expected actual): side by side, what differs marked (index.js diffHtml) */
-.chk-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font: 12px/1.6 var(--mono); }
-.chk-diff h4 { margin: 0 0 3px; font: 600 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
-.chk-diff div:first-child h4 { color: #b8322a; } .chk-diff div:last-child h4 { color: #1e7a46; }
-.chk-diff .v { padding: 2px 8px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.chk-diff .exp { background: rgba(229, 70, 59, .10); } .chk-diff .got { background: rgba(40, 180, 99, .10); }
-.chk-failure :is(del, ins) { text-decoration: none; border-radius: 3px; }
-.chk-failure del { color: #b8322a; background: rgba(229, 70, 59, .28); }
-.chk-failure ins { color: #1e7a46; background: rgba(40, 180, 99, .30); }
-.chk-failure .none { color: #8a8d98; }
-.chk-keys { border-collapse: collapse; font: 11.5px var(--mono); }
-.chk-keys td { padding: 2px 10px 2px 0; vertical-align: baseline; overflow-wrap: anywhere; }
-.chk-keys .k { color: var(--muted); }
-.chk-keys .mark { width: 14px; font-weight: 700; }
-.chk-keys tr[data-op="add"] .mark { color: #1e7a46; } .chk-keys tr[data-op="del"] .mark { color: #b8322a; }
-.chk-keys tr[data-op="changed"] .mark { color: #c58a00; } .chk-keys tr[data-op="same"] td:last-child { color: #8a8d98; }
-.chk-notes { background: var(--card); border: 1px solid var(--grey); border-left: 3px solid var(--verdigris); border-radius: 3px; padding: 9px 12px; margin-bottom: 10px; }
-.chk-notes ul { margin: 4px 0 0; padding-left: 18px; } .chk-notes li { white-space: pre-wrap; overflow-wrap: anywhere; margin: 2px 0; }
-.chk-since { margin: 14px 0; padding: 8px 12px; border: 1px dashed var(--grey); border-radius: 3px; }
-.chk-since .new { color: var(--madder); font-weight: 700; } .chk-since .fixed { color: var(--verdigris); font-weight: 700; }
-.chk-cmd { display: flex; gap: 6px; align-items: center; margin-top: 12px; }
-.chk-cmd code { flex: 1; background: #fff; border: 1px solid var(--grey); padding: 4px 8px; border-radius: 3px; font-size: 11.5px; overflow: auto; white-space: nowrap; }
-.chk-error { white-space: pre-wrap; color: var(--madder); background: var(--card); padding: 8px 12px; border-radius: 3px; }
+.chk-cmd { display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, .04); }
+.chk-cmd code { flex: 1; font: 11.5px var(--mono); color: var(--muted); overflow: auto; white-space: nowrap; }
+.chk-error { margin-top: 12px; padding: 8px 12px; border-radius: 10px; white-space: pre-wrap; color: var(--red-ink); background: rgba(229, 70, 59, .08); font: 12px var(--mono); }
 .checks-empty { color: var(--muted); padding: 30px; }
 
 /* a terminal: dark, in the dashboard's ink */

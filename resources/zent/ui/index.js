@@ -970,14 +970,9 @@ function showTab() {
 const CHECK_GLYPH = { pass: "✓", accepted: "≈", fail: "✗", error: "!", unknown: "?", run: "…" };
 const checks = { data: null, preset: undefined, sel: {}, runIdx: {}, live: {}, streams: {} };
 
-// a docstring's lines as written (indented continuation lines), for the detail; folded to one for the tree
+// a docstring's lines as written, without the indent of its continuation lines
 const docLines = (d) => String(d).split("\n").map((l) => l.trim()).join("\n");
-const docInline = (d) => docLines(d).replace(/\n/g, " ");
 const hms = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-// a test's assertions in the tree, spelled out: "1 of 94 failed", "114 passed"
-const testCounts = (t) => t.status === "run" ? ""
-  : t.status === "error" ? `threw after ${t.assertions} assertion(s)`
-  : t.failures.length ? `${t.failures.length} of ${t.assertions} failed` : `${t.assertions} passed`;
 
 async function loadChecks() {
   try {
@@ -1040,17 +1035,58 @@ function followCheck(c) {
   es.onerror = () => { end(); setTimeout(loadChecks, 1000); };
 }
 
-/* A failed (= expected actual) (zent.diff): the two sides side by side, what differs marked; two
-   maps key by key, an unchanged key greyed. */
+/* A failed (= expected actual) (zent.diff): one side of its segments, what differs marked by `tag`
+   (none: plain text); side by side; key by key for two maps, an unchanged key greyed. */
+const diffSide = (segs, op, tag) => segs.filter(([o]) => o === "same" || o === op)
+  .map(([o, t]) => o === "same" || !tag ? escHtml(t) : `<${tag}>${escHtml(t)}</${tag}>`).join("") || `<span class="none">empty</span>`;
 function diffHtml({ segments, keys }) {
-  const side = (segs, op, tag) => segs.filter(([o]) => o === "same" || o === op)
-    .map(([o, t]) => o === "same" ? escHtml(t) : `<${tag}>${escHtml(t)}</${tag}>`).join("") || `<span class="none">""</span>`;
   if (keys) return `<table class="chk-keys">${keys.map((k) => `<tr data-op="${k.op}"><td class="mark">${
     { add: "+", del: "−", changed: "~", same: "" }[k.op]}</td><td class="k">${escHtml(k.key)}</td><td>${
-    k.op === "changed" ? `${side(k.segments, "del", "del")} <span class="none">→</span> ${side(k.segments, "add", "ins")}`
+    k.op === "changed" ? `${diffSide(k.segments, "del", "del")} <span class="none">→</span> ${diffSide(k.segments, "add", "ins")}`
     : k.op === "add" ? `<ins>${escHtml(k.value)}</ins>` : k.op === "del" ? `<del>${escHtml(k.value)}</del>` : escHtml(k.value)}</td></tr>`).join("")}</table>`;
-  return `<div class="chk-diff"><div><h4>expected</h4><div class="v exp">${side(segments, "del", "del")}</div></div>
-    <div><h4>actual</h4><div class="v got">${side(segments, "add", "ins")}</div></div></div>`;
+  return `<div class="chk-diff"><div class="exp"><h4>Expected</h4><div class="v">${diffSide(segments, "del", "del")}</div></div>
+    <div class="got"><h4>Actual</h4><div class="v">${diffSide(segments, "add", "ins")}</div></div></div>`;
+}
+// the same, on one line: an example under its group
+const diffInline = ({ segments, keys }) => keys
+  ? keys.filter((k) => k.op !== "same").map((k) => `${escHtml(k.key)} ${k.op === "changed"
+      ? `${diffSide(k.segments, "del")} → ${diffSide(k.segments, "add")}` : escHtml(k.value)}`).join(" · ")
+  : `${diffSide(segments, "del")} → ${diffSide(segments, "add")}`;
+
+const num = (v) => /^-?\d+(\.\d+)?$/.test(String(v)) ? Number(v).toLocaleString() : String(v);
+const KIND_LABEL = { "pseudo-oracle": "oracle", "business-rule": "business rule" };
+const capitalized = (s) => s[0].toUpperCase() + s.slice(1);
+// a test as a reader sees it: its :zent/title, else its name spelled out
+const titleOf = (t) => t.title || capitalized(t.name).replace(/-/g, " ");
+const failingCount = (t) => (t.groups || []).reduce((n, g) => n + g.count, 0) || t.failures.length;
+const bad = (t) => t.status === "fail" || t.status === "error";
+// its outcome in a few words, under its title in the list
+function testLine(t) {
+  const facts = t.facts || [], worst = facts.find(([, , b]) => b);
+  if (t.status === "run") return "running…";
+  if (t.status === "fail") return worst ? `${num(worst[1])} ${worst[0]}` : `${num(failingCount(t))} failing`;
+  if (t.status === "error") return "couldn't finish";
+  if (t.status === "accepted") return "accepted gap";
+  return facts[0] ? `${num(facts[0][1])} ${facts[0][0]}` : `${num(t.assertions)} passed`;
+}
+// its outcome in a sentence: its :zent/verdict, else what the result says
+const verdictOf = (t) => t.verdict ? escHtml(t.verdict)
+  : { run: "Running…", pass: "Passes", accepted: "Passes, with an accepted gap", error: "Couldn't finish: it threw",
+      unknown: "Not judged" }[t.status] ?? `${num(failingCount(t))} failing of ${num(t.assertions)} assertion${t.assertions > 1 ? "s" : ""}`;
+
+const chips = (where) => where.map(([k, v]) => `<span class="chk-chip"><span>${escHtml(k)}</span>${escHtml(v)}</span>`).join(" ");
+// a group of failures sharing one shape (zent.checks): what it is, how many, one shown, a few more on demand
+function groupHtml(g, err) {
+  const ex = g.examples[0];
+  const title = g.group || (err ? "Threw" : ex.diff ? "Difference" : ex.message) || "Failure";
+  // without a diff, the message says it; an exception's own text is shown, a failing form's isn't
+  const raw = err ? ex.actual : ex.message !== title && ex.message;
+  const body = ex.diff ? diffHtml(ex.diff) : raw ? `<pre class="raw">${escHtml(String(raw).slice(0, 600))}</pre>` : "";
+  const more = g.examples.length > 1 || ex.where?.length;
+  return `<div class="chk-group ${err ? "err" : ""}"><div class="h"><b>${escHtml(title)}</b>${g.count > 1 ? `<span class="n">${num(g.count)} ×</span>` : ""}</div>
+    ${g.explain ? `<div class="sub">${escHtml(g.explain)}</div>` : ""}${body ? `<div class="body">${body}</div>` : ""}
+    ${more ? `<details class="chk-ex"><summary>Show examples (${g.examples.length} of ${num(g.count)})</summary>${g.examples.map((x) =>
+      `<div class="ex">${x.where?.length ? chips(x.where) : escHtml(x.message || "")}<span class="v">${x.diff ? diffInline(x.diff) : ""}</span></div>`).join("")}</details>` : ""}</div>`;
 }
 
 async function runCheck(c, only) {
@@ -1068,110 +1104,112 @@ async function runCheck(c, only) {
 }
 
 const checkList = () => checks.data?.checks || [];
-// the check holding the selection, else the first
-const selectedCheck = (list) => list.find((x) => checks.selCheck === x.name) || list[0];
 
 function renderChecks() {
   const tab = document.getElementById("checks-tab"), badge = document.getElementById("checks-badge");
   const list = checkList();
   tab.hidden = !list.length;
-  const bad = list.reduce((n, c) => n + ((c.current || c.runs.at(-1))?.tests || []).filter((t) => t.status !== "pass").length, 0);
-  const running = list.some((c) => checks.live[c.name]);
-  const anyResult = list.some((c) => c.runs.length);
-  badge.hidden = !anyResult && !running;
-  badge.textContent = running ? "…" : bad || "✓";
-  badge.className = "tab-badge" + (bad || running ? "" : " ok");
+  const tests = list.flatMap((c) => shownCheckRun(c)?.tests || []);
+  const failing = tests.filter(bad).length, running = list.some((c) => checks.live[c.name]);
+  badge.hidden = !tests.length && !running;
+  badge.textContent = running ? "…" : failing || "✓";
+  badge.className = "tab-badge" + (failing || running ? "" : " ok");
   if (document.body.dataset.tab !== "checks") return;
 
   const tree = document.getElementById("checks-tree"), detail = document.getElementById("checks-detail");
-  const history = document.getElementById("checks-history");
+  document.getElementById("checks-run-all").disabled = document.getElementById("checks-run-failed").disabled = running;
+  // the summary: how the tests went, as a sentence and a bar
+  const n = { pass: 0, accepted: 0, fail: 0, unknown: 0 };
+  for (const t of tests) n[bad(t) ? "fail" : t.status in n ? t.status : "unknown"]++;
+  document.getElementById("checks-headline").innerHTML = running ? "Running…"
+    : !tests.length ? "No results yet"
+    : (failing ? `<b>${failing} test${failing > 1 ? "s" : ""} failing</b> of ${tests.length}` : `All ${tests.length} tests pass`)
+      + (n.accepted ? ` · ${n.accepted} accepted gap${n.accepted > 1 ? "s" : ""}` : "");
+  document.getElementById("checks-bar").innerHTML = Object.entries(n).filter(([, k]) => k)
+    .map(([s, k]) => `<i class="${s}" style="width:${(100 * k) / tests.length}%"></i>`).join("");
+  const LEGEND = { pass: ["passing", "var(--green)"], accepted: ["accepted", "var(--amber)"], fail: ["failing", "var(--red)"], unknown: ["not judged", "#c9cbd1"] };
+  document.getElementById("checks-legend").innerHTML = Object.entries(n).filter(([, k]) => k)
+    .map(([s, k]) => `<span style="--c:${LEGEND[s][1]}">${k} ${LEGEND[s][0]}</span>`).join("");
+
   if (!list.length) {
     tree.innerHTML = `<p class="checks-empty">${checks.data?.preset ? "No checks for this preset - checks/&lt;preset&gt;/ in the catalog repo." : "No preset running."}</p>`;
-    detail.innerHTML = history.innerHTML = "";
+    detail.innerHTML = "";
     return;
   }
   const onlyFailed = document.getElementById("checks-only-failed").checked;
-  document.getElementById("checks-run-all").disabled = running;
-  document.getElementById("checks-run-failed").disabled = running;
-
-  tree.innerHTML = list.map((c) => {
-    const r = shownCheckRun(c);
-    const st = r?.live ? "run" : r?.status || "unknown";
-    const meta = r?.live ? `running ${r.tests.filter((t) => t.status !== "run").length} test(s) done`
-      : !r ? "never run"
-      : `${checks.runIdx[c.name] !== undefined ? "run" : "full run"} ${hms(r["started-at"])}`
-        + (r.only ? " · only " + r.only.join(", ") : "")
-        + (r.overlaid?.length ? " · then " + r.overlaid.map((o) => `${o.only.join(", ")} at ${hms(o["started-at"])}`).join(", ") : "");
-    const sel = checks.sel[c.name];
+  // the list: checks with a failing test first, a line per test
+  const failingFirst = [...list].sort((a, b) => !(shownCheckRun(a)?.tests || []).some(bad) - !(shownCheckRun(b)?.tests || []).some(bad));
+  tree.innerHTML = failingFirst.map((c) => {
+    const r = shownCheckRun(c), k = (r?.tests || []).filter(bad).length;
     return `<div class="chk" data-check="${escHtml(c.name)}">
-      <div class="chk-head"><span class="gl st-${st}">${CHECK_GLYPH[st]}</span><span class="name">${escHtml(c.name)}</span>
-        <span class="c quiet">${r && !r.live ? `${r.counts.tests} test(s) · ${r.counts.assertions} assertions · ${((r["duration-ms"] || 0) / 1000).toFixed(1)} s` : ""}</span></div>
-      <div class="chk-meta">${c.description ? `<span class="desc">${escHtml(c.description)}</span><br>` : ""}${meta}</div>
+      <div class="h" title="${escHtml(c.description || "")}">${escHtml(capitalized(c.description ? c.description.split(":")[0] : c.name))}
+        ${c.writes ? `<span class="kind writes" title="a scenario: runs only when asked for, never with Run all">writes</span>` : ""}
+        <small>${r?.live ? "running…" : !r ? "never run" : k ? `<b>${k} failing</b>` : `${r.tests.length} ✓`}</small></div>
       ${c.problem ? `<div class="chk-problem">${escHtml(c.problem)}</div>` : ""}
-      ${c.observes?.length || c.writes ? `<div class="chk-chips">observes ${(c.observes || []).map((o) => `<span>${escHtml(o)}</span>`).join("")}${c.writes ? `<span class="writes" title="a scenario: runs only when asked for, never with run all">writes</span>` : ""}</div>` : ""}
-      <ul class="chk-tests">${(r?.tests || []).filter((t) => !onlyFailed || t.status !== "pass").map((t) => `
-        <li data-test="${escHtml(t.name)}" data-status="${t.status}" aria-selected="${t.name === sel}">
-          <span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span><span class="n">${escHtml(t.name)}${t.kind ? `<span class="kind" data-kind="${escHtml(t.kind)}">${escHtml(t.kind)}</span>` : ""}${t.doc ? `<span class="doc">${escHtml(docInline(t.doc))}</span>` : ""}</span>
-          <span class="c">${t.at ? `<span class="quiet">${hms(t.at)}</span> ` : ""}${testCounts(t)}</span></li>`).join("")}
-      </ul></div>`;
+      ${(r?.tests || []).filter((t) => !onlyFailed || bad(t)).map((t) => `
+        <div class="chk-t st-${t.status}" data-test="${escHtml(t.name)}" aria-selected="${checks.selCheck === c.name && checks.sel[c.name] === t.name}">
+          <span class="chk-dot"></span><span class="what"><div>${escHtml(titleOf(t))}</div><small>${escHtml(testLine(t))}</small></span>
+          ${t.kind ? `<span class="kind" title="${escHtml(t.kind)}">${escHtml(KIND_LABEL[t.kind] || t.kind)}</span>` : ""}</div>`).join("")}</div>`;
   }).join("");
 
-  // history and detail
-  const c = selectedCheck(list);
+  // the detail: the selected test, else the first failing one
+  const c = list.find((x) => x.name === checks.selCheck) || failingFirst[0];
   const r = shownCheckRun(c);
-  history.innerHTML = c.runs.length ? `<h3>history · ${escHtml(c.name)}</h3><div class="chk-runs">${c.runs.map((x, i) =>
-    `<button type="button" class="${x.status} ${x.only ? "partial" : ""}" data-i="${i}" aria-pressed="${checks.runIdx[c.name] === i}"
-       title="${hms(x["started-at"])} · ${x.status} · ${x.counts.tests} test(s)${x.only ? " · only " + x.only.join(", ") : ""}">${CHECK_GLYPH[x.status]}</button>`).join("")}</div>
-    ${checks.runIdx[c.name] !== undefined ? `<button type="button" class="open-logs" id="checks-latest">back to the latest results</button>` : ""}` : "";
-
-  const t = r && (r.tests.find((x) => x.name === checks.sel[c.name]) || r.tests.find((x) => x.status !== "pass") || r.tests[0]);
+  const t = r && (r.tests.find((x) => x.name === checks.sel[c.name]) || r.tests.find(bad) || r.tests[0]);
   if (!r || !t) {
-    detail.innerHTML = r?.error ? `<h3>the run couldn't judge</h3><div class="chk-error">${escHtml(r.error)}</div>` : "";
-  } else {
-    checks.sel[c.name] = t.name;
-    // what changed since the full run before the one shown
-    const shownAt = r["started-at"] ?? Infinity;
-    const prev = r.live ? null : [...c.runs].reverse().find((x) => !x.only && x["started-at"] < (t.at ?? shownAt));
-    const before = prev?.tests.find((x) => x.name === t.name);
-    const since = !before ? "" : before.status === t.status ? `unchanged since ${hms(prev["started-at"])} (${CHECK_GLYPH[before.status]} ${before.status})`
-      : t.status === "pass" ? `<span class="fixed">fixed</span> - ${before.status} at ${hms(prev["started-at"])}`
-      : `<span class="new">newly ${t.status === "fail" ? "failing" : t.status}</span> - ${before.status} at ${hms(prev["started-at"])}`;
-    const loc = t.failures[0]?.file ? ` · ${t.failures[0].file}:${t.failures[0].line}` : "";
-    const cmd = `zent verify ${checks.data.preset} ${c.name} --only=${t.name}`;
-    detail.innerHTML = `
-      <div class="chk-detail-head"><span class="gl st-${t.status}">${CHECK_GLYPH[t.status]}</span>${escHtml(t.name)}</div>
-      ${t.doc ? `<p class="chk-doc" data-status="${t.status}">${escHtml(docLines(t.doc))}</p>` : ""}
-      <div class="chk-where">${t.status === "run" ? "running…" : `${t.failures.length ? t.failures.length + " failing of " : ""}${t.assertions} assertion(s)${escHtml(loc)}`}</div>
-      ${t.notes?.length ? `<div class="chk-notes"><h3>what it judged</h3><ul>${t.notes.map((n) => `<li>${escHtml(n)}</li>`).join("")}</ul></div>` : ""}
-      ${t.failures.map((f) => `<div class="chk-failure ${t.status === "error" ? "err" : ""}">
-          <div class="msg">${f.context ? `<span class="quiet">${escHtml(f.context)}</span> ` : ""}${escHtml(f.message)}</div>
-          ${f.diff ? diffHtml(f.diff)
-            : `<dl><dt>expected</dt><dd>${escHtml(f.expected)}</dd><dt>actual</dt><dd>${escHtml(f.actual)}</dd></dl>`}</div>`).join("")}
-      ${r.error ? `<div class="chk-error">${escHtml(r.error)}</div>` : ""}
-      ${since ? `<div class="chk-since"><h3>since the previous full run</h3>${since}</div>` : ""}
-      <div class="chk-cmd"><code>${escHtml(cmd)}</code>
-        <button type="button" id="checks-run-one" ${running ? "disabled" : ""}>&#9654; this test</button>
-        <button type="button" id="checks-copy">copy</button></div>`;
-    document.getElementById("checks-run-one").onclick = () => runCheck(c, [t.name]);
-    document.getElementById("checks-copy").onclick = () => navigator.clipboard?.writeText(cmd);
+    detail.innerHTML = r?.error ? `<h3>The run couldn't judge</h3><div class="chk-error">${escHtml(r.error)}</div>` : "";
+    return;
   }
+  checks.selCheck = c.name; checks.sel[c.name] = t.name;
+  tree.querySelector(`[data-check="${CSS.escape(c.name)}"] [data-test="${CSS.escape(t.name)}"]`)?.setAttribute("aria-selected", "true");
+  // what changed since the full run before the one shown
+  const prev = r.live ? null : [...c.runs].reverse().find((x) => !x.only && x["started-at"] < (t.at ?? r["started-at"] ?? Infinity));
+  const before = prev?.tests.find((x) => x.name === t.name);
+  const since = !before ? "" : before.status === t.status ? `Unchanged since ${hms(prev["started-at"])}.`
+    : !bad(t) ? `<span class="fixed">Fixed</span> - ${before.status} at ${hms(prev["started-at"])}.`
+    : `<span class="new">Newly ${t.status === "fail" ? "failing" : t.status}</span> - ${before.status} at ${hms(prev["started-at"])}.`;
+  const [first, ...rest] = t.doc ? docLines(t.doc).split("\n") : [];
+  const cmd = `zent verify ${checks.data.preset} ${c.name} --only=${t.name}`;
+  const groups = t.groups || t.failures.map((f) => ({ count: 1, examples: [f] }));
+  detail.innerHTML = `
+    <div class="chk-verdict st-${t.status}"><span class="chk-dot"></span><div><h2>${verdictOf(t)}</h2>
+      <p>${escHtml(titleOf(t))}${c.description ? ` · ${escHtml(c.description)}` : ""} · <code>${escHtml(t.name)}</code></p></div></div>
+    ${first ? `<dl class="chk-why ${checks.whyOpen ? "" : "closed"}"><dt>Checks</dt><dd>${escHtml(first)}</dd>
+      ${rest.length ? `<dt class="more">Details</dt><dd class="more">${escHtml(rest.join("\n"))}</dd>
+        <button type="button" id="checks-why">${checks.whyOpen ? "Hide" : "How and why"}</button>` : ""}</dl>` : ""}
+    ${t.facts?.length ? `<h3>What it judged</h3><div class="chk-facts">${t.facts.map(([l, v, b]) =>
+      `<div class="chk-fact ${b ? "bad" : ""}"><b>${escHtml(num(v))}</b><span>${escHtml(l)}</span></div>`).join("")}</div>`
+      : t.notes?.length ? `<h3>What it judged</h3><ul class="chk-notes">${t.notes.map((x) => `<li>${escHtml(x)}</li>`).join("")}</ul>` : ""}
+    ${t.accepted?.length ? `<h3>Accepted</h3>${t.accepted.map((x) => `<div class="chk-accepted">${escHtml(x)}</div>`).join("")}` : ""}
+    ${groups.length ? `<h3>${t.status === "error" ? "What went wrong" : "Gaps, grouped"}</h3>${groups.map((g) => groupHtml(g, t.status === "error")).join("")}` : ""}
+    ${r.error ? `<div class="chk-error">${escHtml(r.error)}</div>` : ""}
+    ${c.runs.length ? `<div class="chk-since">${since || `Last run ${r["started-at"] ? hms(r["started-at"]) : "now"}.`}
+      <div class="chk-runs">${c.runs.map((x, i) => `<button type="button" class="${x.status} ${x.only ? "partial" : ""}" data-i="${i}" aria-pressed="${checks.runIdx[c.name] === i}"
+        title="${hms(x["started-at"])} · ${x.status}${x.only ? " · only " + x.only.join(", ") : ""}">${CHECK_GLYPH[x.status]}</button>`).join("")}
+      ${checks.runIdx[c.name] !== undefined ? `<button type="button" id="checks-latest">Back to the latest</button>` : ""}</div></div>` : ""}
+    <div class="chk-cmd"><code>${escHtml(cmd)}</code>
+      <button type="button" id="checks-run-one" ${running ? "disabled" : ""}>&#9654; Run this test</button>
+      <button type="button" id="checks-copy">Copy</button></div>`;
+  document.getElementById("checks-run-one").onclick = () => runCheck(c, [t.name]);
+  document.getElementById("checks-copy").onclick = () => navigator.clipboard?.writeText(cmd);
 }
 
 function initChecksControls() {
   document.getElementById("checks-view").addEventListener("click", (e) => {
-    const li = e.target.closest("li[data-test]"), box = e.target.closest(".chk");
-    const run = e.target.closest(".chk-runs button");
-    const current = selectedCheck(checkList());
-    if (li && box) { checks.selCheck = box.dataset.check; checks.sel[box.dataset.check] = li.dataset.test; renderChecks(); }
-    else if (run && current) { checks.runIdx[current.name] = +run.dataset.i; renderChecks(); }
-    else if (e.target.id === "checks-latest" && current) { delete checks.runIdx[current.name]; renderChecks(); }
+    const row = e.target.closest(".chk-t"), box = e.target.closest(".chk");
+    const run = e.target.closest(".chk-runs button[data-i]");
+    const current = checks.selCheck;
+    if (row && box) { checks.selCheck = box.dataset.check; checks.sel[box.dataset.check] = row.dataset.test; renderChecks(); }
+    else if (run && current) { checks.runIdx[current] = +run.dataset.i; renderChecks(); }
+    else if (e.target.id === "checks-latest" && current) { delete checks.runIdx[current]; renderChecks(); }
+    else if (e.target.id === "checks-why") { checks.whyOpen = !checks.whyOpen; renderChecks(); }
   });
   document.getElementById("checks-only-failed").onchange = renderChecks;
   // every check of the preset, one after the other would queue on the server: one run each, in parallel
   document.getElementById("checks-run-all").onclick = () => checkList().filter((c) => !c.writes).forEach((c) => runCheck(c, null));
   document.getElementById("checks-run-failed").onclick = () => checkList().forEach((c) => {
-    const failing = (shownCheckRun(c)?.tests || []).filter((t) => t.status !== "pass").map((t) => t.name);
-    if (failing.length) runCheck(c, failing);
+    const names = (shownCheckRun(c)?.tests || []).filter(bad).map((t) => t.name);
+    if (names.length) runCheck(c, names);
   });
 }
 

@@ -91,17 +91,18 @@
     </footer>
   </main>
 
+  <!-- the run's outcome on top, its tests on the left, the one picked on the right (index.js renderChecks) -->
   <section class="checks-view" id="checks-view" aria-label="checks">
-    <div class="left">
-      <div class="checks-bar">
-        <button type="button" id="checks-run-all">&#9654; run all</button>
-        <button type="button" id="checks-run-failed">&#9654; rerun failing</button>
-        <label><input type="checkbox" id="checks-only-failed"> show failing only</label>
-      </div>
-      <div id="checks-tree"></div>
-      <div class="chk-history" id="checks-history"></div>
+    <div class="chk-summary">
+      <span class="headline" id="checks-headline"></span>
+      <span class="chk-bar" id="checks-bar"></span>
+      <span class="chk-legend" id="checks-legend"></span>
+      <label><input type="checkbox" id="checks-only-failed"> failing only</label>
+      <button type="button" id="checks-run-failed">&#9654; Rerun failing</button>
+      <button type="button" class="primary" id="checks-run-all">&#9654; Run all</button>
     </div>
-    <div class="right" id="checks-detail"></div>
+    <nav class="chk-pane chk-list" id="checks-tree"></nav>
+    <article class="chk-pane chk-detail" id="checks-detail"></article>
   </section>
 
   <section class="logs-view" id="logs-view" aria-label="logs">
