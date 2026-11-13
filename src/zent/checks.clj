@@ -183,9 +183,32 @@
         (or (empty? statuses) (some #{:error} statuses)) :unknown
         :else :pass))
 
+;; a test's failures kept in its result; :groups count them all
+(def ^:private max-failures 50)
+
+(defn- shape
+  "What failures of one kind share: their :group and their diff's shape - its ops, or a map's keys
+  and ops - else their message with numbers and quoted strings masked."
+  [{:keys [group diff message]}]
+  [group (cond (:keys diff) (mapv (juxt :key :op) (:keys diff))
+               (:segments diff) (mapv first (:segments diff))
+               :else (some-> message (str/replace #"\"[^\"]*\"" "\"…\"") (str/replace #"\d+" "#")))])
+
+(defn- groups
+  "`failures` by shape, the largest first: a group's count, :group and :explain, a few examples."
+  [failures]
+  (->> (vals (group-by shape failures))
+       (map (fn [fs] (let [{:keys [group explain]} (first fs)]
+                       (cond-> {:count (count fs) :examples (mapv #(dissoc % :group :explain) (take 5 fs))}
+                         group (assoc :group group)
+                         explain (assoc :explain explain)))))
+       (sort-by (comp - :count))
+       vec))
+
 (defn parse
   "A run's result from its stdout `lines` and exit code: tests in run order,
-  each :pass/:accepted/:fail/:error with its assertion count and failures."
+  each :pass/:accepted/:fail/:error with its assertion count, failures (the first
+  max-failures) and their :groups."
   [lines exit]
   (let [events (keep #(when (str/starts-with? % event-prefix) (edn/read-string (subs % (count event-prefix)))) lines)
         done? (some #(= :done (:event %)) events)
@@ -212,7 +235,9 @@
         ;; a passing one with an accepted gap is :accepted
         tests (mapv #(cond-> (dissoc % :done?)
                        (and (not (:done? %)) (= :pass (:status %))) (assoc :status :error)
-                       (and (:done? %) (= :pass (:status %)) (:accepted %)) (assoc :status :accepted))
+                       (and (:done? %) (= :pass (:status %)) (:accepted %)) (assoc :status :accepted)
+                       (seq (:failures %)) (assoc :groups (groups (:failures %))
+                                                  :failures (vec (take max-failures (:failures %)))))
                     tests)
         status (verdict (map :status tests))]
     ;; no :done, the run ended early - whatever exit it gave, it judged only part

@@ -131,6 +131,21 @@
           (is (str/includes? text "[Total] order 7"))
           (is (str/includes? text "≈ known"))
           (is (str/includes? text "accepted: ticket 42"))))))
+  (testing "given failures of a few shapes, then grouped by shape, counted, the largest first"
+    (let [ev #(str "#zent/check " (pr-str (merge {:event :fail :test "t"} %)))
+          badge (fn [p l] (ev {:sides [p l] :group "Value" :explain "two forms" :where [["vehicle" p]]}))
+          run (concat [(str "#zent/check " (pr-str {:event :begin :test "t"}))
+                       (badge "000764" "0000000000076405") (ev {:sides ["17.6" "20.65"] :group "Value"})
+                       (badge "004872" "0000000000487205") (badge "00084F" "0000000000084F05")
+                       (ev {:message "absent: [\"111\" \"3\"]"}) (ev {:message "absent: [\"115\" \"3\"]"})]
+                      (map #(ev {:message (str "other " %)}) (range 60))
+                      [(str "#zent/check " (pr-str {:event :end :test "t"})) "#zent/check {:event :done}"])
+          {:keys [groups failures]} (first (:tests (checks/parse run 0)))]
+      (is (= [[60 nil] [3 "Value"] [2 nil] [1 "Value"]] (map (juxt :count :group) groups)))
+      (is (= "two forms" (:explain (second groups))) "a group's explanation, once")
+      (is (= [[["vehicle" "000764"]] [["vehicle" "004872"]] [["vehicle" "00084F"]]] (map :where (:examples (second groups)))))
+      (is (not-any? :explain (:examples (second groups))))
+      (is (= 50 (count failures)) "the failures kept are capped, the groups count them all")))
   (testing "given only passes, :pass"
     (is (= :pass (:status (checks/parse (done (take 5 real-run)) 0)))))
   (testing "given passes but no :done, :unknown - the output was cut, whatever the exit"
