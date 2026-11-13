@@ -480,15 +480,16 @@ function plug(x, mouth, d, end) {
   const top = (a, b) => Math.min(mouth + d * a, mouth + d * b);
   // pushed home: its metal tip is inside the jack, out of sight; a metal collar seats on the jack's
   // mouth, a soft shadow under it where it meets the jack
-  return `<g class="plug"><ellipse class="seat" cx="${x}" cy="${mouth + d}" rx="7" ry="1.6"/>` +
-    `<rect class="tip" x="${x - 5.5}" y="${top(1, 3.2)}" width="11" height="2.2" rx=".8"/>` +
-    `<rect class="body" x="${x - 4.5}" y="${top(3, 12)}" width="9" height="9" rx="2"/>` +
+  return `<g class="plug"><ellipse class="seat" cx="${x}" cy="${mouth}" rx="6.5" ry="1.4"/>` +
+    `<rect class="tip" x="${x - 5.5}" y="${top(-.6, 2.2)}" width="11" height="2.8" rx=".8"/>` +
+    `<rect class="body" x="${x - 4.5}" y="${top(2, 12)}" width="9" height="10" rx="2"/>` +
     `<rect class="band ${end}" x="${x - 4.5}" y="${top(4, 6)}" width="9" height="2"/>` +
     `<line class="relief" x1="${x}" y1="${mouth + d * 12}" x2="${x}" y2="${mouth + d * PLUG}"/></g>`;
 }
 // the plugs' finishes: brushed metal, and a dark moulding with a gloss down its length
-const PLUG_DEFS = '<defs><linearGradient id="plug-metal"><stop offset="0" stop-color="#7f858f"/><stop offset=".45" stop-color="#f6f7f9"/>' +
-  '<stop offset="1" stop-color="#8d929c"/></linearGradient><linearGradient id="plug-body"><stop offset="0" stop-color="#5d616c"/>' +
+// (the collar: gunmetal, so it reads as the plug's own, not as a gap against a jack's dark ring)
+const PLUG_DEFS = '<defs><linearGradient id="plug-metal"><stop offset="0" stop-color="#3e424a"/><stop offset=".45" stop-color="#9aa0aa"/>' +
+  '<stop offset="1" stop-color="#363a42"/></linearGradient><linearGradient id="plug-body"><stop offset="0" stop-color="#5d616c"/>' +
   '<stop offset=".3" stop-color="#2a2c33"/><stop offset=".7" stop-color="#101114"/><stop offset="1" stop-color="#3d4049"/></linearGradient></defs>';
 
 /* The wiring: one bus per source. It drops from the source's plate - under its button when the
@@ -577,12 +578,14 @@ function drawWarp() {
     const src = plateOf(from), row = rowOf[src];
     const state = previewing ? "idle" : ready(from) ? "ok" : UNSETTLED[STATE_CLASS[comps[from]?.status]] || "idle";
     // each end is a plug pushed into its socket's mouth (6px past the nut): the wire runs between their tails
-    const out = place(socket[from]), sx = Math.round(out.cx), sy = out.bottom + 6;
+    // k: the board's scale - the jack's 6px of sleeve and ring are CSS px, scaled with it
+    const k = socket[from].getBoundingClientRect().width / socket[from].offsetWidth || 1;
+    const out = place(socket[from]), sx = Math.round(out.cx), sy = out.bottom + 6 * k;
     const y = rowBottom[row] + 16 + tracks[row].indexOf(from) * 11 + PLUG;
     const lit = focus && (src === focus || to.has(focus));
     const plugs = [plug(sx, sy, 1, "out")];
     const paths = [...to].map((dst) => {
-      const pin = place(socket[from + ">" + dst]), tx = Math.round(pin.cx), ty = Math.round(pin.top) + 2;  // pushed home: its body down on the jack's mouth
+      const pin = place(socket[from + ">" + dst]), tx = Math.round(pin.cx), ty = pin.top - 6 * k;  // its mouth: over the nut, the sleeve (4) and the ring (2), as an output's
       plugs.push(plug(tx, ty, -1, "in"));
       return route(tx === sx ? [[sx, sy + PLUG], [tx, ty - PLUG]] : [[sx, sy + PLUG], [sx, y], [tx, y], [tx, ty - PLUG]]);
     });
