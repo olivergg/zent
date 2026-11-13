@@ -23,6 +23,7 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [zent.diff :as diff]
             [zent.logs :as logs]
             [zent.shell :as shell]))
 
@@ -107,7 +108,11 @@
                           (instance? Throwable x) (str (.getName (class x)) \": \" (ex-message x)
                                                        (some->> (ex-data x) not-empty pr-str (str \" \")))
                           :else (some-> x pr-str)))
-      running #(some-> clojure.test/*testing-vars* first meta :name str)]
+      running #(some-> clojure.test/*testing-vars* first meta :name str)
+      ;; (is (= a b)) failing reports (not (= a b)): its two sides, for zent.diff
+      sides (fn [a] (when (and (seq? a) (= 'not (first a)) (seq? (second a)) (= '= (first (second a)))
+                               (= 3 (count (second a))))
+                      (mapv #(if (string? %%) %% (pr-str %%)) (rest (second a)))))]
   (binding [clojure.test/report
             (fn [{t :type :as m}]
               (case t
@@ -121,7 +126,8 @@
                         (not= :pass t)
                         (merge {:message (shown (:message m)) :expected (pr-str (:expected m))
                                 :actual (shown (:actual m)) :file (:file m) :line (:line m)
-                                :context (not-empty (clojure.test/testing-contexts-str))})))
+                                :context (not-empty (clojure.test/testing-contexts-str))}
+                               (when-let [s (sides (:actual m))] {:sides s}))))
                 :zent/note
                 (emit {:event :note :test (running) :note (shown (:note m))})
                 nil))]
@@ -162,7 +168,8 @@
                         (let [i (or (first (keep-indexed #(when (= test (:name %2)) %1) acc))
                                     (count acc))
                               acc (if (= i (count acc)) (conj acc {:name test :status :pass :assertions 0 :failures []}) acc)
-                              detail (dissoc e :event :test)]
+                              diff (some-> (:sides e) diff/of)
+                              detail (cond-> (dissoc e :event :test :sides) diff (assoc :diff diff))]
                           (case event
                             :begin (cond-> acc
                                      (:doc e) (assoc-in [i :doc] (:doc e))
@@ -211,11 +218,13 @@
                       ;; the why of a test, where it matters: when it doesn't pass
                       (when (and doc (not= :pass status))
                         (map #(str "      # " (str/trim %)) (str/split-lines doc)))
-                      (for [{:keys [message context expected actual file line]} failures
-                            l [(str "      " (str/join " " (remove nil? [context message]))
-                                    (when file (format "  (%s:%s)" file line)))
-                               (str "      expected: " expected)
-                               (str "        actual: " actual)]]
+                      (for [{:keys [message context expected actual file line diff]} failures
+                            l (into [(str "      " (str/join " " (remove nil? [context message]))
+                                          (when file (format "  (%s:%s)" file line)))]
+                                    (if diff
+                                      (map #(str "      " %) (diff/lines diff))
+                                      [(str "      expected: " expected)
+                                       (str "        actual: " actual)]))]
                         l))]
      line)))
 

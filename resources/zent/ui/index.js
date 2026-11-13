@@ -1040,6 +1040,19 @@ function followCheck(c) {
   es.onerror = () => { end(); setTimeout(loadChecks, 1000); };
 }
 
+/* A failed (= expected actual) (zent.diff): the two sides side by side, what differs marked; two
+   maps key by key, an unchanged key greyed. */
+function diffHtml({ segments, keys }) {
+  const side = (segs, op, tag) => segs.filter(([o]) => o === "same" || o === op)
+    .map(([o, t]) => o === "same" ? escHtml(t) : `<${tag}>${escHtml(t)}</${tag}>`).join("") || `<span class="none">""</span>`;
+  if (keys) return `<table class="chk-keys">${keys.map((k) => `<tr data-op="${k.op}"><td class="mark">${
+    { add: "+", del: "−", changed: "~", same: "" }[k.op]}</td><td class="k">${escHtml(k.key)}</td><td>${
+    k.op === "changed" ? `${side(k.segments, "del", "del")} <span class="none">→</span> ${side(k.segments, "add", "ins")}`
+    : k.op === "add" ? `<ins>${escHtml(k.value)}</ins>` : k.op === "del" ? `<del>${escHtml(k.value)}</del>` : escHtml(k.value)}</td></tr>`).join("")}</table>`;
+  return `<div class="chk-diff"><div><h4>expected</h4><div class="v exp">${side(segments, "del", "del")}</div></div>
+    <div><h4>actual</h4><div class="v got">${side(segments, "add", "ins")}</div></div></div>`;
+}
+
 async function runCheck(c, only) {
   // a check that writes (a scenario) runs only when asked for, like a :confirm one-shot
   if (c.writes && !(await askConfirm({ name: c.name, action: "run",
@@ -1132,7 +1145,8 @@ function renderChecks() {
       ${t.notes?.length ? `<div class="chk-notes"><h3>what it judged</h3><ul>${t.notes.map((n) => `<li>${escHtml(n)}</li>`).join("")}</ul></div>` : ""}
       ${t.failures.map((f) => `<div class="chk-failure ${t.status === "error" ? "err" : ""}">
           <div class="msg">${f.context ? `<span class="quiet">${escHtml(f.context)}</span> ` : ""}${escHtml(f.message)}</div>
-          <dl><dt>expected</dt><dd>${escHtml(f.expected)}</dd><dt>actual</dt><dd>${escHtml(f.actual)}</dd></dl></div>`).join("")}
+          ${f.diff ? diffHtml(f.diff)
+            : `<dl><dt>expected</dt><dd>${escHtml(f.expected)}</dd><dt>actual</dt><dd>${escHtml(f.actual)}</dd></dl>`}</div>`).join("")}
       ${r.error ? `<div class="chk-error">${escHtml(r.error)}</div>` : ""}
       ${since ? `<div class="chk-since"><h3>since the previous full run</h3>${since}</div>` : ""}
       <div class="chk-cmd"><code>${escHtml(cmd)}</code>

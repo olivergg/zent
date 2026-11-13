@@ -99,6 +99,11 @@
               :file "smoke.clj" :line 9 :context "ctx"}
              (first (:failures (second tests)))))
       (is (= {:tests 3 :assertions 3 :failed 1 :errors 1} counts))))
+  (testing "given a failed (= a b) with its sides, then the failure carries their diff, not the sides"
+    (let [fail "#zent/check {:event :fail, :test \"fails\", :message nil, :expected \"(= p v)\", :actual \"(not (= \\\"0764\\\" \\\"076405\\\"))\", :sides [\"0764\" \"076405\"]}"
+          f (-> (checks/parse (concat (take 6 real-run) [fail] (drop 7 real-run)) 0) :tests second :failures first)]
+      (is (= {:segments [[:same "0764"] [:add "05"]]} (:diff f)))
+      (is (not (contains? f :sides)))))
   (testing "given only passes, :pass"
     (is (= :pass (:status (checks/parse (done (take 5 real-run)) 0)))))
   (testing "given passes but no :done, :unknown - the output was cut, whatever the exit"

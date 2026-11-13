@@ -1167,6 +1167,22 @@ ul.chk-tests li .c { color: var(--muted); font-size: 11.5px; }
 .chk-failure dl { display: grid; grid-template-columns: 72px 1fr; gap: 2px 10px; margin: 0; }
 .chk-failure dt { color: var(--muted); text-align: right; }
 .chk-failure dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* a failed (= expected actual): side by side, what differs marked (index.js diffHtml) */
+.chk-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font: 12px/1.6 var(--mono); }
+.chk-diff h4 { margin: 0 0 3px; font: 600 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.chk-diff div:first-child h4 { color: #b8322a; } .chk-diff div:last-child h4 { color: #1e7a46; }
+.chk-diff .v { padding: 2px 8px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chk-diff .exp { background: rgba(229, 70, 59, .10); } .chk-diff .got { background: rgba(40, 180, 99, .10); }
+.chk-failure :is(del, ins) { text-decoration: none; border-radius: 3px; }
+.chk-failure del { color: #b8322a; background: rgba(229, 70, 59, .28); }
+.chk-failure ins { color: #1e7a46; background: rgba(40, 180, 99, .30); }
+.chk-failure .none { color: #8a8d98; }
+.chk-keys { border-collapse: collapse; font: 11.5px var(--mono); }
+.chk-keys td { padding: 2px 10px 2px 0; vertical-align: baseline; overflow-wrap: anywhere; }
+.chk-keys .k { color: var(--muted); }
+.chk-keys .mark { width: 14px; font-weight: 700; }
+.chk-keys tr[data-op="add"] .mark { color: #1e7a46; } .chk-keys tr[data-op="del"] .mark { color: #b8322a; }
+.chk-keys tr[data-op="changed"] .mark { color: #c58a00; } .chk-keys tr[data-op="same"] td:last-child { color: #8a8d98; }
 .chk-notes { background: var(--card); border: 1px solid var(--grey); border-left: 3px solid var(--verdigris); border-radius: 3px; padding: 9px 12px; margin-bottom: 10px; }
 .chk-notes ul { margin: 4px 0 0; padding-left: 18px; } .chk-notes li { white-space: pre-wrap; overflow-wrap: anywhere; margin: 2px 0; }
 .chk-since { margin: 14px 0; padding: 8px 12px; border: 1px dashed var(--grey); border-radius: 3px; }
