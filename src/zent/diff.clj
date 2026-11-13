@@ -75,20 +75,19 @@
         {:keys (keyed ma mb)}
         {:segments (segments a b)}))))
 
-(defn- marked
-  "One side of `segs`, its changes in git --word-diff markers: [-…-] expected, {+…+} actual."
-  [segs side]
-  (let [[open close] (if (= :del side) ["[-" "-]"] ["{+" "+}"])]
-    (apply str (for [[o t] segs :when (#{:same side} o)] (if (= :same o) t (str open t close))))))
+(defn- side
+  "One side of `segs` - :del expected, :add actual - plain, or its changes in git --word-diff markers."
+  [segs op & [marked?]]
+  (let [[open close] (if (= :del op) ["[-" "-]"] ["{+" "+}"])]
+    (apply str (for [[o t] segs :when (#{:same op} o)] (if (or (= :same o) (not marked?)) t (str open t close))))))
 
 (defn inline
   "A diff (of) on one line, its sides plain: \"a -> b\", or a map's changed keys."
   [{:keys [segments keys]}]
-  (let [side (fn [segs op] (apply str (for [[o t] segs :when (#{:same op} o)] t)))]
-    (if keys
-      (str/join " · " (for [{:keys [key op value] segs :segments} keys :when (not= :same op)]
-                        (str key " " (if segs (str (side segs :del) " -> " (side segs :add)) value))))
-      (str (side segments :del) " -> " (side segments :add)))))
+  (if keys
+    (str/join " · " (for [{:keys [key op value] segs :segments} keys :when (not= :same op)]
+                      (str key " " (if segs (str (side segs :del) " -> " (side segs :add)) value))))
+    (str (side segments :del) " -> " (side segments :add))))
 
 (defn lines
   "A diff (of) as text lines, labelled like clojure.test's report."
@@ -98,6 +97,6 @@
       (case op
         :add (str "+ " key " " value)
         :del (str "- " key " " value)
-        :changed (str "~ " key " " (marked segs :del) " -> " (marked segs :add))))
-    [(str "expected: " (marked segments :del))
-     (str "  actual: " (marked segments :add))]))
+        :changed (str "~ " key " " (side segs :del true) " -> " (side segs :add true))))
+    [(str "expected: " (side segments :del true))
+     (str "  actual: " (side segments :add true))]))
