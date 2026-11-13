@@ -227,18 +227,22 @@
       (is (str/includes? (:presets-html msg) "full"))))
 
   (testing "given one-shots attached to a host, then they ride as buttons on its card - but one waiting for
-            several other components is :lone, drawn on its own; mid-apply a queued card says what it waits for"
+            anything else, even one other component, is :lone, drawn on its own; mid-apply a queued card says
+            what it waits for"
     (let [shot (fn [deps] {:kind :one-shot :status :pending :attached-to :db :deps deps})
           state (assoc state/empty-state :preset :full
                        :components {:db {:kind :process :status :up :deps []}
                                     :api {:kind :process :status :deploying :deps [:db]}
                                     :web {:kind :process :status :pending :deps [:db :api]}
                                     :seed (shot [:db])
+                                    :reset (shot [:seed])
+                                    :connect (shot [:db :api])
                                     :replay (shot [:db :api :web])})
           comps (get-in (json/read-str (snapshot-message state) :key-fn keyword) [:data :components])]
       (is (str/includes? (get-in comps [:db :card]) "data-shot=\"seed\""))
       (is (not (str/includes? (get-in comps [:db :card]) "data-shot=\"replay\"")))
-      (is (= [false true] (map #(get-in comps [% :lone]) [:seed :replay])))
+      (is (= [false false true true] (map #(get-in comps [% :lone]) [:seed :reset :connect :replay]))
+          "waiting only for its host or a step on it: a button; for one other component: on its own")
       (is (str/includes? (get-in comps [:web :card]) "<span class=\"note wait\">Waits for api</span>"))
       (is (not (str/includes? (get-in comps [:api :card]) "Waits for")))))
 

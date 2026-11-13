@@ -93,9 +93,9 @@
         members (some-> members seq set)
         listening (:listening @state/view-state)
         host #(or (:attached-to (get components %)) %)
-        ;; :lone - an :attached-to one-shot waiting for several components besides its host: drawn on
-        ;; its own, with its wires, where a button on the host's plate couldn't show them
-        lone? (fn [[_ c]] (boolean (when-let [h (:attached-to c)] (next (disj (set (map host (:deps c))) h)))))
+        ;; :lone - an :attached-to one-shot waiting for anything but its host (or a step on it): drawn on
+        ;; its own, so its wires end on it rather than on its host's plate
+        lone? (fn [[_ c]] (boolean (when-let [h (:attached-to c)] (seq (disj (set (map host (:deps c))) h)))))
         ;; a host's card carries its other one-shots, as buttons - the preset's own, and any that ran
         shown? (fn [[k c]] (or (nil? members) (members k) (not (#{:down :off} (:status c)))))
         shots (group-by (comp :attached-to val) (filter shown? (remove lone? (sort-by key components))))
