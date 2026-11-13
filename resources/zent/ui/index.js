@@ -1042,7 +1042,8 @@ function followCheck(c) {
 
 async function runCheck(c, only) {
   // a check that writes (a scenario) runs only when asked for, like a :confirm one-shot
-  if (c.writes && !confirm(`${c.name} writes to the running stack (a scenario). Run it?`)) return;
+  if (c.writes && !(await askConfirm({ name: c.name, action: "run",
+                                       question: "It writes to the running stack (a scenario). Run it?" }))) return;
   const q = new URLSearchParams({ check: c.name });
   if (only?.length) q.set("only", only.join(","));
   const res = await fetch("/api/checks/run?" + q, {
@@ -1167,6 +1168,54 @@ function initChecksControls() {
 function csrfToken() { return document.querySelector('meta[name="csrf-token"]')?.content || ""; }
 document.body.addEventListener("htmx:configRequest", (e) => { e.detail.headers["X-Zent-Token"] = csrfToken(); });
 
+/* Asks before a write, in a bubble under `anchor` (the button that asked; none: top centre)
+   rather than window.confirm. Resolves true on its action, false on Cancel - the focused one,
+   so Enter can't fire it - Esc or a click outside. */
+function askConfirm({ name, question, action, anchor }) {
+  const d = document.getElementById("confirm");
+  document.getElementById("confirm-name").textContent = name;
+  document.getElementById("confirm-msg").textContent = question;
+  document.getElementById("confirm-go").textContent = action[0].toUpperCase() + action.slice(1);
+  const W = 300, r = anchor?.getBoundingClientRect();
+  const x = r ? r.left + r.width / 2 : innerWidth / 2;
+  const left = Math.min(Math.max(8, x - 24), innerWidth - W - 8);
+  d.style.left = left + "px";
+  d.style.top = (r ? r.bottom + 10 : 80) + "px";
+  d.style.setProperty("--tail", (r ? x - left : W / 2) + "px");
+  return new Promise((resolve) => {
+    let done = false;
+    // closed after its fade-out; a timer, not animationend: reduced motion has no animation
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      d.classList.add("closing");
+      setTimeout(() => { d.classList.remove("closing"); d.close(); }, 160);
+      resolve(ok);
+    };
+    d.oncancel = (e) => { e.preventDefault(); finish(false); };
+    d.onclick = (e) => { if (e.target === d) finish(false); };
+    d.querySelector("form").onsubmit = (e) => { e.preventDefault(); finish(e.submitter?.value === "ok"); };
+    d.showModal();
+  });
+}
+
+/* Every hx-confirm write (zent.ui.render: a one-shot's :confirm, a git action) asks through askConfirm. */
+document.body.addEventListener("htmx:confirm", (e) => {
+  if (!e.detail.question) return;
+  e.preventDefault();
+  const [, , verb, rest = ""] = e.detail.path.split("/");
+  const name = decodeURIComponent(rest.split("?")[0]), c = view.components[name] || {};
+  const action = { trigger: c.kind === "one-shot" ? "run" : "reload", checkout: "check out" }[verb] || verb;
+  // the board redraws on every push: by the time it's confirmed, its button may be a new one,
+  // and htmx silently drops a request from a detached element
+  askConfirm({ name, question: e.detail.question, action, anchor: e.detail.elt })
+    .then((ok) => {
+      if (!ok) return;
+      if (e.detail.elt.isConnected) e.detail.issueRequest(true);
+      else htmx.ajax(e.detail.verb, e.detail.path, { source: document.body, target: document.body, swap: "none" });
+    });
+});
+
 /* Writes are queued: a POST answers {id} at once, the daemon handles the
    command later, and view.done lists that id once it has - in no set order: a
    quick stop can finish before a long apply queued before it. Until then
@@ -1202,7 +1251,8 @@ document.body.addEventListener("htmx:beforeRequest", (e) => {
 });
 
 document.body.addEventListener("htmx:afterRequest", (e) => {
-  const path = e.detail.elt?.getAttribute?.("hx-post");
+  // a confirmed write whose button was redrawn meanwhile went from the body (askConfirm's caller)
+  const path = e.detail.elt?.getAttribute?.("hx-post") || (e.detail.elt === document.body && e.detail.requestConfig?.path);
   if (!path) return;
   let id, reply;
   try { reply = JSON.parse(e.detail.xhr.responseText); id = reply.id; } catch { /* not a queued write */ }

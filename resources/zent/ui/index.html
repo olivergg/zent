@@ -126,6 +126,18 @@
   <!-- what just happened, for a moment (index.js toast) -->
   <div id="toasts" aria-live="polite"></div>
 
+  <!-- a write that asks first: index.js askConfirm -->
+  <dialog class="confirm" id="confirm" aria-labelledby="confirm-name">
+    <form method="dialog" class="bubble">
+      <h3 id="confirm-name"></h3>
+      <p id="confirm-msg"></p>
+      <div class="btns">
+        <button type="submit" class="cbtn" value="cancel" autofocus>Cancel</button>
+        <button type="submit" class="cbtn go" value="ok" id="confirm-go"></button>
+      </div>
+    </form>
+  </dialog>
+
 <!-- vendored, not CDN-loaded (BSD-0, no build step) - see zent.ui.render's
      docstring. Only used for hx-post/hx-disabled-elt on action buttons and
      manually-processed server-rendered fragments; the live push itself
