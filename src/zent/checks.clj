@@ -15,6 +15,17 @@
   A test may say what it judged, passing or not - shown under it:
   (clojure.test/do-report {:type :zent/note :note \"63 plug-ins, largest gap 1 min\"}).
 
+  All optional, all plain clojure.test - for a reader who isn't a developer:
+    ^{:zent/title \"Orders keep their total\"}   on the deftest: shown for its name
+    {:type :zent/verdict :verdict \"3 orders of 120 lost their total\"}   its outcome, one sentence
+    {:type :zent/fact :label \"orders compared\" :value 120 :bad false}   a figure it judged
+    {:type :zent/accepted :reason \"known, ticket 42\"}   a gap decided acceptable: a test
+                                                         with no failure is :accepted
+    {:type :fail :expected 12.5 :actual 12 :message \"...\"
+     :zent/group \"Total\" :zent/explain \"rounded down\" :zent/context {:order 7}}
+      a failure on values, not forms: grouped by :zent/group (explained once), its
+      context named; any (is (= a b)) failing is diffed too (zent.diff).
+
   A check runs in a JVM `clojure -M` from <catalog>/checks (its deps.edn, with
   :paths [\".\" \"lib\"]): it is the catalog's code, not the engine's - Jolt never
   loads it. clojure.test's own `report` hook prints one EDN event per line, read back
@@ -109,16 +120,25 @@
                                                        (some->> (ex-data x) not-empty pr-str (str \" \")))
                           :else (some-> x pr-str)))
       running #(some-> clojure.test/*testing-vars* first meta :name str)
+      side #(if (string? %%) %% (pr-str %%))
       ;; (is (= a b)) failing reports (not (= a b)): its two sides, for zent.diff
       sides (fn [a] (when (and (seq? a) (= 'not (first a)) (seq? (second a)) (= '= (first (second a)))
                                (= 3 (count (second a))))
-                      (mapv #(if (string? %%) %% (pr-str %%)) (rest (second a)))))]
+                      (mapv side (rest (second a)))))
+      ;; a failure on values (:zent/group or :zent/context): its own :expected and :actual are the sides
+      on-values (fn [{g :zent/group x :zent/explain c :zent/context :as m}]
+                  (when (or g c)
+                    (cond-> {:sides [(side (:expected m)) (side (:actual m))]}
+                      g (assoc :group (shown g))
+                      x (assoc :explain (shown x))
+                      (map? c) (assoc :where (mapv (fn [[k v]] [(if (keyword? k) (name k) (str k)) (shown v)]) c)))))]
   (binding [clojure.test/report
             (fn [{t :type :as m}]
               (case t
                 :begin-test-var
-                (let [{test :name :keys [doc] kind :zent/kind} (-> m :var meta)]
-                  (emit (cond-> {:event :begin :test (str test)} doc (assoc :doc doc) kind (assoc :kind kind))))
+                (let [{test :name :keys [doc] kind :zent/kind title :zent/title} (-> m :var meta)]
+                  (emit (cond-> {:event :begin :test (str test)} doc (assoc :doc doc) kind (assoc :kind kind)
+                          title (assoc :title title))))
                 :end-test-var
                 (emit {:event :end :test (-> m :var meta :name str)})
                 (:pass :fail :error)
@@ -127,9 +147,15 @@
                         (merge {:message (shown (:message m)) :expected (pr-str (:expected m))
                                 :actual (shown (:actual m)) :file (:file m) :line (:line m)
                                 :context (not-empty (clojure.test/testing-contexts-str))}
-                               (when-let [s (sides (:actual m))] {:sides s}))))
+                               (or (on-values m) (when-let [s (sides (:actual m))] {:sides s})))))
                 :zent/note
                 (emit {:event :note :test (running) :note (shown (:note m))})
+                :zent/verdict
+                (emit {:event :verdict :test (running) :verdict (shown (:verdict m))})
+                :zent/fact
+                (emit {:event :fact :test (running) :fact [(shown (:label m)) (shown (:value m)) (boolean (:bad m))]})
+                :zent/accepted
+                (emit {:event :accepted :test (running) :reason (shown (:reason m))})
                 nil))]
     (clojure.test/test-vars %2$s))
   (emit {:event :done})
@@ -159,7 +185,7 @@
 
 (defn parse
   "A run's result from its stdout `lines` and exit code: tests in run order,
-  each :pass/:fail/:error with its assertion count and failures."
+  each :pass/:accepted/:fail/:error with its assertion count and failures."
   [lines exit]
   (let [events (keep #(when (str/starts-with? % event-prefix) (edn/read-string (subs % (count event-prefix)))) lines)
         done? (some #(= :done (:event %)) events)
@@ -171,18 +197,22 @@
                               diff (some-> (:sides e) diff/of)
                               detail (cond-> (dissoc e :event :test :sides) diff (assoc :diff diff))]
                           (case event
-                            :begin (cond-> acc
-                                     (:doc e) (assoc-in [i :doc] (:doc e))
-                                     (:kind e) (assoc-in [i :kind] (:kind e)))
+                            :begin (update acc i merge (select-keys e [:doc :kind :title]))
                             :end (assoc-in acc [i :done?] true)
                             :note (update-in acc [i :notes] (fnil conj []) (:note e))
+                            :verdict (assoc-in acc [i :verdict] (:verdict e))
+                            :fact (update-in acc [i :facts] (fnil conj []) (:fact e))
+                            :accepted (update-in acc [i :accepted] (fnil conj []) (:reason e))
                             :pass (update-in acc [i :assertions] inc)
                             :fail (-> acc (update-in [i :assertions] inc) (update-in [i :failures] conj detail)
                                       (update-in [i :status] #(if (= :error %) % :fail)))
                             :error (-> acc (update-in [i :failures] conj detail) (assoc-in [i :status] :error)))))
                       [] events)
-        ;; begun, never ended: the run died inside it - a failure already seen stays one
-        tests (mapv #(cond-> (dissoc % :done?) (and (not (:done? %)) (= :pass (:status %))) (assoc :status :error))
+        ;; begun, never ended: the run died inside it - a failure already seen stays one;
+        ;; a passing one with an accepted gap is :accepted
+        tests (mapv #(cond-> (dissoc % :done?)
+                       (and (not (:done? %)) (= :pass (:status %))) (assoc :status :error)
+                       (and (:done? %) (= :pass (:status %)) (:accepted %)) (assoc :status :accepted))
                     tests)
         status (verdict (map :status tests))]
     ;; no :done, the run ended early - whatever exit it gave, it judged only part
@@ -196,7 +226,7 @@
       (not done?) (assoc :incomplete true)
       (not (zero? exit)) (assoc :exit exit))))
 
-(def ^:private glyph {:pass "✓" :fail "✗" :error "!" :unknown "?"})
+(def ^:private glyph {:pass "✓" :accepted "≈" :fail "✗" :error "!" :unknown "?"})
 
 (defn report
   "`result` as text lines: a line per check and per test; under a test not
@@ -210,16 +240,22 @@
             (:assertions counts) (/ (or duration-ms 0) 1000.0))]
    (when only [(str "  only: " (str/join ", " only))])
    (when error (map #(str "  | " %) (str/split-lines error)))
-   (for [{:keys [name status assertions failures doc kind notes]} tests
-         line (concat [(format "  %s %s%s  %d" (glyph status) name (if kind (str " [" (clojure.core/name kind) "]") "")
-                               assertions)]
+   (for [{:keys [name title status assertions failures doc kind notes verdict facts accepted]} tests
+         line (concat [(format "  %s %s%s%s  %d" (glyph status) name (if title (str " - " title) "")
+                               (if kind (str " [" (clojure.core/name kind) "]") "") assertions)]
+                      (when verdict [(str "      => " verdict)])
+                      (when (seq facts) [(str "      " (str/join " · " (for [[l v] facts] (str l ": " v))))])
+                      (map #(str "      accepted: " %) accepted)
                       ;; what the test judged, passing or not
                       (map #(str "      · " %) (mapcat str/split-lines notes))
                       ;; the why of a test, where it matters: when it doesn't pass
-                      (when (and doc (not= :pass status))
+                      (when (and doc (not (#{:pass :accepted} status)))
                         (map #(str "      # " (str/trim %)) (str/split-lines doc)))
-                      (for [{:keys [message context expected actual file line diff]} failures
-                            l (into [(str "      " (str/join " " (remove nil? [context message]))
+                      (for [{:keys [message context expected actual file line diff group where]} failures
+                            l (into [(str "      " (str/join " " (remove nil? [(some->> group (format "[%s]")) context
+                                                                         (some->> (seq where) (map (fn [[k v]] (str k " " v)))
+                                                                                  (str/join " · "))
+                                                                         message]))
                                           (when file (format "  (%s:%s)" file line)))]
                                     (if diff
                                       (map #(str "      " %) (diff/lines diff))

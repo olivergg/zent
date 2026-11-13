@@ -967,7 +967,7 @@ function showTab() {
    comes with the result, fetched once the run is over.                     */
 /* ------------------------------------------------------------------------ */
 
-const CHECK_GLYPH = { pass: "✓", fail: "✗", error: "!", unknown: "?", run: "…" };
+const CHECK_GLYPH = { pass: "✓", accepted: "≈", fail: "✗", error: "!", unknown: "?", run: "…" };
 const checks = { data: null, preset: undefined, sel: {}, runIdx: {}, live: {}, streams: {} };
 
 // a docstring's lines as written (indented continuation lines), for the detail; folded to one for the tree

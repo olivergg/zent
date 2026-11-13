@@ -104,6 +104,33 @@
           f (-> (checks/parse (concat (take 6 real-run) [fail] (drop 7 real-run)) 0) :tests second :failures first)]
       (is (= {:segments [[:same "0764"] [:add "05"]]} (:diff f)))
       (is (not (contains? f :sides)))))
+  (testing "given a title, a verdict, facts, an accepted gap and failures on values, then all carried"
+    (let [ev #(str "#zent/check " (pr-str %))
+          run [(ev {:event :begin :test "kept" :title "Orders keep their total"})
+               (ev {:event :verdict :test "kept" :verdict "2 orders of 3 lost it"})
+               (ev {:event :fact :test "kept" :fact ["compared" "3" false]})
+               (ev {:event :fail :test "kept" :message nil :expected "12.5" :actual "12" :sides ["12.5" "12"]
+                    :group "Total" :explain "rounded down" :where [["order" "7"]]})
+               (ev {:event :end :test "kept"})
+               (ev {:event :begin :test "known"})
+               (ev {:event :pass :test "known"})
+               (ev {:event :accepted :test "known" :reason "ticket 42"})
+               (ev {:event :end :test "known"})
+               (ev {:event :done})]
+          [kept known] (:tests (checks/parse run 0))]
+      (is (= ["Orders keep their total" "2 orders of 3 lost it" [["compared" "3" false]]] ((juxt :title :verdict :facts) kept)))
+      (is (= {:group "Total" :explain "rounded down" :where [["order" "7"]] :diff {:segments [[:del "12.5"] [:add "12"]]}}
+             (select-keys (first (:failures kept)) [:group :explain :where :diff])))
+      (testing "and a passing test with an accepted gap is :accepted, its reason kept"
+        (is (= [:accepted ["ticket 42"]] ((juxt :status :accepted) known))))
+      (testing "and the text report says them"
+        (let [text (str/join "\n" (checks/report {:preset :p :check :c :status :fail :tests [kept known]
+                                                  :counts {:tests 2 :assertions 2 :failed 1 :errors 0}}))]
+          (is (str/includes? text "kept - Orders keep their total"))
+          (is (str/includes? text "=> 2 orders of 3 lost it"))
+          (is (str/includes? text "[Total] order 7"))
+          (is (str/includes? text "≈ known"))
+          (is (str/includes? text "accepted: ticket 42"))))))
   (testing "given only passes, :pass"
     (is (= :pass (:status (checks/parse (done (take 5 real-run)) 0)))))
   (testing "given passes but no :done, :unknown - the output was cut, whatever the exit"
@@ -197,10 +224,16 @@
     (let [[chk] (:full (checks/discover fixture))
           r (binding [checks/*dir* (tmp-dir)] (checks/run! :full chk nil))]
       (is (= [["passes" :pass "One equals one." :invariant] ["fails" :fail "One equals two,\n  on two lines." nil]
-              ["throws" :error nil nil]]
+              ["throws" :error nil nil] ["described" :fail nil nil] ["known" :accepted nil nil]]
              (map (juxt :name :status :doc :kind) (:tests r))))
       (is (= "clojure.lang.ExceptionInfo: kaput" (-> r :tests (nth 2) :failures first :actual)))
-      (is (= [["2 assertions"] nil nil] (map :notes (:tests r))) "a :zent/note reported by the test")
+      (is (= [["2 assertions"] nil nil nil nil] (map :notes (:tests r))) "a :zent/note reported by the test")
+      (testing "the (= 1 2) failing is diffed; a failure on values keeps its group, context and sides"
+        (is (= {:segments [[:del "1"] [:add "2"]]} (-> r :tests second :failures first :diff)))
+        (is (= ["Totals kept" "1 of 2 lost" [["compared" "2" false]]] ((juxt :title :verdict :facts) (nth (:tests r) 3))))
+        (is (= {:group "Total" :where [["order" "7"]] :diff {:segments [[:same "000"] [:add "00000000"] [:same "764"] [:add "05"]]}}
+               (select-keys (-> r :tests (nth 3) :failures first) [:group :where :diff])))
+        (is (= ["ticket 42"] (:accepted (nth (:tests r) 4)))))
       (testing "given names, only those it has run; given none it has, nothing"
         (binding [checks/*dir* (tmp-dir)]
           (is (= ["passes"] (map :name (:tests (checks/run! :full chk ["passes" "elsewhere"])))))
