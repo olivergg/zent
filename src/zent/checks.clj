@@ -287,10 +287,9 @@
          line (concat [(format "  %s %s%s%s  %d" (glyph status) name (if title (str " - " title) "")
                                (if kind (str " [" (clojure.core/name kind) "]") "") assertions)]
                       (when verdict [(str "      => " verdict)])
-                      ;; what the test judged, passing or not: its figures, else its notes
-                      (if (seq facts)
-                        [(str "      " (str/join " · " (for [[l v] facts] (str l ": " v))))]
-                        (map #(str "      · " %) (mapcat str/split-lines notes)))
+                      ;; what the test judged, passing or not: its figures, then its notes
+                      (when (seq facts) [(str "      " (str/join " · " (for [[l v] facts] (str l ": " v))))])
+                      (map #(str "      · " %) (mapcat str/split-lines notes))
                       (map #(str "      accepted: " %) accepted)
                       ;; what it checks, where it matters: when it doesn't pass
                       (when (and doc (not (#{:pass :accepted} status)))

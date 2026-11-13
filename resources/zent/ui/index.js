@@ -1177,9 +1177,10 @@ function renderChecks() {
     ${first ? `<dl class="chk-why ${checks.whyOpen ? "" : "closed"}"><dt>Checks</dt><dd>${escHtml(first)}</dd>
       ${rest.length ? `<dt class="more">Details</dt><dd class="more">${escHtml(rest.join("\n"))}</dd>
         <button type="button" id="checks-why">${checks.whyOpen ? "Hide" : "How and why"}</button>` : ""}</dl>` : ""}
-    ${t.facts?.length ? `<h3>What it judged</h3><div class="chk-facts">${t.facts.map(([l, v, b]) =>
-      `<div class="chk-fact ${b ? "bad" : ""}"><b>${escHtml(num(v))}</b><span>${escHtml(l)}</span></div>`).join("")}</div>`
-      : t.notes?.length ? `<h3>What it judged</h3><ul class="chk-notes">${t.notes.map((x) => `<li>${escHtml(x)}</li>`).join("")}</ul>` : ""}
+    ${t.facts?.length || t.notes?.length ? `<h3>What it judged</h3>` : ""}
+    ${t.facts?.length ? `<div class="chk-facts">${t.facts.map(([l, v, b]) =>
+      `<div class="chk-fact ${b ? "bad" : ""}"><b>${escHtml(num(v))}</b><span>${escHtml(l)}</span></div>`).join("")}</div>` : ""}
+    ${t.notes?.length ? `<ul class="chk-notes">${t.notes.map((x) => `<li>${escHtml(x)}</li>`).join("")}</ul>` : ""}
     ${t.accepted?.length ? `<h3>Accepted</h3>${t.accepted.map((x) => `<div class="chk-accepted">${escHtml(x)}</div>`).join("")}` : ""}
     ${groups.length ? `<h3>${t.status === "error" ? "What went wrong" : "Gaps, grouped"}</h3>${groups.map((g) => groupHtml(g, t.status === "error")).join("")}` : ""}
     ${r.error ? `<div class="chk-error">${escHtml(r.error)}</div>` : ""}
