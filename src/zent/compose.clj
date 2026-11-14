@@ -160,3 +160,13 @@
                          :when (and (:repo coords) (source/worktree? coords))]
                      {(source/checkout-dir coords) #{p}}))
      :unresolved (set (keep (fn [[p resolved]] (when-not resolved p)) by-preset))}))
+
+(defn running-worktrees
+  "{worktree-path #{:<component> (running)}}: the worktrees a daemon's view `components` run or read
+  from - all but what's stopped, in the shape of worktree-users' :users."
+  [components]
+  (apply merge-with into {}
+         (for [[n {:keys [status source source-env]}] components
+               :when (not (#{:off :down} (keyword status)))
+               path (keep :worktree (cons source (vals source-env)))]
+           {path #{(keyword (str (name n) " (running)"))}})))

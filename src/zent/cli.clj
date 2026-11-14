@@ -332,16 +332,6 @@
     (and (seq handles) (not daemon?)) (str "not pruning: the session lists " (str/join ", " (map (comp name :component) handles))
                                            " and no daemon can say where they run - `zent serve --detach` adopts them")))
 
-(defn running-worktrees
-  "{worktree-path #{:<component> (running)}}: the worktrees a daemon's view `components` run or read
-  from - all but what's stopped, in the shape of compose/worktree-users' :users."
-  [components]
-  (apply merge-with into {}
-         (for [[n {:keys [status source source-env]}] components
-               :when (not (#{:off :down} (keyword status)))
-               path (keep :worktree (cons source (vals source-env)))]
-           {path #{(keyword (str (name n) " (running)"))}})))
-
 (defn worktrees!
   "Lists zent's worktrees (zent.branch/worktrees) and the presets using each; with `prune?`, removes
   the ones branch/prune! may, unless prune-refusal says it can't tell."
@@ -355,7 +345,7 @@
       prune? (let [d (live)]
                (when-let [why (prune-refusal unresolved (:handles (session/read-session session/default-path)) d)]
                  (fail! why))
-               (let [running (when d (running-worktrees (:components (client/request d :get "/api/view"))))
+               (let [running (when d (compose/running-worktrees (:components (client/request d :get "/api/view"))))
                      {:keys [removed kept]} (branch/prune! entries (merge-with into users running) (compose/catalog-repos c))]
                  (doseq [{:keys [path]} removed] (println "removed" path))
                  (doseq [[{:keys [path]} why] kept] (println "kept   " path "-" why))))

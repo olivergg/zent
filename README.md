@@ -112,6 +112,13 @@ coloured per component, container output included. Pills work like a chart legen
 only this one, again: all; ctrl/cmd-click: add or remove), and filters (`text`, `/regexp/`,
 warnings, errors) live in the URL.
 
+The **Branches** tab (`/#branches`) draws each repo the preset runs as a git graph: your
+branches and origin's (one label when they coincide, ↑↓ when they don't), your clone's HEAD,
+zent's worktree and the commit running. What needs doing comes first, with its action (push,
+fast-forward, pull, rebase, checkout, reload) - a hover says what it would do, a toast offers
+the undo. It reads the repos as they are; its Fetch button alone reaches origin (no prune, no
+local branch moved). Its footer cleans up the worktrees no preset uses.
+
 Presets live under the catalog's `presets/*.edn`, one file per preset. Use `127.0.0.1`, not
 `localhost`, for the dashboard: IPv6-first resolution hangs the websocket. Never run a bare
 `zent down` to clean up: the session also tracks stacks you started yourself.

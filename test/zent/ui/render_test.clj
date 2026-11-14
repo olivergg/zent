@@ -12,6 +12,13 @@
       (is (str/includes? html "<span class=\"branch\" title=\"feature/x\">feature/x</span>"))
       (is (str/includes? html "data-dir=\"/w/api/db\"")))))
 
+(deftest component-card-repo-link-test
+  (testing "given a repo on github.com, then its link is GitHub's mark; elsewhere, an arrow"
+    (let [card #(render/component-card :svc {:kind :process :status :up :repo "svc" :repo-url %})]
+      (is (str/includes? (card "https://github.com/acme/svc") "<svg class=\"gh\""))
+      (is (str/includes? (card "https://gitlab.example.com/acme/svc") "&#8599;</a>"))
+      (is (not (str/includes? (card "https://gitlab.example.com/acme/svc") "class=\"gh\""))))))
+
 (deftest component-card-status-label-test
   (testing "each status gets its label-of wording, :external reading as
             plain \"up\""
@@ -207,6 +214,22 @@
   (testing "an inactive preset has no stop button of its own"
     (let [html (render/preset-picker [:one] :two)]
       (is (not (str/includes? html "stop-all"))))))
+
+(deftest runs-from-test
+  (testing "given :origin, then origin's branch labelled, its commit, the fetch's age, and what moves it"
+    (let [html (render/runs-from {:from :origin :branch "feature/x" :sha "abcdef1234" :fetched-at 0} "/wt" 120000)]
+      (is (str/includes? html "<span class=\"bn\" data-kind=\"remote\" title=\"origin/feature/x\"><i class=\"ico\" data-i=\"remote\"></i>origin/x</span>"))
+      (is (str/includes? html "<code class=\"sha\">abcdef1</code> <span class=\"runs-meta fetched\">fetched 2 min ago</span>"))
+      (is (str/includes? html "Push to run a change"))))
+  (testing "given :local, then your branch labelled, in zent's worktree"
+    (is (re-find #"data-kind=\"local\".*zent's worktree, on your branch.*Commit to run a change"
+                 (render/runs-from {:from :local :branch "feature/x" :sha "abcdef1234"} "/wt" 0))))
+  (testing "given the clone, then its dir and its branch labelled, and that zent never touches it"
+    (let [html (render/detail-panel :svc {:kind :process :status :up :git {:sha "abcdef1234" :branch "main"}
+                                          :source {:dir "/w/svc"} :now 0})]
+      (is (str/includes? html "<span>Runs</span><span><span class=\"runs\"><span class=\"runs-what\"><span class=\"bn\" data-kind=\"folder\""))
+      (is (str/includes? html "data-kind=\"local\" title=\"main\"><i class=\"ico\" data-i=\"local\"></i>main</span>"))
+      (is (str/includes? html "zent never touches it")))))
 
 (deftest detail-panel-test
   (testing "nothing selected / component unknown"

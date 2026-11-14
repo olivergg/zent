@@ -406,23 +406,40 @@
 (defn request-shutdown! [] (enqueue! {:action :shutdown}))
 (defn request-reload-code! [] (enqueue! {:action :reload-code}))
 
+(defn described-cfgs "{name cfg}: what the applied preset runs, as resolved." [] @described)
+
+(def git-ops
+  "The git writes a component's checkout takes from the dashboard (zent.source)."
+  {:rebase #'source/rebase! :checkout #'source/checkout! :push #'source/push! :sync #'source/sync-clone!})
+
 (defn request-git!
-  "Queues `op` (:rebase or :checkout: zent.source/rebase!, checkout!) on `k`'s checkout as a job: git
-  writes there, so never next to a deploy. What it did lands in :command-messages under the id, why
-  not in :command-errors; its :git is re-read (the card shows ≠ reload: the disk moved on from what
-  runs). `cfg`: `k` as a previewed preset resolves it, else the applied one's. The id, or nil when `k`
-  has no repo there."
+  "Queues `op` (a git-ops key) on `k`'s checkout as a job: git writes there, so never next to a deploy.
+  What it did lands in :command-messages under the id, why not in :command-errors, its undo (an argv)
+  in :command-undo; its :git is re-read (the card shows ≠ reload: the disk moved on from what runs).
+  `cfg`: `k` as a previewed preset resolves it, else the applied one's. The id, or nil when `k` has
+  no repo there."
   [op k & [cfg]]
   (let [cfg (or cfg (get @described k))]
     (when (:repo cfg)
       (enqueue! {:action :job :name k
                  :run (fn [id]
-                        (let [{:keys [ok message]} (case op
-                                                     :rebase (source/rebase! cfg)
-                                                     :checkout (source/checkout! cfg))]
+                        (let [{:keys [ok message undo]} ((git-ops op) cfg)]
                           (try-set-git! k cfg)
                           (when-not ok (throw (ex-info message {})))
-                          (swap! view-state assoc-in [:command-messages id] message)))}))))
+                          (swap! view-state #(cond-> (assoc-in % [:command-messages id] message)
+                                               undo (assoc-in [:command-undo id] {:name k :argv undo})))))}))))
+
+(defn request-undo!
+  "Queues the undo git job `id` left (:command-undo) as a job of its own - once: it's dropped as it's
+  queued. The id, or nil when there's none."
+  [id]
+  (when-let [{:keys [name argv]} (get-in (first (swap-vals! view-state update :command-undo dissoc id)) [:command-undo id])]
+    (enqueue! {:action :job :name name
+               :run (fn [jid]
+                      (let [{:keys [exit err]} (shell/sh! argv)]
+                        (some->> (get @described name) (try-set-git! name))
+                        (when-not (zero? exit) (throw (ex-info (str "the undo failed: " (str/trim (str err))) {})))
+                        (swap! view-state assoc-in [:command-messages jid] (str "undone: " (shell/display argv)))))})))
 
 (defn observe-handled!
   "Marks `commands` processed; a failed one's :error lands in :command-errors
@@ -436,6 +453,7 @@
                        (assoc :handled handled)
                        (update :done #(into #{} (filter recent?) (into (or % #{}) (keep :id commands))))
                        (update :command-messages #(into {} (filter (comp recent? key)) %))
+                       (update :command-undo #(into {} (filter (comp recent? key)) %))
                        (update :command-errors
                                #(into {} (filter (comp recent? key))
                                       (merge % (into {} (keep (fn [c] (when (:error c) [(:id c) (:error c)]))) commands)))))))))

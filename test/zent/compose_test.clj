@@ -203,3 +203,14 @@
                   (assoc-in [:presets :broken] (compose/run :api {:branch "z" :port "no"})))]
       (is (= {:users {(zent.branch/worktree-path "api" "x") #{:a :b}} :unresolved #{:broken}}
              (compose/worktree-users cat))))))
+
+(deftest running-worktrees-test
+  (testing "given a daemon's view, then the worktrees of what isn't stopped, a :source-env's included"
+    (is (= {"/wt/api" #{(keyword "api (running)")}
+            "/wt/lib" #{(keyword "api (running)") (keyword "seed (running)")}}
+           (compose/running-worktrees
+            {:api {:status "up" :source {:worktree "/wt/api"} :source-env {:LIB {:worktree "/wt/lib"}}}
+             :seed {:status "deploying" :source-env {:LIB {:worktree "/wt/lib"}}}
+             :old {:status "down" :source {:worktree "/wt/old"}}
+             :off {:status "off" :source {:worktree "/wt/off"}}
+             :clone {:status "up" :source {:dir "/w/clone"}}})))))

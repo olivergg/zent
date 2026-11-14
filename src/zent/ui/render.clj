@@ -71,6 +71,7 @@
   {"tab/stack" "Stack\nEvery component as a unit, wired to what it waits for: its state, its load, its branch and its ports"
    "tab/logs" "Logs\nWhat the components print, interleaved and coloured per component - pick some, filter by text or level"
    "tab/checks" "Checks\nThe preset's checks against the running stack: what passed, what failed and why. The red count: how many fail"
+   "tab/branches" "Branches\nEach repo the preset runs, as a git graph: your branches and origin's, what runs, what needs doing. The red count: repos needing it"
    "run/presets" "Presets\nPick one to preview it, ▶ to apply it"
    "run/start" "Start {preset}\n{plan}"
    "mode/preview" "Preview\nThe preset as it would run: nothing is started"
@@ -335,6 +336,37 @@
                    (if wt? " - the next sync refuses until you commit or stash them" " - they run too: the clone runs as it is")))
      :stale (when stale? (str "running " (short-sha deployed-sha) ", the disk is at " (short-sha sha) ": reload to run it"))}))
 
+(defn- ago
+  "How long ago, as a person says it: just now, 5 min, 3 h, 2 d."
+  [ms]
+  (let [m (quot ms 60000)]
+    (cond (< m 1) "just now" (< m 60) (str m " min ago") (< m 2880) (str (quot m 60) " h ago") :else (str (quot m 1440) " d ago"))))
+
+(defn branch-chip
+  "A branch (or a checkout's dir) as a label, wherever one is named: its icon - local, remote, both (one
+  commit, yours and origin's), wt, folder - then `shown`, `full` on hover. The icons are index.css's."
+  [kind full shown]
+  (str "<span class=\"bn\" data-kind=\"" kind "\" title=\"" (esc full) "\">"
+       (apply str (map #(str "<i class=\"ico\" data-i=\"" % "\"></i>") (if (= "both" kind) ["local" "remote"] [kind])))
+       (esc shown) "</span>"))
+
+(defn runs-from
+  "Where a component's code runs, as HTML: what runs - whose copy, labelled, at which commit - then the
+  rule that moves it. `chip`: :from, :branch (the preset's for a worktree), :sha, :fetched-at; `dir`
+  what runs."
+  [{:keys [from branch sha fetched-at]} dir now]
+  (let [sha (when sha (str " <code class=\"sha\">" (short-sha sha) "</code>"))
+        aside (fn [text & [cls]] (str " <span class=\"runs-meta" (when cls (str " " cls)) "\">" text "</span>"))
+        runs (fn [what rule] (str "<span class=\"runs\"><span class=\"runs-what\">" what "</span><span class=\"runs-rule\">" rule "</span></span>"))]
+    (case from
+      :origin (runs (str (branch-chip "remote" (str "origin/" branch) (str "origin/" (bare-branch branch))) sha
+                         (aside (if fetched-at (str "fetched " (ago (max 0 (- now fetched-at)))) "never fetched") "fetched"))
+                    "zent's worktree, on what's pushed: each apply or pull resets it. Push to run a change.")
+      :local (runs (str (branch-chip "local" branch (bare-branch branch)) sha)
+                   "zent's worktree, on your branch: each apply or pull resets it. Commit to run a change.")
+      (runs (str (branch-chip "folder" dir (tildify dir)) (when branch (str " " (branch-chip "local" branch (bare-branch branch)))) sha)
+            "Your clone as it is, uncommitted files included: zent never touches it. Reload to run a change."))))
+
 (defn- git-title
   "The `cd` hover: every fact, then the commit and the dir."
   [chip dir now]
@@ -448,15 +480,26 @@
   (apply str (map (fn [[var src]] (str "<span class=\"source-env\" title=\"" (esc var) "\">" (checkout src) "</span>"))
                   (sort-by key source-env))))
 
+(def ^:private github-mark
+  "GitHub's mark (the Octocat), in the text's colour."
+  (str "<svg class=\"gh\" viewBox=\"0 0 16 16\" width=\"12\" height=\"12\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\""
+       "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94"
+       "-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07"
+       "-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0"
+       " 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25"
+       ".54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z\"/></svg>"))
+
 (defn- facts
-  "A card's one line of facts, the details on hover: its checkout, ↗ (the repo) - then the state."
+  "A card's one line of facts, the details on hover: its checkout, its repo's link - GitHub's mark when it's
+  on github.com, else ↗ - then the state."
   [{:keys [kind status repo repo-url source] :as c} cd-title]
   (str "<span class=\"meta\">"
        (checkout source cd-title)
        (when repo
-         (if repo-url
-           (str "<a class=\"repo-link\" href=\"" (esc repo-url) "\" target=\"_blank\" rel=\"noopener\" title=\"" (esc repo) "\">&#8599;</a>")
-           (str "<span class=\"repo-link\" title=\"" (esc repo) "\">&#8599;</span>")))
+         (let [mark (if (re-find #"^https?://(www\.)?github\.com/" (str repo-url)) github-mark "&#8599;")]
+           (if repo-url
+             (str "<a class=\"repo-link\" href=\"" (esc repo-url) "\" target=\"_blank\" rel=\"noopener\" title=\"" (esc repo) "\">" mark "</a>")
+             (str "<span class=\"repo-link\" title=\"" (esc repo) "\">" mark "</span>"))))
        "<span class=\"state\">" (esc (label-of kind status)) (clock c) "</span></span>"))
 
 (def ^:private shot-state
@@ -666,7 +709,7 @@
   (if-not c
     "<div id=\"detail\" class=\"quiet\">Select a component to see its status.</div>"
     (let [{:keys [kind status deps error source]} c
-          {:keys [branch from behind base wanted-branch off?] :as chip} (git-chip c)
+          {:keys [branch behind base wanted-branch off?] :as chip} (git-chip c)
           row (fn [k v & [cls]] (str "<div class=\"row\"><span>" k "</span><span" (when cls (str " class=\"" cls "\"")) ">" v "</span></div>"))
           section (fn [title & rows] (when-let [rows (seq (remove nil? rows))] (str "<h3>" title "</h3><div class=\"rows\">" (apply str rows) "</div>")))
           names #(if (seq %) (esc (str/join ", " (map name %))) "nothing")
@@ -691,9 +734,11 @@
            "</div>"
            (when-let [d (:description c)] (str "<p class=\"about\">" (esc d) "</p>"))
            (section "Source"
-                    (when chip (row "Branch" (esc (or branch "detached")) (when off? "bad")))
-                    (when off? (row "Preset wants" (esc wanted-branch)))
-                    (when chip (row "Runs from" (case from :origin "origin, in a worktree" :local "your local branch, in a worktree" "your clone, as it is")))
+                    ;; in a worktree, the preset's branch, detached: zent's copy, not yours
+                    (when chip (row "Branch" (if branch (branch-chip (if (:wt? chip) "wt" "local") branch (bare-branch branch)) "detached")
+                                    (when off? "bad")))
+                    (when off? (row "Preset wants" (branch-chip "local" wanted-branch (bare-branch wanted-branch))))
+                    (when chip (row "Runs" (runs-from chip (:dir source) (or (:now c) (System/currentTimeMillis)))))
                     (when (and chip (pos? behind)) (row (str "Behind " (esc base)) (str behind " commit" (when (> behind 1) "s"))))
                     (when-let [dir (:dir source)] (row "Folder" (esc (tildify dir)))))
            (apply section "Ports"

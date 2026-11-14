@@ -262,6 +262,8 @@
    [:presets [:map-of :keyword [:map-of :keyword [:map-of :keyword :any]]]]
    ;; found by zent.checks/discover, never written in catalog.edn
    [:checks {:optional true} [:map-of :keyword [:vector [:map [:name :keyword] [:ns :symbol]]]]]
+   ;; where it was loaded from, by zent.catalog/load-dir, never written in catalog.edn
+   [:dir {:optional true} :string]
    [:max-parallel {:optional true} pos-int?]])
 
 (defn validate-catalog!

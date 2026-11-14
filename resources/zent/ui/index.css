@@ -93,6 +93,11 @@ body {
 .run-label::after { content: ""; position: absolute; right: 10px; top: 50%; width: 5px; height: 5px; margin-top: -4px;
   border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .run-label:hover { background: rgba(0, 0, 0, .04); }
+/* a preview being read (index.js previewPreset): its chevron turns into a spinner, the tab shown dims */
+body[data-switching] .run-label::after { width: 9px; height: 9px; margin-top: -6px; border: 1.5px solid rgba(10, 132, 255, .25);
+  border-top-color: #0a84ff; border-radius: 50%; transform: none; animation: br-spin .8s linear infinite; }
+body[data-switching] :is(.shell, .logs-view, .checks-view) { opacity: .45; pointer-events: none; transition: opacity .2s; }
+body[data-switching] { cursor: progress; }
 /* the presets, and the run's figures, under the preset's name */
 .masthead { z-index: 6; }
 .run-menu { position: absolute; left: 250px; top: 54px; z-index: 6; width: 300px; max-height: 75vh; overflow: auto; padding: 14px; border-radius: 12px;
@@ -194,7 +199,7 @@ body {
 .rail-toggle:hover { border-color: var(--ink); }
 .rail-toggle .pane { fill: currentColor; }
 .rail-toggle[aria-pressed="false"] .pane { fill: none; }
-body[data-tab="logs"] .rail-toggle, body[data-tab="checks"] .rail-toggle { display: none; }
+body:is([data-tab="logs"], [data-tab="checks"], [data-tab="branches"]) .rail-toggle { display: none; }
 
 /* ------------------------------------------------------------------ shell */
 
@@ -583,6 +588,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 
 .node .repo-link { flex: none; color: var(--muted); text-decoration: none; font-size: 11px; }
 .node .repo-link:hover { color: var(--indigo); }
+.node .repo-link .gh { display: block; }
 
 /* one chip per container: a compose component IS several containers, and a
    single "up" for all of them can't say which one is unhealthy */
@@ -995,6 +1001,10 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 #detail .row:first-child { border-top: 0; }
 #detail .row > :first-child { color: var(--muted); }
 #detail .row > :last-child { text-align: right; overflow-wrap: anywhere; }
+/* "Runs": labels and a sentence, read left to right under its name, the panel's full width */
+#detail .row:has(.runs) { flex-direction: column; gap: 6px; }
+#detail .row:has(.runs) > :last-child { text-align: left; }
+#detail .row .bad .bn { --c: #e5463b; }
 #detail .row small { margin-left: 4px; opacity: .7; }
 
 /* what the marks mean, bottom left of the board; each entry explains itself on hover */
@@ -1015,7 +1025,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .legend .shot { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px 1px 5px; border-radius: 5px; font-size: 10.5px; color: var(--ink);
   background: #f2f2f5; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .18); }
 .legend .shot i { width: 6px; height: 6px; border-radius: 50%; background: #28b463; }
-body:is([data-tab="logs"], [data-tab="checks"]) .legend { display: none; }
+body:is([data-tab="logs"], [data-tab="checks"], [data-tab="branches"]) .legend { display: none; }
 
 /* the run in three figures, in the toolbar */
 .chips { display: inline-flex; gap: 8px; }
@@ -1077,12 +1087,12 @@ body:is([data-tab="logs"], [data-tab="checks"]) .legend { display: none; }
 /* the tab you're on can't be missed: filled, as the Preview / Running switch */
 .tabs a[aria-current="page"] { color: #fff; background: linear-gradient(#3b8cff, #1f74f0); box-shadow: 0 1px 3px rgba(10, 100, 230, .35), inset 0 1px 0 rgba(255, 255, 255, .25); }
 .tabs a[aria-current="page"] .tab-badge { box-shadow: 0 0 0 1.5px #fff; }
-body[data-tab="logs"] .shell, body[data-tab="checks"] .shell { display: none; }
+body:is([data-tab="logs"], [data-tab="checks"], [data-tab="branches"]) .shell { display: none; }
 /* View Transitions (index.js transit, html[data-vt] while one runs): only
    what moves is named; the rest of the page swaps in place */
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 /* switching tabs: the old one slides out the way you went, the new one in */
-html:is([data-vt="next"], [data-vt="prev"]) :is(.shell, .logs-view, .checks-view) { view-transition-name: tab; }
+html:is([data-vt="next"], [data-vt="prev"]) :is(.shell, .logs-view, .checks-view, .branches-view) { view-transition-name: tab; }
 ::view-transition-old(tab) { animation: tab-out-l 200ms cubic-bezier(.55, .06, .68, .19) both; }
 ::view-transition-new(tab) { animation: tab-in-r 360ms cubic-bezier(.215, .61, .355, 1) both; }
 html[data-vt="prev"]::view-transition-old(tab) { animation-name: tab-out-r; }
@@ -1099,6 +1109,7 @@ html[data-vt="morph"] #loom { view-transition-name: loom; }
 @keyframes loom-in { from { opacity: 0; transform: scale(1.015); filter: blur(5px); } }
 body:not([data-tab="logs"]) .logs-view { display: none; }
 body:not([data-tab="checks"]) .checks-view { display: none; }
+body:not([data-tab="branches"]) .branches-view { display: none; }
 
 /* -------------------------------------------------------------- checks */
 
@@ -1108,6 +1119,7 @@ body:not([data-tab="checks"]) .checks-view { display: none; }
   background: var(--madder); color: #fff; font-size: 10.5px; text-align: center;
 }
 .tab-badge.ok { background: var(--verdigris); }
+.tab-badge.warn { background: #d6457a; }
 /* the run's summary on top, the tests | the one picked: frosted panes on the board */
 .checks-view { --red: #e5463b; --red-ink: #b8322a; --green: #28b463; --green-ink: #1e7a46; --amber: #e8a200; --faint: #8a8d98;
   height: calc(100vh - var(--head)); display: grid; grid-template: auto 1fr / minmax(340px, 30%) 1fr; gap: 12px; padding: 0 16px 16px; }
@@ -1315,6 +1327,143 @@ body:not([data-tab="checks"]) .checks-view { display: none; }
 .toast span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .toast.leaving { opacity: 0; transform: translateX(16px); transition: opacity 220ms ease, transform 220ms ease; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } }
+.toast-act { align-self: flex-start; margin-top: 6px; font: 600 12px var(--font); padding: 4px 10px; border: 0; border-radius: 7px;
+  background: rgba(0, 0, 0, .07); color: var(--ink); cursor: pointer; }
+.toast-act:hover { background: rgba(0, 0, 0, .12); }
+
+/* ------------------------------------------------------------- branches */
+
+/* each repo as a git graph tool draws it: frosted cells on the board, three columns at most */
+.branches-view { --red: #e5463b; --red-ink: #b8322a; --green: #28b463; --green-ink: #1e7a46; --amber: #e8a200; --amber-ink: #7a5300; --faint: #8a8d98;
+  height: calc(100vh - var(--head)); overflow-y: auto; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+/* the headline and the fetch on one line, what the marks mean under them, quieter */
+.br-summary { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 18px; padding: 12px 16px; border-radius: 14px;
+  background: var(--glass); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: var(--glass-edge); }
+.br-summary .headline { font-size: 15px; font-weight: 500; color: var(--muted); }
+.br-summary .headline b { font-weight: 650; color: var(--red-ink); }
+.br-summary .headline b.warn { color: #b8336a; }
+.br-legend { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 16px; padding-top: 8px; border-top: .5px solid rgba(0, 0, 0, .07); color: var(--faint); font-size: 11.5px; }
+.br-legend > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.br-fetch { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; white-space: nowrap; }
+.branches-view button { font: 500 12px var(--font); padding: 5px 12px; border: 0; border-radius: 8px; background: rgba(0, 0, 0, .06); color: var(--ink); cursor: pointer;
+  white-space: nowrap; transition: background-color .12s, opacity .12s; }
+.branches-view button:hover { background: rgba(0, 0, 0, .1); }
+.branches-view button.primary { background: #0a84ff; color: #fff; }
+.branches-view button.primary:hover { background: #0071e3; }
+.branches-view button.warn { background: rgba(229, 70, 59, .1); color: var(--red-ink); }
+.branches-view button.warn:hover { background: rgba(229, 70, 59, .17); }
+/* refused: still hoverable and focusable, so it can say why (under the buttons) */
+.branches-view button:is(:disabled, [aria-disabled="true"]) { opacity: .42; cursor: not-allowed; }
+.branches-view button[data-busy="true"] { opacity: .6; cursor: progress; }
+.branches-view :focus-visible { outline: 2px solid #0a84ff; outline-offset: 2px; }
+/* reading the repos: a spinner in the headline, the cells shown dimmed and out of reach, ghosts at first */
+.br-spin { display: inline-block; width: 13px; height: 13px; margin-right: 8px; vertical-align: -1px; border-radius: 50%;
+  border: 2px solid rgba(10, 132, 255, .25); border-top-color: #0a84ff; animation: br-spin .8s linear infinite; }
+@keyframes br-spin { to { transform: rotate(1turn); } }
+.branches-view[data-refreshing="true"] #branches-fetched::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 6px;
+  vertical-align: -1px; border-radius: 50%; border: 1.5px solid rgba(0, 0, 0, .15); border-top-color: var(--muted); animation: br-spin .8s linear infinite; }
+.br-grid { transition: opacity .2s; }
+.br-grid.loading { opacity: .4; pointer-events: none; }
+.br-grid.loading:has(.br-ghost) { opacity: 1; }
+.br-ghost { height: 220px; border-radius: 14px; box-shadow: var(--glass-edge);
+  background: linear-gradient(100deg, rgba(255, 255, 255, .55) 30%, rgba(255, 255, 255, .9) 50%, rgba(255, 255, 255, .55) 70%) 0 0 / 300% 100%;
+  animation: br-shimmer 1.4s ease-in-out infinite; }
+@keyframes br-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .br-spin, .br-ghost { animation: none; } }
+.br-empty { grid-column: 1 / -1; margin: 40px auto; color: var(--muted); font-size: 13px; }
+.br-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 1400px) { .br-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .br-grid { grid-template-columns: minmax(0, 1fr); } }
+.br-cell { border-radius: 14px; overflow: hidden; background: var(--glass); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: var(--glass-edge); }
+.br-cell > :not(.br-graph) { padding-left: 14px; padding-right: 14px; }
+/* its worst state, at a glance: a faint tint over the glass, a line of the same colour on top */
+.br-cell { --tint: transparent; background: linear-gradient(var(--tint), var(--tint)), var(--glass); box-shadow: inset 0 3px 0 var(--edge, transparent), var(--glass-edge); }
+.br-cell[data-level="bad"] { --tint: rgba(229, 70, 59, .065); --edge: rgba(229, 70, 59, .75); }
+/* needs attention: rose - lighter than red, its edge too */
+.br-cell[data-level="warn"] { --tint: rgba(236, 72, 120, .045); --edge: rgba(236, 72, 120, .45); }
+.br-cell[data-level="ok"] { --tint: rgba(40, 180, 99, .055); --edge: rgba(40, 180, 99, .6); }
+/* a cell's head: the repo, where its code comes from, what runs from it; how fresh, where else to look */
+.br-head { display: flex; align-items: center; gap: 8px; padding-top: 12px; }
+.br-name { font-weight: 650; font-size: 14px; letter-spacing: -.01em; }
+.br-src { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 10px; --c: #0a84ff; color: var(--c); background: color-mix(in srgb, var(--c) 11%, transparent); white-space: nowrap; }
+.br-src[data-from="origin"] { --c: #8e5bd6; }
+.br-comps { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--faint); }
+.br-fresh { margin-left: auto; font-size: 11px; color: var(--faint); white-space: nowrap; }
+.br-fresh.stale { color: var(--amber-ink); }
+.br-fresh.busy { color: #0a84ff; }
+.br-cell:has(.br-fresh.stale) { opacity: .75; }
+.br-links { display: flex; gap: 2px; }
+.br-links a { padding: 1px 5px; border-radius: 5px; font-size: 11.5px; color: #0a84ff; text-decoration: none; }
+.br-links a:hover { background: rgba(10, 132, 255, .08); }
+/* what runs, labelled, then the rule that moves it - quieter */
+.br-where { margin-top: 8px; }
+.runs { display: flex; flex-direction: column; gap: 3px; }
+.runs-what { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 12px; }
+.runs-meta { color: var(--faint, #8a8d98); font-size: 11.5px; }
+.runs-rule { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+/* a cell's head already says how fresh: said once */
+.br-where .runs-meta.fetched { display: none; }
+code.sha { font: 11px var(--mono); padding: 0 4px; border-radius: 4px; background: rgba(0, 0, 0, .05); color: var(--ink); }
+/* what needs doing, a pill each - a branch named in it is a label too */
+.br-states { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+/* text with labels in it: inline flow, not flex - flex would make each run of text a box of its own */
+.br-state { display: inline-block; font-size: 11.5px; line-height: 21px; padding: 0 9px; border-radius: 11px; cursor: default; }
+.br-state.bad { background: rgba(229, 70, 59, .09); color: var(--red-ink); }
+.br-state.warn { background: rgba(232, 162, 0, .13); color: var(--amber-ink); }
+.br-state.ok { background: rgba(40, 180, 99, .11); color: var(--green-ink); }
+.br-state .bn { height: 17px; font-size: 10.5px; }
+.br-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+/* what the hovered action would do, or why it can't */
+.br-note { flex-basis: 100%; min-height: 20px; font-size: 11.5px; line-height: 21px; font-weight: 500; color: var(--green-ink); }
+.br-note[data-bad="true"] { color: var(--red-ink); }
+.br-note .bn { height: 17px; font-size: 10.5px; }
+.br-cut, .br-error { margin: 8px 0 0; font-size: 11.5px; color: var(--faint); }
+.br-error { color: var(--red-ink); padding-bottom: 12px; }
+/* the graph: a row per commit - the lanes in the SVG behind, then its labels, its title, its age */
+.br-graph { position: relative; max-height: 440px; overflow-y: auto; margin-top: 8px; padding: 0 0 8px; border-top: .5px solid rgba(0, 0, 0, .08); }
+.br-svg { position: absolute; left: 6px; top: 0; pointer-events: none; overflow: visible; }
+.br-svg line, .br-svg path { stroke-width: 2; }
+.br-svg .wip { fill: #fff; stroke: var(--amber); stroke-width: 2; stroke-dasharray: 2 3; }
+.br-pulse { fill: rgba(40, 180, 99, .5); transform-box: fill-box; transform-origin: center; animation: br-pulse 2.6s cubic-bezier(.2, .6, .3, 1) infinite; }
+@keyframes br-pulse { from { transform: scale(.7); opacity: .9; } to { transform: scale(2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .br-pulse { animation: none; } }
+.br-row { position: relative; display: flex; align-items: center; gap: 6px; height: 24px; padding-right: 12px; margin: 0 6px; border-radius: 6px; transition: opacity .15s; }
+.br-row:hover { background: rgba(10, 132, 255, .06); }
+.br-row.dim { opacity: .18; }
+.br-row:not(.wip) { cursor: pointer; }
+.br-row.fold .br-msg { color: var(--faint); }
+.br-row.wip .br-msg { color: var(--amber-ink); font-style: italic; }
+.br-unfold { font-size: 11px; font-weight: 500; color: #0a84ff; }
+.br-refs { display: flex; gap: 4px; flex: none; }
+.br-msg { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+.br-age { flex: none; color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+/* its hash just copied: said where you clicked */
+.br-row.copied .br-age { color: var(--green-ink); font-size: 0; }
+.br-row.copied .br-age::after { content: "copied"; font-size: 11.5px; font-weight: 500; }
+.br-unused { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; border-radius: 14px; background: rgba(255, 255, 255, .5);
+  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .1); color: var(--muted); font-size: 12px; }
+.br-unused-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.br-unused small { margin-left: 4px; color: var(--faint); font-size: 10.5px; }
+.br-unused button { margin-left: auto; }
+
+/* a branch as a label, wherever one is named (zent.ui.render/branch-chip, index.js bn): yours (a laptop),
+   origin's (a cloud), both on one commit, zent's worktree (dashed), a folder; ↑↓ ahead / behind origin.
+   Outside the Branches tab too: the detail panel's "Runs" uses them. */
+.bn { --c: #0a84ff; display: inline-flex; align-items: center; gap: 4px; height: 19px; max-width: 100%; padding: 0 6px; border-radius: 5px;
+  font: 500 11px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
+  background: color-mix(in srgb, var(--c) 10%, #fff); color: color-mix(in srgb, var(--c) 78%, #000); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 35%, transparent); }
+.bn[data-kind="remote"] { --c: #8e5bd6; }
+.bn[data-kind="folder"] { --c: #5d5f6e; }
+.bn.main { --c: #7d808a; }
+.bn.wt { background: #fff; box-shadow: none; outline: 1.5px dashed var(--c); outline-offset: -1.5px; font-weight: 600; }
+.bn.wt.idle { --c: #8c8f99; opacity: .65; font-weight: 500; }
+.bn.head-tag { --c: #28b463; background: var(--c); color: #fff; box-shadow: none; font-weight: 700; font-size: 10px; letter-spacing: .03em; }
+.bn .ab { margin-left: 1px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ico { display: inline-block; flex: none; width: 11px; height: 11px; background: currentColor;
+  -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
+.ico[data-i="local"] { --m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><rect x='2' y='2.5' width='8' height='5.5' rx='1' fill='none' stroke='black' stroke-width='1.3'/><path d='M1 10h10' stroke='black' stroke-width='1.3' stroke-linecap='round'/></svg>"); }
+.ico[data-i="remote"] { --m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3.5 9.5h5.3a2.2 2.2 0 0 0 .2-4.4A3 3 0 0 0 3.3 5.6 2 2 0 0 0 3.5 9.5z' fill='none' stroke='black' stroke-width='1.3'/></svg>"); }
+.ico:is([data-i="wt"], [data-i="folder"]) { --m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M1.5 3v6.5h9v-5H6L5 3z' fill='none' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>"); }
 
 /* -------------------------------------------------------------- confirm */
 

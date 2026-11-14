@@ -16,7 +16,9 @@
     (testing "presets/: one per file, keyed by file name, run through zent.compose/run"
       (is (= {:full {:db {:mode :on} :api {:mode :on :workspace-dir (str home "/work")}}
               :standalone-ui {:ui {:mode :on}}}
-             (:presets c)))))
+             (:presets c))))
+    (testing "where it was loaded from, canonical"
+      (is (= (.getCanonicalPath (java.io.File. "test/fixtures/catalog")) (:dir c)))))
   (testing "a dir without a catalog.edn carrying a :name is refused"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"keyword :name"
                           (catalog/load-dir "test/fixtures")))))

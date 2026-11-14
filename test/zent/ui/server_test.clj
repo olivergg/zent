@@ -114,7 +114,43 @@
         (is (= 200 status))
         (is (= 7 (:id body))))
       (is (= 8 (:id (second (post-json "/api/checkout/svc" :token "test-token")))) "a checkout too")
-      (is (= 404 (first (post-json "/api/rebase/none" :token "test-token")))))))
+      (is (= 404 (first (post-json "/api/rebase/none" :token "test-token"))))))
+  (testing "a push and a sync too; an undo once, by the id of the job that left it"
+    (with-redefs [state/request-git! (fn [op k _] (when (= :svc k) ({:push 9 :sync 10} op)))
+                  state/request-undo! (fn [id] (when (= 10 id) 11))]
+      (is (= 9 (:id (second (post-json "/api/push/svc" :token "test-token")))))
+      (is (= 10 (:id (second (post-json "/api/sync/svc" :token "test-token")))))
+      (is (= 11 (:id (second (post-json "/api/undo/10" :token "test-token")))))
+      (is (= 404 (first (post-json "/api/undo/12" :token "test-token")))))))
+
+(deftest branches-endpoint-test
+  (testing "given the applied preset's components, then a project per checkout, its components with it"
+    (reset! state/catalog catalog)
+    (swap! state/view-state assoc-in [:components :ui] {:status :up :deployed-sha "abc"})
+    (with-redefs [state/described-cfgs (constantly {:ui {:kind :process :repo "ui"} :db {:kind :docker-compose :repo "db"}
+                                                    :web {:kind :process}})
+                  zent.graph/project (fn [cfg] (when (= "ui" (:repo cfg)) {:commits [] :from nil}))
+                  zent.branch/worktrees (constantly [])]
+      (let [[status {:keys [projects unused]}] (get-json "/api/branches")
+            by-repo (into {} (map (juxt :repo identity) projects))]
+        (is (= 200 status))
+        (is (= #{"ui" "db"} (set (keys by-repo))) "no repo, no project")
+        (is (= [{:name "ui" :kind "process" :status "up" :deployed-sha "abc"}] (:components (by-repo "ui"))))
+        (is (re-find #"isn't a checkout" (:error (by-repo "db"))))
+        (is (empty? unused)))))
+  (testing "given a component run from the catalog's own repo, then no project for it"
+    (reset! state/catalog (assoc catalog :dir "/w/cat"))
+    (with-redefs [state/described-cfgs (constantly {:ui {:kind :process :repo "ui" :workspace-dir "/w"}
+                                                    :seed {:kind :one-shot :repo "cat" :workspace-dir "/w"}})
+                  zent.graph/project (constantly {:commits []})
+                  zent.branch/worktrees (constantly [])]
+      (is (= ["ui"] (map :repo (:projects (second (get-json "/api/branches"))))))))
+  (testing "given a preset that doesn't resolve, then the prune is refused"
+    (reset! state/catalog (assoc-in catalog [:presets :broken] {:nope {:mode :on}}))
+    (with-redefs [zent.branch/prune! (fn [& _] (throw (ex-info "must not prune" {})))]
+      (let [[status body] (post-json "/api/worktrees/prune" :token "test-token")]
+        (is (= 409 status))
+        (is (re-find #"broken doesn't resolve" (:error body)))))))
 
 (deftest post-from-a-foreign-origin-is-rejected-even-with-the-right-token-test
   (testing "belt-and-suspenders: a correct token from a non-localhost Origin still fails -

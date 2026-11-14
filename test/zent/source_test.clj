@@ -1,5 +1,6 @@
 (ns zent.source-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [zent.branch :as branch]
             [zent.source :as source])
   (:import [java.io File]))
@@ -187,10 +188,14 @@
 (deftest rebase-test
   (testing "given origin's master ahead on another file, then the branch is rebased onto it"
     (let [clone (repos "g.txt")
-          {:keys [ok message]} (source/rebase! (cfg-of clone))]
+          before (git! clone "rev-parse" "HEAD")
+          {:keys [ok message undo]} (source/rebase! (cfg-of clone))]
       (is ok message)
       (is (= (git! clone "rev-parse" "origin/master") (git! clone "merge-base" "HEAD" "origin/master")))
-      (is (= "feature" (git! clone "rev-parse" "--abbrev-ref" "HEAD")))))
+      (is (= "feature" (git! clone "rev-parse" "--abbrev-ref" "HEAD")))
+      (testing "and its undo puts the branch back"
+        (is (zero? (:exit (zent.shell/sh! undo))))
+        (is (= before (git! clone "rev-parse" "HEAD"))))))
   (testing "given other branches on origin, then only the default one is fetched, nothing pruned"
     (let [clone (repos "g.txt")
           other (str (.getParent (File. clone)) "/other")]
@@ -204,7 +209,8 @@
           before (git! clone "rev-parse" "HEAD")
           {:keys [ok message]} (source/rebase! (cfg-of clone))]
       (is (not ok))
-      (is (re-find #"conflicts" message))
+      (is (re-find #"conflicts with origin/master on f.txt" message))
+      (is (= ["f.txt"] (source/merge-conflicts clone "origin/master" "HEAD")))
       (is (= before (git! clone "rev-parse" "HEAD")))))
   (testing "given an uncommitted file, then nothing moves"
     (let [clone (repos "g.txt")
@@ -212,6 +218,39 @@
       (spit (str clone "/f.txt") "wip\n")
       (is (not (:ok (source/rebase! (cfg-of clone)))))
       (is (= before (git! clone "rev-parse" "HEAD"))))))
+
+(deftest push-test
+  (let [clone (repos "g.txt")
+        origin-sha #(git! clone "ls-remote" "origin" "refs/heads/feature")]
+    (testing "given a branch origin doesn't have, then it is pushed"
+      (is (:ok (source/push! (cfg-of clone :branch "feature" :from :clone))))
+      (is (str/starts-with? (origin-sha) (git! clone "rev-parse" "feature"))))
+    (testing "given nothing new, then refused"
+      (git! clone "fetch" "--quiet" "origin")
+      (is (re-find #"nothing origin doesn't" (:message (source/push! (cfg-of clone :branch "feature" :from :clone))))))
+    (testing "given it rewritten (a rebase), then pushed with a lease, replacing origin's"
+      (git! clone "commit" "--quiet" "--amend" "-m" "rewritten")
+      (let [{:keys [ok message]} (source/push! (cfg-of clone :branch "feature" :from :clone))]
+        (is ok message)
+        (is (re-find #"replacing 1 on origin \(force-with-lease\)" message))
+        (is (str/starts-with? (origin-sha) (git! clone "rev-parse" "feature")))))
+    (testing "given the default branch, then refused"
+      (is (re-find #"default branch" (:message (source/push! (cfg-of clone :branch "master" :from :clone))))))))
+
+(deftest sync-clone-test
+  (let [clone (repos "g.txt")]
+    (git! clone "checkout" "--quiet" "master")
+    (git! clone "fetch" "--quiet" "origin")
+    (testing "given the clone's branch behind origin's, then fast-forwarded, its undo told"
+      (let [before (git! clone "rev-parse" "HEAD")
+            {:keys [ok undo]} (source/sync-clone! (cfg-of clone))]
+        (is ok)
+        (is (= (git! clone "rev-parse" "origin/master") (git! clone "rev-parse" "HEAD")))
+        (is (zero? (:exit (zent.shell/sh! undo))))
+        (is (= before (git! clone "rev-parse" "HEAD")))))
+    (testing "given a commit of its own, then refused, nothing moved"
+      (spit (str clone "/x.txt") "x") (git! clone "add" ".") (git! clone "commit" "--quiet" "-m" "mine")
+      (is (re-find #"rebase it by hand" (:message (source/sync-clone! (cfg-of clone))))))))
 
 (deftest checkout-refusal-test
   (let [st {:from :clone :wanted-branch "feature/x" :branch "master" :dirty 0}]

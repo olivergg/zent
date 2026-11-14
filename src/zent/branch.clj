@@ -50,7 +50,16 @@
   "rev-list's args for the commits HEAD has that no branch, remote ref or refs/zent/* ref keeps."
   ["HEAD" "--not" "--branches" "--remotes" "--glob=refs/zent/*"])
 
-(defn- lines [s] (remove str/blank? (str/split-lines s)))
+(defn lines [s] (remove str/blank? (str/split-lines (str s))))
+
+(defn checkouts
+  "`dir`'s repo's checkouts (git worktree list): [{:path :sha :ref}], the main clone first; :ref
+  (refs/heads/...) nil when detached."
+  [dir]
+  (for [block (str/split (or (git dir "worktree" "list" "--porcelain") "") #"\n\n")
+        :let [kv (into {} (keep #(let [[k v] (str/split % #" " 2)] (when (seq k) [k v])) (str/split-lines block)))]
+        :when (kv "worktree")]
+    {:path (kv "worktree") :sha (kv "HEAD") :ref (kv "branch")}))
 
 (defn at-risk
   "{:dirty n :unreachable n} of worktree `dir` - what a reset --hard would lose: files `git status`
@@ -124,14 +133,18 @@
   clone's dir name) :head (short sha) & at-risk's :dirty :unreachable}; :clone nil when it isn't
   a worktree any more."
   []
-  (for [^java.io.File f (sort-by #(.getPath ^java.io.File %) (some-> (io/file (worktrees-root)) .listFiles seq))
-        :when (.isDirectory f)
-        :let [path (.getPath f)
-              ;; its own checkout's top, not some repo enclosing a leftover dir
-              own? (= (.getCanonicalPath f) (some-> (git path "rev-parse" "--show-toplevel") io/file .getCanonicalPath))
-              clone (when own? (some-> (git path "rev-parse" "--path-format=absolute" "--git-common-dir") io/file .getParent))]]
-    (merge {:path path :clone clone :repo (some-> clone io/file .getName) :head (git path "rev-parse" "--short" "HEAD")}
-           (when clone (at-risk path)))))
+  ;; in parallel: a few git reads each, a dozen dirs
+  (pmap (fn [^java.io.File f]
+          (let [path (.getPath f)
+                [top common head] (some-> (git path "rev-parse" "--show-toplevel" "--path-format=absolute" "--git-common-dir"
+                                               "--short" "HEAD")
+                                          str/split-lines)
+                ;; its own checkout's top, not some repo enclosing a leftover dir
+                own? (and top (= (.getCanonicalPath f) (.getCanonicalPath (io/file top))))
+                clone (when own? (some-> common io/file .getParent))]
+            (merge {:path path :clone clone :repo (some-> clone io/file .getName) :head head}
+                   (when clone (at-risk path)))))
+        (filter #(.isDirectory ^java.io.File %) (sort-by #(.getPath ^java.io.File %) (some-> (io/file (worktrees-root)) .listFiles seq)))))
 
 (defn prune!
   "Removes the `entries` (worktrees') of `repos` - the root is the machine's, another catalog's stay -

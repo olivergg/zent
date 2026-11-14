@@ -34,6 +34,7 @@
          '[zent.probe-test]
          '[zent.cli-test]
          '[zent.usage-test]
+         '[zent.graph-test]
 )
 
 (require '[zent.logs :as logs])
@@ -51,5 +52,5 @@
                                         'zent.branch-test 'zent.ui.bridge-test 'zent.ui.render-test 'zent.ui.state-test 'zent.k8s-test
                                         'zent.ui.server-test 'zent.ui.logstream-test 'zent.daemon-test 'zent.client-test 'zent.mcp-test
                                         'zent.reload-test 'zent.checks-test 'zent.diff-test 'zent.probe-test 'zent.cli-test
-                                        'zent.usage-test))]
+                                        'zent.usage-test 'zent.graph-test))]
   (System/exit (if (zero? (+ fail error)) 0 1)))

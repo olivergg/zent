@@ -30,17 +30,6 @@
       (is (nil? (cli/prune-refusal #{} handles {:port 1})))
       (is (nil? (cli/prune-refusal #{} [] nil))))))
 
-(deftest running-worktrees-test
-  (testing "given a daemon's view, then the worktrees of what isn't stopped, a :source-env's included"
-    (is (= {"/wt/api" #{(keyword "api (running)")}
-            "/wt/lib" #{(keyword "api (running)") (keyword "seed (running)")}}
-           (cli/running-worktrees
-            {:api {:status "up" :source {:worktree "/wt/api"} :source-env {:LIB {:worktree "/wt/lib"}}}
-             :seed {:status "deploying" :source-env {:LIB {:worktree "/wt/lib"}}}
-             :old {:status "down" :source {:worktree "/wt/old"}}
-             :off {:status "off" :source {:worktree "/wt/off"}}
-             :clone {:status "up" :source {:dir "/w/clone"}}})))))
-
 (deftest help-test
   (testing "given no verb, `help`, `-h` or `--help`, then every verb is listed with the catalog's presets"
     (doseq [args [[] ["help"] ["-h"] ["--help"]]]

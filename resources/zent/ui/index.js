@@ -68,16 +68,22 @@ function healthOf(components) {
 
 /* A toast: what just happened, for a few seconds - a failure longer, and a
    click on it selects the component. */
-function toast(kind, title, detail, name) {
+function toast(kind, title, detail, name, action) {
   const el = document.createElement("div");
   el.className = "toast";
   el.dataset.kind = kind;
   el.innerHTML = "<b>" + escHtml(title) + "</b>" +
     (detail ? "<span>" + escHtml(String(detail).split("\n")[0]) + "</span>" : "");
   const leave = () => { el.classList.add("leaving"); setTimeout(() => el.remove(), 240); };
+  // an action (an undo): a button of its own, which leaves the toast once pressed
+  if (action) {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "toast-act", textContent: action.label });
+    b.onclick = (e) => { e.stopPropagation(); action.run(); leave(); };
+    el.appendChild(b);
+  }
   el.onclick = () => { if (name && view.components[name]) { location.hash = "#stack"; setSelected(name); } leave(); };
   document.getElementById("toasts").appendChild(el);
-  setTimeout(leave, kind === "failed" ? 9000 : 5000);
+  setTimeout(leave, kind === "failed" ? 9000 : action ? 8000 : 5000);
 }
 
 /* Layered DAG: a component sits one level right of its deepest dependency.
@@ -156,6 +162,8 @@ function render() {
   lastDetailKey = detailKey;
   renderLogs();
   checksOnView();
+  // Preview <-> Running: another preset's repos
+  if (tabOf() === "branches" && branches.data && branches.of !== shownPreset()) loadBranches();
   markBusy();
 }
 
@@ -165,14 +173,24 @@ function render() {
    on a second click of the same name, same as a normal expand/collapse. */
 async function previewPreset(name) {
   if (previewing === name) return exitPreview();
+  // reading a preview takes seconds (git, per checkout): said at once - body[data-switching] - and the
+  // Branches tab starts reading that preset's repos alongside
+  switchingTo = name; document.body.dataset.switching = name;
+  if (tabOf() === "branches") loadBranches();
   try {
     const res = await fetch("/api/preview/" + encodeURIComponent(name));
     if (!res.ok) return;
     setPreview(name, await res.json());
   } catch {
     /* the click just does nothing - no partial/broken preview state to undo */
+  } finally {
+    switchingTo = undefined; delete document.body.dataset.switching;
   }
 }
+// the preset a preview is being read for, undefined when none (previewPreset)
+let switchingTo;
+// the preset the tabs show: the one being switched to, else the previewed one (null: what runs)
+const shownPreset = () => switchingTo === undefined ? previewing : switchingTo;
 
 function exitPreview() { setPreview(null, null); }
 
@@ -647,7 +665,7 @@ document.addEventListener("keydown", (e) => {
 let detailShown = null;                             // whose detail last came in, to animate a new one only
 async function loadDetail(name) {
   try {
-    const res = await fetch("/api/detail/" + name + (previewing ? "?preset=" + encodeURIComponent(previewing) : ""));
+    const res = await fetch("/api/detail/" + name + previewQuery());
     if (selected !== name) return;                  // selection moved mid-fetch
     document.getElementById("detail").outerHTML = await res.text();
     htmx.process(document.getElementById("detail"));
@@ -936,7 +954,7 @@ function writeLogFilter(changes) {
   readLogFilter();
 }
 
-const TABS = ["stack", "logs", "checks"];
+const TABS = ["stack", "logs", "checks", "branches"];
 // #graph: the stack tab's former name, kept for links and bookmarks made before
 const tabOf = () => TABS.find((t) => location.hash.startsWith("#" + t)) || "stack";
 
@@ -956,6 +974,7 @@ function showTab() {
   renderLogs();
   if (tab === "logs") readLogFilter();
   else if (tab === "checks") loadChecks();
+  else if (tab === "branches") loadBranches();
   else drawWarp();                                // the loom was hidden: positions are stale
 }
 
@@ -1214,6 +1233,408 @@ function initChecksControls() {
   });
 }
 
+/* ------------------------------------------------------------------------ */
+/* Branches: each repo the shown preset runs (GET /api/branches, zent.graph),
+   drawn as git graph tools draw it - newest first, a column per lane, the
+   refs on their commit: a local branch and origin's as one label when they
+   coincide, apart with ↑↓ when they don't. What needs doing comes first, as
+   chips with their action; hovering a chip lights the commits it's about,
+   hovering an action says what it would do.                               */
+/* ------------------------------------------------------------------------ */
+
+// the network only on Fetch: loads read the repos as they are (git, local), never fetch
+const branches = { data: null, loading: false, fetching: false, unfolded: new Set() };
+// BR_CALM: the commits an up-to-date repo shows before "N more"
+const BR_ROW = 24, BR_LANE = 14, BR_FOLD = 6, BR_CALM = 5, BR_STALE = 3600e3;
+const LANE_COLORS = ["#0a84ff", "#8e5bd6", "#1fa38a", "#e8890c", "#d6457a", "#5b6ee1"];
+const laneColor = (col) => LANE_COLORS[col % LANE_COLORS.length];
+const ico = (i) => `<i class="ico" data-i="${i}"></i>`;
+/* A branch (or a dir) as a label wherever one is named - zent.ui.render/branch-chip's twin: its icon
+   (local, remote, both, wt, folder), the name without its feature/... prefix, the full one on hover. */
+const bn = (kind, full, { shown = bareBranch(full), cls = "", extra = "", tip } = {}) =>
+  `<span class="bn ${cls}" data-kind="${kind}" data-tip="${escHtml(tip ?? full)}">` +
+  `${(kind === "both" ? ["local", "remote"] : [kind]).map(ico).join("")}${escHtml(shown)}${extra}</span>`;
+// a label's text, for what can't hold markup (a confirm's question)
+const textOf = (html) => Object.assign(document.createElement("div"), { innerHTML: html }).textContent;
+// where a project's code comes from, as its badge says it - the line under it ("Runs", the server's) says the rule
+const SOURCE = { origin: "follows origin", local: "follows your branch", clone: "your clone" };
+const bareBranch = (b) => String(b ?? "").replace(/^(feature|bugfix|bug|fix|hotfix|chore|release)\//, "");
+const shortSha = (s) => (s || "").slice(0, 7);
+const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+// an age, short (a commit's column: 5 min, 3 h, 2 d) or said (just now, 5 min ago - zent.ui.render/ago's)
+const ageText = (ms) => { const m = Math.round(ms / 60e3); return m < 60 ? Math.max(m, 1) + " min" : m < 2880 ? Math.round(m / 60) + " h" : Math.round(m / 1440) + " d"; };
+const agoText = (ms) => ms < 60e3 ? "just now" : ageText(ms) + " ago";
+const previewQuery = () => shownPreset() ? "?preset=" + encodeURIComponent(shownPreset()) : "";
+
+/* Where a project's code runs: from (origin|local|clone), wt (a zent worktree), the commit, its uncommitted
+   files, and the commits it was deployed from - by what runs now: a one-shot done long ago doesn't count. */
+function brRun(p) {
+  const from = p.from || "clone", wt = from !== "clone";
+  return { from, wt, sha: wt ? p.worktree?.sha : p.head.sha, dirty: wt ? (p.worktree?.dirty || []) : p.head.dirty,
+           deployed: p.components.filter((c) => ["up", "unready", "idle"].includes(c.status)).map((c) => c["deployed-sha"]).filter(Boolean) };
+}
+
+async function loadBranches() {
+  if (branches.loading) return;
+  const asked = shownPreset();
+  branches.loading = asked || view.preset || true;
+  renderBranches();                               // says it's reading, at once: git takes seconds
+  try {
+    const res = await fetch("/api/branches" + previewQuery());
+    if (res.ok) { branches.data = await res.json(); branches.of = asked; }
+  } catch { /* the next load retries */ } finally { branches.loading = false; }
+  // switched preset meanwhile: what came back is the other one's
+  if (asked !== shownPreset()) return loadBranches();
+  renderBranches();
+}
+
+async function fetchBranches() {
+  if (branches.fetching) return;
+  branches.fetching = true; renderBranches();
+  try {
+    const res = await fetch("/api/branches/fetch" + previewQuery(), { method: "POST", headers: { "X-Zent-Token": csrfToken() } });
+    const reply = await res.json().catch(() => ({}));
+    for (const [dir, why] of Object.entries(reply.failed || {})) toast("failed", "fetch failed: " + dir.split("/").pop(), why);
+  } catch { toast("failed", "fetch failed", "the daemon didn't answer"); }
+  branches.fetching = false;
+  loadBranches();
+}
+
+// commits reachable from `tips` among the drawn ones
+function reach(p, tips) {
+  const by = new Map(p.commits.map((c) => [c.sha, c])), seen = new Set(), todo = tips.filter(Boolean);
+  while (todo.length) {
+    const s = todo.pop();
+    if (seen.has(s) || !by.has(s)) continue;
+    seen.add(s); todo.push(...by.get(s).parents);
+  }
+  return seen;
+}
+const minus = (a, b) => new Set([...a].filter((x) => !b.has(x)));
+
+/* What a project needs doing, most pressing first: [html, level (bad|warn), action, shas it's about].
+   An action: [verb, label, what it would do (html), needs a confirm?, refused because]. Branch names
+   are labels (bn), as on the graph. */
+function brStates(p) {
+  const out = [], g = p.git || {}, { from, wt, sha: runSha, dirty, deployed: [deployed] } = brRun(p);
+  const ref = (n) => p.refs.find((r) => r.name === n);
+  const target = p.branch || p.head.branch, L = ref(target), R = ref("origin/" + target);
+  const mine = bn("local", target || ""), theirs = bn("remote", "origin/" + target, { shown: "origin/" + bareBranch(target) });
+  const base = p.base || g.base, originBase = bn("remote", "origin/" + base, { shown: "origin/" + base });
+  if (from === "clone" && p.branch && p.head.branch !== p.branch)
+    out.push([`On ${p.head.branch ? bn("local", p.head.branch) : "a detached HEAD"}, the preset wants ${bn("local", p.branch)}`, "bad",
+              ["checkout", "Check out", `checks out ${bn("local", p.branch)} in your clone`, true,
+               p.head.dirty.length ? "uncommitted files: commit or stash them first" : null],
+              new Set([p.head.sha])]);
+  if (wt && dirty.length) out.push([`${plural(dirty.length, "file")} edited by hand in zent's worktree`, "bad", null, new Set([runSha])]);
+  else if (dirty.length) out.push([`${plural(dirty.length, "uncommitted file")}`, "warn", null, new Set(["wip"])]);
+  if (wt && g.unreachable > 0) out.push([`${plural(g.unreachable, "commit")} on no branch in zent's worktree`, "bad", null, new Set([runSha])]);
+  if (L && R && target !== base) {
+    const ahead = minus(reach(p, [L.sha]), reach(p, [R.sha])), behind = minus(reach(p, [R.sha]), reach(p, [L.sha]));
+    // :origin runs what's pushed: your local commits on the same branch don't run until pushed
+    const pushNote = (L.behind > 0 ? `replaces ${plural(L.behind, "commit")} on ${theirs} (force-with-lease)` : `sends ${plural(L.ahead, "commit")} to ${theirs}`)
+      + (from === "origin" ? ", then Pull to run them" : "");
+    const notRunning = from === "origin" ? ` - they don't run: zent runs ${theirs}` : "";
+    if (L.ahead > 0 && L.behind > 0)
+      out.push([`${mine} and ${theirs} diverged: ↑${L.ahead} ↓${L.behind}${notRunning}`, "bad", ["push", "Push", pushNote, true], new Set([...ahead, ...behind])]);
+    else if (L.ahead > 0)
+      out.push([`${plural(L.ahead, "commit")} on ${mine} not pushed${notRunning}`, from === "origin" ? "bad" : "warn", ["push", "Push", pushNote, true], ahead]);
+    else if (L.behind > 0)
+      out.push([`${mine} is ${L.behind} behind ${theirs}`, "bad",
+                ["sync", "Sync", `fast-forwards ${mine} to ${theirs}: nothing of yours is lost`, false,
+                 p.head.branch === target ? null : `your clone has ${p.head.branch || "no branch"} checked out: sync ${target} there`], behind]);
+  } else if (L && !R && target !== base && L.ahead !== 0) {
+    out.push([`${mine} isn't on origin`, "warn", ["push", "Push", `creates ${theirs}`, true], reach(p, [L.sha])]);
+  }
+  // the default branch: told, never pushed from here
+  const M = ref(base), MR = ref("origin/" + base);
+  if (M && MR && M.ahead > 0)
+    out.push([`${plural(M.ahead, "commit")} on ${bn("local", base, { shown: base })} not pushed`, "warn", null, minus(reach(p, [M.sha]), reach(p, [MR.sha]))]);
+  if (wt && g.pull > 0)
+    out.push([`zent's worktree is ${g.pull} behind ${from === "local" ? mine : theirs}`, "bad",
+              ["pull", "Pull", `moves the worktree ${plural(g.pull, "commit")} ahead, then redeploys`, false, dirty.length ? "files edited by hand in zent's worktree" : null],
+              minus(reach(p, [from === "local" ? L?.sha : R?.sha]), reach(p, [runSha]))]);
+  if (deployed && runSha && deployed !== runSha)
+    out.push([`Changed since it started: runs <code class="sha">${shortSha(deployed)}</code>, the disk has <code class="sha">${shortSha(runSha)}</code>`, "warn",
+              ["reload", "Reload", `restarts it on <code class="sha">${shortSha(runSha)}</code>`, false], new Set([deployed, runSha])]);
+  if (g.behind > 0) {
+    const c = p.conflicts;
+    const note = c == null ? "no conflict" : c.length ? `conflicts on ${plural(c.length, "file")}: ${escHtml(c.join(", "))}` : "conflicts unknown";
+    const why = g.branch == null && !wt ? "detached HEAD" : dirty.length ? "uncommitted files: commit or stash them first"
+      : g["held-at"] ? `${target} is checked out in ${g["held-at"]}` : c?.length ? "it conflicts: rebase it by hand" : null;
+    out.push([`${originBase} is ${g.behind} ahead`, "warn",
+              ["rebase", from === "origin" ? `Test on ${base}` : "Rebase",
+               (from === "origin" ? `runs ${theirs} rebased onto ${originBase}, locally in its worktree` : `rebases ${mine} onto ${originBase}`) + ` - ${note}`, true, why],
+              minus(reach(p, [ref("origin/" + base)?.sha]), reach(p, [runSha]))]);
+  }
+  return out;
+}
+
+/* The rows shown: a working-copy row on top when what runs has uncommitted files, then the commits,
+   runs of plain ones (no label, one parent, lines straight) folded past BR_FOLD unless unfolded. */
+function brRows(p, labels) {
+  const { dirty, sha: runSha } = brRun(p), rows = [], cs = p.commits;
+  const plain = (c) => !labels.has(c.sha) && c.parents.length <= 1 && c.segs.every(([a, b]) => a === b);
+  for (let i = 0; i < cs.length;) {
+    let j = i;
+    while (j < cs.length && plain(cs[j])) j++;
+    if (j - i > BR_FOLD && !branches.unfolded.has(p.repo + cs[i].sha)) {
+      rows.push(cs[i], cs[i + 1]);
+      const hidden = cs.slice(i + 2, j - 1);
+      rows.push({ fold: hidden, key: p.repo + cs[i].sha, col: hidden[0].col, segs: hidden[0].segs, sha: "fold:" + i });
+      rows.push(cs[j - 1]);
+      i = j;
+    } else {
+      const end = Math.max(j, i + 1);
+      for (; i < end; i++) rows.push(cs[i]);
+    }
+  }
+  const head = cs.find((c) => c.sha === runSha);
+  if (dirty.length && head) rows.unshift({ wip: dirty, at: runSha, col: head.col, segs: [], sha: "wip" });
+  return rows;
+}
+
+// the labels on each commit: branches local + origin merged when they coincide, HEAD, worktrees
+function brLabels(p) {
+  const labels = new Map(), add = (sha, html) => sha && labels.set(sha, (labels.get(sha) || "") + html), { wt } = brRun(p);
+  // your clone's HEAD, always, first - then the branch it's on (HEAD -> branch, as git log --decorate)
+  add(p.head.sha, `<span class="bn head-tag" data-tip="${escHtml("Your clone's HEAD\n" + (!p.head.branch ? "Detached, on no branch"
+    : `On ${p.head.branch}` + (wt ? " - free: zent runs its worktree, not your clone" : " - what runs")))}">HEAD</span>`);
+  // a label's hover: its full name, then where it stands against the other side
+  for (const n of new Set(p.refs.map((r) => r.branch))) {
+    const L = p.refs.find((r) => r.name === n), R = p.refs.find((r) => r.name === "origin/" + n);
+    const cls = n === p.base ? "main" : "", shown = n === p.base ? n : bareBranch(n);
+    if (L && R && L.sha === R.sha) add(L.sha, bn("both", n, { shown, cls, tip: `${n}\nYours and origin's: the same commit` }));
+    else {
+      if (L) {
+        const ab = [L.ahead && "↑" + L.ahead, L.behind && "↓" + L.behind].filter(Boolean).join(" ");
+        add(L.sha, bn("local", n, { shown, cls, extra: ab && `<b class="ab">${ab}</b>`,
+                                    tip: `${n}\nYours: ` + (R ? `${plural(L.ahead || 0, "commit")} not on origin, ${L.behind || 0} only on origin` : "not on origin") }));
+      }
+      if (R) add(R.sha, bn("remote", "origin/" + n, { shown: "origin/" + shown, cls,
+                                                       tip: `origin/${n}\nOrigin's: ` + (L ? "apart from yours" : "you have no local branch") }));
+    }
+  }
+  if (wt && p.worktree)
+    add(p.worktree.sha, bn("wt", p.worktree.path, { shown: "worktree", cls: "wt", extra: p.git?.pull > 0 ? `<b class="ab">↓${p.git.pull}</b>` : "",
+                                                    tip: `${p.worktree.path}\nzent's worktree, what runs: detached on this commit` +
+                                                         (p.git?.pull > 0 ? `, ${plural(p.git.pull, "commit")} behind - Pull to run them` : "") }));
+  for (const o of p.others || []) add(o.sha, bn("wt", o.path, { shown: "worktree", cls: "wt idle", tip: `${o.path}\nAnother zent worktree of this repo` }));
+  return labels;
+}
+
+function brGraph(p, rows) {
+  const lanes = Math.max(1, ...rows.map((r) => Math.max(r.col + 1, ...r.segs.flat().map((x) => x + 1))));
+  const x = (c) => 9 + c * BR_LANE, y = (i) => i * BR_ROW + BR_ROW / 2;
+  const deployed = new Set(brRun(p).deployed);
+  let s = "";
+  rows.forEach((r, i) => {
+    if (i === 0) return;
+    for (const [a, b] of r.segs) {
+      const col = laneColor(r.fold ? a : (b === r.col && a !== b ? a : b));
+      s += a === b ? `<line x1="${x(a)}" y1="${y(i - 1)}" x2="${x(b)}" y2="${y(i)}" stroke="${col}"/>`
+        : `<path d="M${x(a)},${y(i - 1)} C${x(a)},${y(i) - 4} ${x(b)},${y(i - 1) + 4} ${x(b)},${y(i)}" stroke="${col}" fill="none"/>`;
+    }
+  });
+  rows.forEach((r, i) => {
+    const cx = x(r.col), cy = y(i), col = laneColor(r.col);
+    if (r.wip) {
+      const h = rows.findIndex((q) => q.sha === r.at);
+      s += `<line class="wip" x1="${cx}" y1="${cy}" x2="${cx}" y2="${y(h)}"/><circle class="wip" cx="${cx}" cy="${cy}" r="5"/>`;
+    } else if (r.fold) {
+      s += [-6, 0, 6].map((d) => `<circle cx="${cx}" cy="${cy + d}" r="${d ? 1.6 : 2.6}" fill="${col}"/>`).join("");
+    } else {
+      s += `<circle cx="${cx}" cy="${cy}" r="4.5" fill="${col}" stroke="#fff" stroke-width="1.5"/>`;
+      if (r.sha === p.head.sha) s += `<circle cx="${cx}" cy="${cy}" r="8" fill="none" stroke="#28b463" stroke-width="2"/>`;
+      if (deployed.has(r.sha)) s += `<circle class="br-pulse" cx="${cx}" cy="${cy}" r="7"/>`;
+    }
+  });
+  return [`<svg class="br-svg" width="${x(lanes - 1) + 10}" height="${rows.length * BR_ROW}">${s}</svg>`, x(lanes - 1) + 16];
+}
+
+function brCell(p) {
+  const name = p.repo, comps = p.components.map((c) => c.name);
+  if (p.error) return `<article class="br-cell" data-level="bad"><div class="br-head"><span class="br-name">${escHtml(name)}</span></div><p class="br-error">${escHtml(p.error)}</p></article>`;
+  const { from } = brRun(p), states = brStates(p), labels = brLabels(p);
+  let rows = brRows(p, labels);
+  // up to date: its last commits still say what's there - the rest a click away
+  const key = p.repo + ":all";
+  if (!states.length && rows.length > BR_CALM + 1 && !branches.unfolded.has(key)) {
+    const rest = rows.slice(BR_CALM).flatMap((r) => r.fold || (r.sha?.length === 40 ? [r] : []));
+    rows = [...rows.slice(0, BR_CALM), { fold: rest, key, col: rows[BR_CALM - 1].col, segs: [], sha: "fold:all" }];
+  }
+  const [svg, indent] = brGraph(p, rows);
+  const fetched = p["fetched-at"], age = fetched ? Date.now() - fetched : Infinity;
+  const fresh = branches.fetching ? `<span class="br-fresh busy">fetching…</span>`
+    : `<span class="br-fresh${age > BR_STALE ? " stale" : ""}" data-tip="${fetched ? "Last fetch\n" + new Date(fetched).toLocaleString() : "Never fetched"}">${fetched ? "fetched " + agoText(age) : "never fetched"}</span>`;
+  const acts = [];
+  const seen = new Set();
+  states.forEach(([, , a], i) => { if (a && !seen.has(a[0])) { seen.add(a[0]); acts.push([...a, i]); } });
+  const [deployed] = brRun(p).deployed;
+  const tipOf = (c) => `${c.subject}\n${shortSha(c.sha)} · ${c.author} · ${c.time ? new Date(c.time).toLocaleString() : ""}` +
+    (deployed === c.sha ? "\nRunning: deployed from this commit" : "") + (p.head.sha === c.sha ? "\nYour clone's HEAD" : "") + "\nClick to copy its hash";
+  const pad = ` style="padding-left:${indent}px"`;
+  const row = (r) => r.wip
+    ? `<div class="br-row wip"${pad} data-sha="wip" data-tip="Uncommitted\n${escHtml(r.wip.join("\n"))}"><span class="br-msg">${plural(r.wip.length, "uncommitted file")}</span></div>`
+    : r.fold
+      ? `<div class="br-row fold"${pad} role="button" tabindex="0" data-fold="${escHtml(r.key)}" data-tip="${plural(r.fold.length, "commit")}\n${escHtml(r.fold.slice(0, 5).map((c) => c.subject).join("\n"))}${r.fold.length > 5 ? "\n…" : ""}"><span class="br-msg">${plural(r.fold.length, "more commit")}</span><span class="br-unfold">Show</span></div>`
+      : `<div class="br-row"${pad} data-sha="${r.sha}" data-tip="${escHtml(tipOf(r))}"><span class="br-refs">${labels.get(r.sha) || ""}</span><span class="br-msg">${escHtml(r.subject)}</span><span class="br-age">${r.time ? ageText(Date.now() - r.time) : ""}</span></div>`;
+  // its worst state, as the cell's tint: something red, something to look at, or nothing to do
+  const level = states.some(([, l]) => l === "bad") ? "bad" : states.length ? "warn" : "ok";
+  return `<article class="br-cell" data-level="${level}" data-repo="${escHtml(name)}">
+    <header class="br-head">
+      <span class="br-name">${escHtml(name)}</span>
+      <span class="br-src" data-from="${from}">${SOURCE[from]}</span>
+      <span class="br-comps" data-tip="${escHtml("Run from it\n" + comps.join(", "))}">${escHtml(comps.length > 2 ? comps.slice(0, 2).join(", ") + " +" + (comps.length - 2) : comps.join(", "))}</span>
+      ${fresh}
+      <nav class="br-links"><a href="#stack" data-select="${escHtml(comps[0])}">Stack</a><a href="#logs" data-logs="${escHtml(comps.join(","))}">Logs</a></nav>
+    </header>
+    <div class="br-where">${p.where || ""}</div>
+    <div class="br-states">${states.length ? states.map(([t, lvl], i) => `<span class="br-state ${lvl}" data-i="${i}">${t}</span>`).join("")
+      : `<span class="br-state ok">Up to date</span>`}</div>
+    ${acts.length ? `<div class="br-acts">${acts.map(([verb, label, note, , why, i], k) =>
+      // one look per role: the most pressing action first and blue, one that replaces origin's commits red
+      `<button type="button" class="${/force-with-lease/.test(note) ? "warn" : k === 0 && !why ? "primary" : ""}" data-verb="${verb}" data-i="${i}" data-post="${brPath(verb, comps[0])}"${why ? ` aria-disabled="true" data-why="${escHtml(why)}"` : ""}>${escHtml(label)}</button>`).join("")}
+      <span class="br-note" aria-live="polite"></span></div>` : ""}
+    ${p.truncated ? `<p class="br-cut">The ${p.commits.length} newest commits only</p>` : ""}
+    <div class="br-graph">${svg}${rows.map(row).join("")}</div>
+  </article>`;
+}
+
+function brPath(verb, comp) {
+  const api = { reload: "trigger" }[verb] || verb;
+  return `/api/${api}/${encodeURIComponent(comp)}` + (["rebase", "checkout", "push", "sync"].includes(verb) ? previewQuery() : "");
+}
+
+function renderBranches() {
+  if (tabOf() !== "branches") return;
+  const ps = (branches.data?.projects || []).slice();
+  const score = (p) => p.error ? 99 : brStates(p).reduce((n, [, l]) => n + (l === "bad" ? 10 : 1), 0);
+  ps.sort((a, b) => score(b) - score(a) || a.repo.localeCompare(b.repo));
+  const needing = ps.filter((p) => score(p) > 0).length;
+  // the tab's count: the headline's - red when one of them is, amber else
+  const bad = ps.some((p) => p.error || brStates(p).some(([, l]) => l === "bad")), badge = document.getElementById("branches-badge");
+  badge.hidden = !needing; badge.textContent = needing; badge.classList.toggle("warn", !bad);
+  // reading: said in the headline, what's shown dimmed - it may be another preset's - or ghosts at first
+  // - a refresh of what's shown (every minute, on focus) stays quiet: a small spinner by the fetch time
+  const grid = document.getElementById("branches-grid");
+  const loading = branches.loading && (!branches.data || branches.of !== shownPreset()) ? branches.loading : false;
+  grid.classList.toggle("loading", Boolean(loading)); grid.setAttribute("aria-busy", String(Boolean(branches.loading)));
+  document.getElementById("branches-view").dataset.refreshing = String(Boolean(branches.loading) && !loading);
+  document.getElementById("branches-headline").innerHTML = loading
+    ? `<span class="br-spin" aria-hidden="true"></span>Reading the repos${typeof loading === "string" ? " of " + escHtml(loading) : ""}…`
+    : !ps.length ? "No repo to show"
+    : needing ? `<b class="${bad ? "bad" : "warn"}">${needing} of ${plural(ps.length, "repo")}</b> need${needing === 1 ? "s" : ""} attention` : `All ${plural(ps.length, "repo")} up to date`;
+  if (loading && !branches.data) { grid.innerHTML = `<div class="br-ghost"></div>`.repeat(6); return; }
+  const newest = Math.max(0, ...ps.map((p) => p["fetched-at"] || 0));
+  document.getElementById("branches-fetched").textContent = branches.fetching ? "" : newest ? "Fetched " + agoText(Date.now() - newest) : "Never fetched";
+  const fetchBtn = document.getElementById("branches-fetch");
+  fetchBtn.disabled = branches.fetching; fetchBtn.dataset.busy = String(branches.fetching);
+  fetchBtn.textContent = branches.fetching ? "Fetching…" : "Fetch";
+  grid.innerHTML = ps.length ? ps.map(brCell).join("")
+    : branches.data ? `<p class="br-empty">${shownPreset() ? "This preset runs nothing from a repo." : "Nothing runs. Apply a preset, or preview one, to see its repos here."}</p>` : "";
+  const unused = branches.data?.unused || [], u = document.getElementById("branches-unused");
+  u.hidden = !unused.length;
+  u.innerHTML = unused.length ? `<span class="br-unused-head"><b>${plural(unused.length, "worktree")}</b> no preset uses</span>` +
+    `<span class="br-unused-list">${unused.map((w) => bn("wt", w.path, { shown: w.path.split("/").pop(), extra: `<small>${ageText(Date.now() - w.modified)}</small>` })).join("")}</span>` +
+    `<button type="button" id="branches-prune" data-tip="Clean up\nRemoves them; one holding uncommitted files or commits on no branch is kept">Clean up</button>` : "";
+  markBusy();
+}
+
+function initBranchesControls() {
+  const legend = document.getElementById("branches-legend");
+  const ring = (stroke, fill = "none", dash = "") =>
+    `<svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="${fill === "none" ? 5 : 3.5}" fill="${fill}" stroke="${stroke}" stroke-width="${stroke === "none" ? 0 : 2}" ${dash}/></svg>`;
+  legend.innerHTML = [
+    [bn("local", "main", { shown: "main", tip: "" }), "yours"], [bn("remote", "origin/main", { shown: "origin/main", tip: "" }), "origin's"],
+    [bn("both", "main", { shown: "main", tip: "" }), "both, one commit"], [bn("local", "x", { extra: `<b class="ab">↑2 ↓1</b>`, tip: "" }), "ahead / behind origin"],
+    [bn("wt", "worktree", { shown: "worktree", cls: "wt", tip: "" }), "zent's worktree, what runs"],
+    [`<span class="bn head-tag">HEAD</span>${ring("#28b463")}`, "your clone's HEAD"], [ring("none", "#28b463"), "running"],
+    [ring("#e8a200", "#fff", `stroke-dasharray="2 2"`), "uncommitted"]
+  ].map(([m, t]) => `<span>${m}${t}</span>`).join("");
+  document.getElementById("branches-fetch").onclick = fetchBranches;
+  const view = document.getElementById("branches-view");
+  const projectOf = (el) => branches.data?.projects.find((p) => p.repo === el.closest(".br-cell")?.dataset.repo);
+  // a state or an action hovered (or focused): the commits it's about stay lit; an action says what it
+  // would do - or why it can't - under the buttons
+  const light = (e) => {
+    const chip = e.target.closest?.(".br-state[data-i], .br-acts button[data-i]"), cell = e.target.closest?.(".br-cell");
+    if (!chip || !cell || chip.contains(e.relatedTarget)) return;
+    const [, , action, shas] = brStates(projectOf(cell))[+chip.dataset.i];
+    cell.querySelectorAll(".br-row").forEach((r) => r.classList.toggle("dim", !shas.has(r.dataset.sha)));
+    const note = cell.querySelector(".br-note");
+    if (note && chip.tagName === "BUTTON" && action) {
+      const why = chip.dataset.why;
+      note.innerHTML = why ? `Can't: ${escHtml(why)}` : action[2];
+      note.dataset.bad = String(Boolean(why) || /conflicts on|replaces/.test(action[2]));
+    }
+  };
+  const unlight = (e) => {
+    const chip = e.target.closest?.(".br-state[data-i], .br-acts button[data-i]"), cell = e.target.closest?.(".br-cell");
+    if (!chip || !cell || chip.contains(e.relatedTarget)) return;
+    cell.querySelectorAll(".br-row.dim").forEach((r) => r.classList.remove("dim"));
+    const note = cell.querySelector(".br-note");
+    if (note) note.textContent = "";
+  };
+  view.addEventListener("mouseover", light); view.addEventListener("focusin", light);
+  view.addEventListener("mouseout", unlight); view.addEventListener("focusout", unlight);
+  view.addEventListener("keydown", (e) => {
+    const fold = e.target.closest(".br-row.fold");
+    if (fold && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); fold.click(); }
+  });
+  view.addEventListener("click", async (e) => {
+    const fold = e.target.closest(".br-row.fold"), btn = e.target.closest(".br-acts button"), link = e.target.closest(".br-links a");
+    const commit = e.target.closest(".br-row[data-sha]:not(.wip)");
+    if (fold) { branches.unfolded.add(fold.dataset.fold); renderBranches(); return; }
+    if (commit && !e.target.closest(".bn")) {
+      const sha = commit.dataset.sha;
+      // said in place, where you look: the row's age reads "copied" for a moment
+      try { await navigator.clipboard.writeText(sha); commit.classList.add("copied"); setTimeout(() => commit.classList.remove("copied"), 1200); }
+      catch { /* no clipboard (not a secure context): nothing copied, nothing said */ }
+      return;
+    }
+    if (link) {
+      e.preventDefault();
+      if (link.dataset.select) { location.hash = "#stack"; setSelected(link.dataset.select); }
+      else { setLogSelection(link.dataset.logs.split(",")); location.hash = "#logs"; }
+      return;
+    }
+    if (e.target.id === "branches-prune") {
+      if (!(await askConfirm({ name: "worktrees", action: "clean up", anchor: e.target,
+                               question: "Remove the worktrees no preset uses? Those holding uncommitted files or commits on no branch are kept." }))) return;
+      const res = await fetch("/api/worktrees/prune", { method: "POST", headers: { "X-Zent-Token": csrfToken() } });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) toast("failed", "not cleaned up", r.error);
+      else toast("up", "removed " + plural(r.removed.length, "worktree"), r.kept.map((k) => k.path.split("/").pop() + ": " + k.why).join("; "));
+      loadBranches();
+      return;
+    }
+    if (!btn || btn.getAttribute("aria-disabled") === "true") return;
+    const p = projectOf(btn), [, , action] = brStates(p)[+btn.dataset.i], [verb, label, note, confirm] = action;
+    const comp = p.components[0].name;
+    if (confirm && !(await askConfirm({ name: p.repo, action: label.toLowerCase(), anchor: btn, question: `${label}: ${textOf(note)}?` }))) return;
+    gitPost(verb, comp, btn.dataset.post);
+  });
+}
+
+/* A git write from the Branches tab: queued like the board's (pending, gitJobs), its outcome a toast -
+   with an Undo when the job left one (state :command-undo). */
+async function gitPost(verb, name, path) {
+  pending.set(path, Infinity); markBusy();
+  let reply;
+  try {
+    const res = await fetch(path, { method: "POST", headers: { "X-Zent-Token": csrfToken() } });
+    reply = await res.json().catch(() => ({}));
+  } catch { reply = { error: "the daemon didn't answer" }; }
+  if (Number.isInteger(reply.id)) {
+    pending.set(path, reply.id);
+    // a reload or a pull isn't a git job: its outcome shows on the board, no message to toast
+    if (!["reload", "pull"].includes(verb)) gitJobs.set(reply.id, [gitDone[verb] || verb, name]);
+  }
+  else { pending.delete(path); toast("failed", "not " + (gitDone[verb] || verb) + ": " + name, reply.error, name); }
+  markBusy();
+}
+
 /* The token is baked into the page at load (zent.ui.server, a <meta> tag -
    no separate fetch needed) and attached to every htmx-issued write here,
    in one place instead of a per-call header. authorized-write? server-side
@@ -1277,7 +1698,7 @@ document.body.addEventListener("htmx:confirm", (e) => {
    is still in flight (no id yet). */
 const pending = new Map();
 // a git write's past participle, by its /api/<verb>/<component> path
-const gitDone = { rebase: "rebased", checkout: "checked out" };
+const gitDone = { rebase: "rebased", checkout: "checked out", push: "pushed", sync: "synced", pull: "pulled", reload: "reloaded", undo: "undone" };
 // queued git writes, id -> [done, component]: once handled, say what happened, the undo command included
 const gitJobs = new Map();
 
@@ -1288,13 +1709,20 @@ function markBusy() {
     if (!done.has(id)) continue;
     gitJobs.delete(id);
     const message = view["command-messages"]?.[id];
-    if (message) { refreshPreview(); toast("up", did + " " + name, message, name); continue; }
+    if (tabOf() === "branches") loadBranches();
+    if (message) {
+      refreshPreview();
+      // a job that left an undo (state :command-undo): offered on the toast while it shows
+      const undo = view["command-undo"]?.[id] && { label: "Undo", run: () => gitPost("undo", name, "/api/undo/" + id) };
+      toast("up", did + " " + name, message, name, undo);
+      continue;
+    }
     // neither means no job ran it: a shutdown took it, or a daemon older than :job
     toast("failed", "not " + did + ": " + name,
           view["command-errors"]?.[id] || "the daemon didn't run it - restart it and try again", name);
   }
-  document.querySelectorAll("[hx-post]").forEach((b) => {
-    b.dataset.busy = String(pending.has(b.getAttribute("hx-post")));
+  document.querySelectorAll("[hx-post], [data-post]").forEach((b) => {
+    b.dataset.busy = String(pending.has(b.getAttribute("hx-post") || b.dataset.post));
   });
 }
 
@@ -1574,7 +2002,7 @@ document.getElementById("mode").onclick = (e) => {
    at a glance. Each push re-renders the titles, so they're taken over as the pointer meets them. */
 const tipEl = document.getElementById("tip");
 document.addEventListener("mousemove", (e) => {
-  const t = e.target.closest?.(":is(.loom, .legend, .masthead) :is([title], [data-tip], [data-tip-key])");
+  const t = e.target.closest?.(":is(.loom, .legend, .masthead, .branches-view) :is([title], [data-tip], [data-tip-key])");
   if (!t) { tipEl.classList.remove("on"); return; }
   if (t.title) { t.dataset.tip = t.title; t.removeAttribute("title"); }
   if (t.dataset.tipKey) t.dataset.tip = tip(t.dataset.tipKey);
@@ -1590,6 +2018,10 @@ connect();
 initViewControls();
 initLogControls();
 initChecksControls();
+initBranchesControls();
+// the repos move under the tab: re-read on coming back to the window, and every minute while it shows
+addEventListener("focus", () => { if (tabOf() === "branches") loadBranches(); });
+setInterval(() => { if (tabOf() === "branches" && !document.hidden) loadBranches(); }, 60e3);
 showTab();
 render();
 addEventListener("resize", () => render());

@@ -16,5 +16,5 @@
                               (.getPath f))
                       {:file (.getPath f)})))
     (let [found (checks/discover dir)]
-      (cond-> (assoc catalog :presets (presets/load-files (io/file dir "presets")))
+      (cond-> (assoc catalog :presets (presets/load-files (io/file dir "presets")) :dir (.getCanonicalPath (io/file dir)))
         (seq found) (assoc :checks found)))))

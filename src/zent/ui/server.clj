@@ -10,8 +10,10 @@
             [clojure.string :as str]
             [ring-chez.adapter :as adapter]
             [ring-chez.websocket :as ws]
+            [zent.branch :as branch]
             [zent.checks :as checks]
             [zent.compose :as compose]
+            [zent.graph :as graph]
             [zent.kinds :as kinds]
             [zent.logs :as logs]
             [zent.presets :as presets]
@@ -348,6 +350,78 @@
                  (finally (swap! running-checks disj k))))
           (json-response {:ok true})))))
 
+;; The Branches tab: each repo the shown preset runs (?preset=: a previewed one, else the applied one),
+;; as zent.graph draws it - git reads, in parallel, on the request. Its writes: a fetch (here, on the
+;; request: it moves origin/* refs only), the git jobs (state/request-git!), the unused worktrees' prune.
+
+(defn- shown-cfgs
+  "{name cfg} of the components with a repo: `preset` as it resolves, else the applied one's - but the
+  catalog's own repo, which runs scripts, not a project of the stack."
+  [preset]
+  (let [{:keys [dir]} @state/catalog
+        catalog-repo? #(and dir (= dir (.getCanonicalPath (java.io.File. ^String (source/clone-dir %)))))]
+    (into {} (filter (fn [[_ cfg]] (and (:repo cfg) (not (catalog-repo? cfg)))))
+          (if preset (compose/resolve-preset @state/catalog preset) (state/described-cfgs)))))
+
+;; compose/worktree-users resolves every preset (~400 ms on a real catalog): once per catalog value
+(defonce ^:private preset-worktrees (atom nil))
+
+(defn- worktree-users
+  "{worktree-path #{user}}: the catalog's presets and what runs now - what the prune keeps - and the
+  presets that don't resolve."
+  []
+  (let [catalog @state/catalog
+        [seen known] @preset-worktrees
+        {:keys [users unresolved]} (if (identical? seen catalog)
+                                     known
+                                     (second (reset! preset-worktrees [catalog (compose/worktree-users catalog)])))]
+    [(merge-with into users (compose/running-worktrees (:components @state/view-state))) unresolved]))
+
+(defn- branches-response [req]
+  (let [cfgs (shown-cfgs (some-> (query-param req "preset") keyword))
+        view (:components @state/view-state)
+        ;; independent reads, at the same time: the worktrees no preset uses, and each project's git
+        unused (future (let [[users] (worktree-users)
+                             repos (compose/catalog-repos @state/catalog)]
+                         (vec (for [{:keys [path repo head]} (branch/worktrees)
+                                    :when (and (contains? repos repo) (empty? (get users path)))]
+                                {:path path :repo repo :head head :modified (.lastModified (java.io.File. ^String path))}))))
+        ;; realized here, while `unused` runs: pmap is lazy
+        projects (doall
+                  (pmap (fn [[dir kcs]]
+                        (let [kcs (sort-by key kcs)
+                              cfg (val (first kcs))]
+                          (merge {:repo (:repo cfg)
+                                  :components (for [[k c] kcs]
+                                                (merge {:name k :kind (:kind c)}
+                                                       (select-keys (get view k) [:status :deployed-sha])))}
+                                 (try (if-let [{:keys [git from branch] :as p} (graph/project cfg)]
+                                        ;; a worktree is detached: its branch is the preset's
+                                        (assoc p :where (render/runs-from (assoc git :from from :branch (if (#{:origin :local} from) branch (:branch git)))
+                                                                          dir (System/currentTimeMillis)))
+                                        {:error (str dir " isn't a checkout")})
+                                      (catch Exception e {:error (ex-message e)})))))
+                        (group-by (comp source/checkout-dir val) cfgs)))]
+    (json-response {:projects projects :unused @unused})))
+
+(defn- fetch-response
+  "POST /api/branches/fetch[?preset=]: `git fetch origin` in every clone shown, in parallel."
+  [req]
+  (let [clones (distinct (for [[_ cfg] (shown-cfgs (some-> (query-param req "preset") keyword))]
+                           (source/clone-dir cfg)))
+        failed (into {} (keep (fn [[dir why]] (when why [dir why]))) (pmap (juxt identity source/fetch!) clones))]
+    (json-response {:ok (empty? failed) :fetched (count clones) :failed failed})))
+
+(defn- prune-response
+  "POST /api/worktrees/prune: removes the worktrees no preset uses and nothing runs from
+  (branch/prune!) - refused while a preset doesn't resolve: it may use any."
+  []
+  (let [[users unresolved] (worktree-users)]
+    (if (seq unresolved)
+      (error-response 409 (str "not pruning: " (str/join ", " (map name (sort unresolved))) " doesn't resolve, it may use any worktree"))
+      (let [{:keys [removed kept]} (branch/prune! (branch/worktrees) users (compose/catalog-repos @state/catalog))]
+        (json-response {:removed (map :path removed) :kept (for [[e why] kept] {:path (:path e) :why why})})))))
+
 (defn- resource-page [path]
   {:status 200
    :headers {"Content-Type" "text/html; charset=utf-8"}
@@ -453,8 +527,22 @@
     ;; (this ns never requires zent.engine). Each answers {:ok true :id n :seq s}:
     ;; done once n is in :done; /api/events from s shows what it caused
     ;; (zent.client/await!).
-    (and (= (:request-method req) :post) (re-matches #"/api/(rebase|checkout)/.*" (:uri req)))
-    (let [[_ op n] (re-matches #"/api/(rebase|checkout)/(.*)" (:uri req))
+    (and (= (:request-method req) :get) (= (:uri req) "/api/branches"))
+    (branches-response req)
+
+    (and (= (:request-method req) :post) (= (:uri req) "/api/branches/fetch"))
+    (fetch-response req)
+
+    (and (= (:request-method req) :post) (= (:uri req) "/api/worktrees/prune"))
+    (prune-response)
+
+    (and (= (:request-method req) :post) (re-matches #"/api/undo/\d+" (:uri req)))
+    (if-let [id (state/request-undo! (parse-long (subs (:uri req) (count "/api/undo/"))))]
+      (queued id)
+      (error-response 404 "nothing to undo there - already undone, or too old"))
+
+    (and (= (:request-method req) :post) (re-matches #"/api/(rebase|checkout|push|sync)/.*" (:uri req)))
+    (let [[_ op n] (re-matches #"/api/(rebase|checkout|push|sync)/(.*)" (:uri req))
           ;; from a preview: the component as that preset resolves it, not as the applied one does
           previewed (some-> (query-param req "preset") keyword)]
       (if-let [id (state/request-git! (keyword op) (keyword n)

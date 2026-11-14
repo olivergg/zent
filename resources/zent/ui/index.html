@@ -26,6 +26,7 @@
       <a href="#stack" data-tab="stack" data-tip-key="tab/stack">Stack</a>
       <a href="#logs" data-tab="logs" data-tip-key="tab/logs">Logs</a>
       <a href="#checks" data-tab="checks" id="checks-tab" hidden data-tip-key="tab/checks">Checks<span class="tab-badge" id="checks-badge" hidden></span></a>
+      <a href="#branches" data-tab="branches" data-tip-key="tab/branches">Branches<span class="tab-badge" id="branches-badge" hidden></span></a>
     </nav>
     <div class="run" id="run" data-state="idle">
       <!-- the preset's name opens the presets: pick one to preview it, ▶ to apply it -->
@@ -103,6 +104,18 @@
     </div>
     <nav class="chk-pane chk-list" id="checks-tree"></nav>
     <article class="chk-pane chk-detail" id="checks-detail"></article>
+  </section>
+
+  <!-- each repo the preset runs as a git graph tool draws it, what needs doing first (index.js renderBranches) -->
+  <section class="branches-view" id="branches-view" aria-label="branches">
+    <div class="br-summary">
+      <span class="headline" id="branches-headline"></span>
+      <span class="br-fetch"><span id="branches-fetched"></span><button type="button" id="branches-fetch"
+            data-tip="Fetch\ngit fetch origin in every repo shown: origin's branches move, none of yours">Fetch</button></span>
+      <span class="br-legend" id="branches-legend"></span>
+    </div>
+    <div class="br-grid" id="branches-grid"></div>
+    <div class="br-unused" id="branches-unused" hidden></div>
   </section>
 
   <section class="logs-view" id="logs-view" aria-label="logs">

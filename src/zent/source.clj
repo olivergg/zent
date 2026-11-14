@@ -61,6 +61,9 @@
                                   (or (current-branch dir) "no branch"))
                              {:dir dir :hint (str "git -C " dir " checkout " branch)}))))))
 
+(defn clone-dir "`cfg`'s main clone, whatever it runs from - no git call." [{:keys [repo workspace-dir]}]
+  (main-clone-dir repo workspace-dir))
+
 (defn checkout-dir
   "The dir a component runs from - its worktree for :from :origin/:local, else the main clone -
   WITHOUT resolve-source's side effects (creating, fetching and hard-resetting worktrees): what a
@@ -104,34 +107,35 @@
 
   nil when `dir` isn't a checkout."
   [dir]
-  (when-let [{:keys [sha branch] :as st} (some-> (git dir "status" "--porcelain=v2" "--branch") parse-status)]
-    (let [origin "refs/remotes/origin/"
-          refs (into {} (keep #(let [[r sym] (str/split % #" ")] (when (seq r) [r sym])))
-                     (str/split-lines (or (apply git dir "for-each-ref" "--format=%(refname) %(symref)"
-                                                 (cond-> (mapv #(str origin %) ["HEAD" "master" "main"])
-                                                   branch (conj (str origin branch))))
-                                          "")))
-          base (or (some-> (get refs (str origin "HEAD")) not-empty (str/replace origin ""))
-                   (first (filter #(contains? refs (str origin %)) ["master" "main"])))
-          pushed (and branch (contains? refs (str origin branch)))
-          fetched-at (when-let [[own common] (some-> (git dir "rev-parse" "--path-format=absolute" "--git-path" "FETCH_HEAD"
-                                                          "--git-common-dir")
-                                                     str/split-lines)]
-                       (let [t (max (.lastModified (java.io.File. (str own))) (.lastModified (java.io.File. (str common "/FETCH_HEAD"))))]
-                         (when (pos? t) t)))]
-      (cond-> (assoc st :pushed (boolean pushed))
-        base (assoc :base base :behind (rev-count dir (str "HEAD..origin/" base)))
-        sha (assoc :ahead (if pushed
-                            (rev-count dir (str "origin/" branch "..HEAD"))
-                            (rev-count dir "HEAD" "--not" "--remotes=origin")))
-        fetched-at (assoc :fetched-at fetched-at)))))
+  ;; git processes, ~10 ms each to start: the independent ones at the same time - status (the slow one
+  ;; on a big repo), origin's refs, the fetch time; then both counts
+  (let [origin "refs/remotes/origin/"
+        status (future (some-> (git dir "status" "--porcelain=v2" "--branch") parse-status))
+        refs (future (into {} (keep #(let [[r sym] (str/split % #" ")] (when (seq r) [r sym])))
+                           (str/split-lines (or (git dir "for-each-ref" "--format=%(refname) %(symref)" origin) ""))))
+        fetched-at (future (when-let [[own common] (some-> (git dir "rev-parse" "--path-format=absolute" "--git-path" "FETCH_HEAD"
+                                                                "--git-common-dir")
+                                                           str/split-lines)]
+                             (let [t (max (.lastModified (java.io.File. (str own))) (.lastModified (java.io.File. (str common "/FETCH_HEAD"))))]
+                               (when (pos? t) t))))]
+    (when-let [{:keys [sha branch] :as st} @status]
+      (let [refs @refs
+            base (or (some-> (get refs (str origin "HEAD")) not-empty (str/replace origin ""))
+                     (first (filter #(contains? refs (str origin %)) ["master" "main"])))
+            pushed (and branch (contains? refs (str origin branch)))
+            behind (when base (future (rev-count dir (str "HEAD..origin/" base))))
+            ahead (when sha (future (if pushed
+                                      (rev-count dir (str "origin/" branch "..HEAD"))
+                                      (rev-count dir "HEAD" "--not" "--remotes=origin"))))]
+        (cond-> (assoc st :pushed (boolean pushed))
+          base (assoc :base base :behind @behind)
+          sha (assoc :ahead @ahead)
+          @fetched-at (assoc :fetched-at @fetched-at))))))
 
 (defn- checked-out-at
   "The checkout (main clone or worktree) of `dir`'s repo that has branch `ref` checked out, or nil."
   [dir ref]
-  (->> (str/split (or (git dir "worktree" "list" "--porcelain") "") #"\n\n")
-       (some #(when (str/includes? (str % "\n") (str "\nbranch " ref "\n"))
-                (subs (first (str/split-lines %)) (count "worktree "))))))
+  (some #(when (= ref (:ref %)) (:path %)) (branch/checkouts dir)))
 
 (defn checkout-git
   "git-status of the dir `cfg` runs from, with :from (zent.source/from). For a worktree, also :pull -
@@ -165,6 +169,14 @@
         (= branch base) (str "on " base " itself")
         (pos? (or dirty 0)) (str dirty " uncommitted file(s): commit or stash them first")
         (not (pos? (or behind 0))) (str "already on origin/" base)))
+
+(defn merge-conflicts
+  "What rebasing `tip` onto `onto` in `dir`'s repo would conflict on, by git merge-tree (no checkout
+  touched): nil when it merges clean, else the conflicted paths - [] when merge-tree failed outright."
+  [dir onto tip]
+  (let [{:keys [exit out]} (shell/sh! ["git" "-C" dir "merge-tree" "--write-tree" "--name-only" "--no-messages" onto tip])]
+    (when-not (zero? exit)
+      (if (= 1 exit) (vec (distinct (rest (remove str/blank? (str/split-lines (str out)))))) []))))
 
 (defn- run-rebase!
   "`git rebase onto` in `dir`, aborted if it stops: nil, or why it failed."
@@ -204,8 +216,9 @@
                   (and (= :local mode) (not (git dir "rev-parse" "--verify" "--quiet" local)))
                   (str "no local branch " branch " to rebase")
                   :else (or (rebase-refusal st)
-                            (when-not (zero? (:exit (shell/sh! ["git" "-C" dir "merge-tree" "--write-tree" "--quiet" onto tip])))
-                              (str (:branch st) " conflicts with " onto ": rebase it by hand"))))
+                            (when-let [files (merge-conflicts dir onto tip)]
+                              (str (:branch st) " conflicts with " onto (when (seq files) (str " on " (str/join ", " files)))
+                                   ": rebase it by hand"))))
         done (str " onto " onto " (" behind " commit(s))")]
     (cond
       why {:ok false :message why}
@@ -221,6 +234,7 @@
             (if failed
               {:ok false :message failed}
               {:ok true
+               :undo ["git" "-C" (main-clone-dir (:repo cfg) (:workspace-dir cfg)) "branch" "-f" branch old]
                :message (str "rebased " branch done " - undo: git -C " (main-clone-dir (:repo cfg) (:workspace-dir cfg))
                              " branch -f " branch " " old
                              (when (git dir "rev-parse" "--verify" "--quiet" (str "refs/remotes/origin/" branch))
@@ -238,7 +252,9 @@
       (if-let [failed (run-rebase! dir onto (:branch st))]
         {:ok false :message failed}
         {:ok true
-         :message (str "rebased " (:branch st) done " - undo: git -C " dir " reset --hard ORIG_HEAD"
+         ;; ORIG_HEAD is the commit before the rebase; --keep: nothing uncommitted is lost (none was allowed in)
+         :undo ["git" "-C" dir "reset" "--quiet" "--keep" (git dir "rev-parse" "ORIG_HEAD")]
+         :message (str "rebased " (:branch st) done " - undo: git -C " dir " reset --keep ORIG_HEAD"
                        (when pushed (str "; origin/" (:branch st) " is now behind it: push --force-with-lease")))}))))
 
 (defn checkout-refusal
@@ -267,8 +283,78 @@
             (shell/sh! ["git" "-C" dir "fetch" "--quiet" "--no-prune" "origin" branch]))
           (let [{:keys [exit err]} (shell/sh! ["git" "-C" dir "checkout" "--quiet" branch "--"])]
             (if (zero? exit)
-              {:ok true :message (str "checked out " branch " - undo: git -C " dir " checkout " (or (:branch st) (:sha st)))}
+              {:ok true
+               :undo (into ["git" "-C" dir "checkout" "--quiet"] (if (:branch st) [(:branch st) "--"] ["--detach" (:sha st)]))
+               :message (str "checked out " branch " - undo: git -C " dir " checkout " (or (:branch st) (:sha st)))}
               {:ok false :message (str branch " can't be checked out (" (str/trim (str err)) ")")}))))))
+
+(def ^:private no-prompt
+  "A git that needs credentials fails rather than waiting on a prompt nobody sees."
+  {"GIT_TERMINAL_PROMPT" "0"})
+
+(defn fetch!
+  "`git fetch origin` in `dir`: every origin/* ref, none pruned, no local branch moved. nil, or why it failed."
+  [dir]
+  (let [{:keys [exit err]} (shell/sh! ["git" "-C" dir "fetch" "--quiet" "--no-prune" "origin"] :env no-prompt)]
+    (when-not (zero? exit) (str/trim (str err)))))
+
+(defn push-refusal
+  "Why the local `branch` can't be pushed - nil when it can: a branch, not the default one, with commits
+  origin doesn't have."
+  [{:keys [branch base sha ahead]}]
+  (cond (not branch) "detached HEAD: no branch to push"
+        (some #{branch} ["main" "master" base]) (str branch " is the default branch: push it by hand")
+        (not sha) (str "no local branch " branch)
+        (not (pos? (or ahead 0))) (str branch " has nothing origin doesn't")))
+
+(defn push!
+  "Pushes the local branch `cfg` runs (its :branch, else what its main clone has out) to origin: a plain
+  push, or --force-with-lease pinned to origin's commit when origin has commits it doesn't (a rebase) -
+  never the default branch. {:ok :message}."
+  [cfg]
+  (let [dir (main-clone-dir (:repo cfg) (:workspace-dir cfg))
+        st (git-status dir)
+        branch (or (:branch cfg) (:branch st))
+        sha (when branch (git dir "rev-parse" "--verify" "--quiet" (str "refs/heads/" branch)))
+        theirs (when sha (git dir "rev-parse" "--verify" "--quiet" (str "refs/remotes/origin/" branch)))
+        ahead (when sha (if theirs (rev-count dir (str theirs ".." sha)) (rev-count dir sha "--not" "--remotes=origin")))
+        behind (if theirs (rev-count dir (str sha ".." theirs)) 0)
+        why (push-refusal {:branch branch :base (:base st) :sha sha :ahead ahead})]
+    (if why
+      {:ok false :message why}
+      (let [force? (pos? behind)
+            {:keys [exit err]} (shell/sh! (-> ["git" "-C" dir "push" "--quiet"]
+                                              (cond-> force? (conj (str "--force-with-lease=refs/heads/" branch ":" theirs)))
+                                              (conj "origin" (str "refs/heads/" branch ":refs/heads/" branch)))
+                                          :env no-prompt)]
+        (if (zero? exit)
+          {:ok true :message (str "pushed " branch ", " ahead " commit(s)"
+                                  (when force? (str ", replacing " behind " on origin (force-with-lease)")))}
+          {:ok false :message (str "the push failed: " (str/trim (str err)))})))))
+
+(defn sync-clone!
+  "Fast-forwards the branch `cfg`'s main clone has out to origin/<it>: refused when detached, when it has
+  commits origin doesn't (rebase it by hand), or when there's nothing to take. {:ok :message :undo}."
+  [cfg]
+  (let [dir (main-clone-dir (:repo cfg) (:workspace-dir cfg))
+        {:keys [branch sha]} (git-status dir)
+        theirs (when branch (git dir "rev-parse" "--verify" "--quiet" (str "refs/remotes/origin/" branch)))
+        behind (when theirs (rev-count dir (str "HEAD.." theirs)))
+        ahead (when theirs (rev-count dir (str theirs "..HEAD")))
+        why (cond (not branch) "detached HEAD: nothing to sync"
+                  (not theirs) (str "no origin/" branch " to sync with")
+                  (pos? ahead) (str branch " has " ahead " commit(s) origin doesn't: rebase it by hand")
+                  (not (pos? behind)) (str branch " is already on origin/" branch))]
+    (if why
+      {:ok false :message why}
+      (let [{:keys [exit err]} (shell/sh! ["git" "-C" dir "merge" "--quiet" "--ff-only" theirs])]
+        (if (zero? exit)
+          {:ok true
+           ;; --keep: what's uncommitted stays
+           :undo ["git" "-C" dir "reset" "--quiet" "--keep" sha]
+           :message (str "fast-forwarded " branch " to origin/" branch ", " behind " commit(s) - undo: git -C " dir
+                         " reset --keep " (subs sha 0 7))}
+          {:ok false :message (str "the fast-forward stopped: " (str/trim (str err)))})))))
 
 (defn describe
   "Where a component's code actually comes from, for display:
