@@ -429,6 +429,10 @@
 
 (defn version "This zent's version, as bin/zent computed it." [] (System/getenv "ZENT_VERSION"))
 
+(def ^:private static-types
+  {"/htmx.min.js" "text/javascript; charset=utf-8" "/ansi_up.js" "text/javascript; charset=utf-8"
+   "/favicon.svg" "image/svg+xml" "/logo.svg" "image/svg+xml"})
+
 (defn app [req]
   (cond
     (not (local-host? (get-in req [:headers "host"])))
@@ -451,10 +455,10 @@
                "Cache-Control" "no-cache"}
      :body (slurp (io/resource (str "zent/ui" (:uri req))))}
 
-    ;; vendored, not CDN-loaded: the dashboard works offline. ansi_up (MIT)
-    ;; renders the logs' terminal colours
-    (and (= (:request-method req) :get) (#{"/htmx.min.js" "/ansi_up.js"} (:uri req)))
-    {:status 200 :headers {"Content-Type" "text/javascript; charset=utf-8"}
+    ;; the icons, and the libs vendored, not CDN-loaded: the dashboard works
+    ;; offline. ansi_up (MIT) renders the logs' terminal colours
+    (and (= (:request-method req) :get) (static-types (:uri req)))
+    {:status 200 :headers {"Content-Type" (static-types (:uri req))}
      :body (slurp (io/resource (str "zent/ui" (:uri req))))}
 
     (and (= (:request-method req) :get) (= (:uri req) "/api/token"))

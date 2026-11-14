@@ -78,7 +78,13 @@ body {
   letter-spacing: 0.34em;
   text-transform: uppercase;
   margin: 0;
+  /* the logo spans the name and the version under it */
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 10px;
+  align-items: center;
 }
+.wordmark .logo { grid-row: span 2; width: 28px; height: 28px; }
 .wordmark .version { display: block; line-height: 1; font-size: 9px; letter-spacing: 0.08em; text-transform: none; color: var(--muted); }
 
 /* what runs and its one big control, as one piece: the preset is a label
