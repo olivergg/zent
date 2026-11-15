@@ -17,6 +17,11 @@ needed.
 
 ## Why
 
+
+https://github.com/user-attachments/assets/743e97d5-529d-45de-a87f-e2a5faee8766
+
+
+
 Working on one service means running the ten around it, each in its own repo and started its own
 way: `docker compose up`, `mvn package` and a jar, a seed script, the IDE. By hand, you track the
 order, wait for each one, and later hunt for what still runs.
