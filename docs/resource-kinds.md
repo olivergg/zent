@@ -20,12 +20,12 @@ next month, without the catalog entry becoming a different thing.
 | 3 | one-off scripts, nothing stays up | `:one-shot` | yes |
 | 4 | an existing compose file, whole | `:docker-compose` | yes |
 | 5 | some services of an existing compose file | `:compose-services` | yes (+ discovery and `:exclude`) |
-| 6 | a registry image, run directly | via `:k8s` (`:image`) | no plain `docker run` kind - a compose file covers that |
-| 7 | a k8s workload from a repo's manifests | `:k8s` | yes - §4 |
+| 6 | a registry image, run directly | via `:k8s` (`:image`), not implemented yet | no plain `docker run` kind - a compose file covers that |
+| 7 | a k8s workload from a repo's manifests | `:k8s`, not implemented yet | §4 |
 | 8 | started by someone else, zent only probes it | `:external` | yes (was a *mode* - §3) |
 | 9 | not part of this run | `:mode :off` | a preset overlay (`:a {:mode :off}`); listing a component sets `:mode :on`, so a catalog never writes it. Still resolved: another component's `:source-env` reads its checkout (its `:branch` included) |
 
-All sections record done work.
+§2, §3 and §5 record done work; §4 is the plan for `:k8s`, not implemented yet.
 
 ## 2. Fixed: `:webapp` and `:front` weren't kinds
 
@@ -82,14 +82,15 @@ next to `:kind :external`.
 This works because the per-kind malli maps are open - the catalog's `:cmd`
 rides along harmlessly when a preset flips `:kind` to `:external`.
 
-## 4. Done: k8s (#7), and images through it (#6)
+## 4. Not implemented yet: k8s (#7), and images through it (#6)
 
-`:k8s` runs a prebuilt image in a cluster - never a build: the repo's manifests,
-rendered with kustomize (namespace injected, `:image-placeholder` swapped for
-`:image`, affinity optionally stripped), applied, waited on with `rollout
-status`, followed with `kubectl logs -f`, deleted on stop. `--context` must be
-in the catalog's `:allow-k8s-contexts`; a `:pull-secret` is created from its
-`:password-cmd`'s output (e.g. a registry login token). Port-forwarding is a separate `:process` component for now.
+The plan: `:k8s` would run a prebuilt image in a cluster, never a build. The
+repo's manifests rendered with kustomize (namespace injected, `:image-placeholder`
+swapped for `:image`, affinity optionally stripped), applied, waited on with
+`rollout status`, followed with `kubectl logs -f`, deleted on stop. `--context`
+in the catalog's `:allow-k8s-contexts`; a `:pull-secret` created from its
+`:password-cmd`'s output (e.g. a registry login token). Port-forwarding a separate
+`:process` component. Reading env vars from k8s Secrets (`:secret-env`) works today.
 
 ## 5. Granularity: one box per compose service?
 

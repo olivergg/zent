@@ -10,10 +10,43 @@
 
 ![zent dashboard demo](docs/demo.webp)
 
-A Clojure/Jolt orchestrator for local dev environments. This repo is the engine
-(`zent.*`: ordering, deploy, readiness, teardown, watch); what runs is a **catalog**, plain data
-kept in a repo of its own (see "A catalog repo" below, `docs/resource-kinds.md` for what a
-"kind" is).
+zent starts the local dev stack a task needs, in order, and stops it again. A catalog describes
+every service once; a preset names the few you need today. `zent apply <preset>` starts each one
+once its dependencies are ready; `zent apply <other>` switches, stopping only what's no longer
+needed.
+
+## Why
+
+Working on one service means running the ten around it, each in its own repo and started its own
+way: `docker compose up`, `mvn package` and a jar, a seed script, the IDE. By hand, you track the
+order, wait for each one, and later hunt for what still runs.
+
+In a team of teams these differences are normal, and zent keeps them. It reuses what each repo
+already has (compose file, build command, scripts) and adds only the sequencing and the
+bookkeeping. Converging on one way to deploy may still be worth it, as a separate effort; zent
+doesn't need it.
+
+- **Reuse first.** Compose runs containers, mvn builds, git manages worktrees. zent sequences
+  them and tracks what they started.
+- **One catalog, many presets.** The catalog says how each component starts, what it waits for
+  and how to tell it's up. A preset picks components and overrides a few keys (a branch, a port,
+  `:external` for the one in your IDE).
+- **Ready means ready.** A component starts once its `:deps` pass their readiness probes, up to
+  3 in parallel by default (local builds one at a time).
+- **zent stops only what it started.** It records what it launched, so stops still work after a
+  restart, and checks a PID's `ps` identity before killing it. `:permanent` and `:keep-warm`
+  components survive a switch.
+- **Your clone stays yours.** Another branch runs from a worktree of zent's, so your checkout and
+  uncommitted work don't move.
+- **The live stack can be judged** by the preset's checks (below).
+- **One daemon** serves the dashboard, the CLI and MCP, so an agent works through the same API
+  as you.
+
+Kubernetes is partial for now: env vars from k8s Secrets (`:secret-env`) work, but the `:k8s`
+kind, which would run a workload in a cluster, isn't implemented yet.
+
+This repo is the engine (`src/zent/`). A catalog is plain data in a repo of its own (below; what a
+"kind" is: `docs/resource-kinds.md`).
 
 ## Quickstart
 
@@ -26,11 +59,11 @@ brew tap olivergg/zent https://github.com/olivergg/zent
 brew trust --formula olivergg/zent/zent
 brew install --HEAD zent                                 # HEAD until a release is tagged
 brew update && brew upgrade --fetch-HEAD zent            # later, to update; then, with a daemon up:
-zent shutdown && zent serve --detach                     # move it onto the new version - stops all but :permanent
-zent apply <preset>                                      # so bring your preset back up
+zent shutdown && zent serve --detach                     # restart it on the new version (stops all but :permanent)
+zent apply <preset>                                      # and bring your preset back up
 ```
 
-Then, from anywhere inside a catalog repo (below):
+Then, from anywhere inside a catalog repo:
 
 ```
 zent check                     # every preset validates
@@ -39,12 +72,12 @@ zent apply <preset>            # start it, wait until it settled
 zent version                   # the installed zent (brew: HEAD-<sha>)
 ```
 
-MCP: any client runs `zent mcp` (stdio) from inside the catalog repo - e.g. a committed
-`.mcp.json` `{"mcpServers": {"zent": {"command": "zent", "args": ["mcp"]}}}` for Claude
-Code. A client starting it elsewhere sets `ZENT_CATALOG` to the repo's path.
+For MCP, any client runs `zent mcp` (stdio) from inside the catalog repo. For Claude Code, a
+committed `.mcp.json` holds `{"mcpServers": {"zent": {"command": "zent", "args": ["mcp"]}}}`. A
+client that starts it elsewhere sets `ZENT_CATALOG` to the repo's path.
 
-To work on the engine itself, run a clone instead: `ln -s $PWD/bin/zent ~/.local/bin/zent`,
-on a PATH entry ahead of Homebrew's.
+To work on the engine itself, run a clone instead: `ln -s $PWD/bin/zent ~/.local/bin/zent`, on a
+PATH entry ahead of Homebrew's.
 
 ## A catalog repo
 
@@ -54,15 +87,22 @@ presets/*.edn    one preset per file, named after it
 checks/          optional: deps.edn ({:paths ["." "lib"] ...}) + <preset>/<check>.clj + lib/  (zent.checks)
 ```
 
-Plain data, no code and no deps: `zent` runs the catalog repo enclosing the current directory
-(the first parent with a `catalog.edn`, or `$ZENT_CATALOG`) with the engine it was installed
-from. `zent check` validates every preset (a catalog's test).
+A catalog repo is data: no dependencies, no build. `zent` finds it like git finds `.git` (the
+first parent with a `catalog.edn`, or `$ZENT_CATALOG`). `zent check` validates every preset; it's
+the catalog's test.
 
-The one exception is `checks/`: a preset's checks, clojure.test namespaces judging its
-running stack - each file a check, its deftests the tests, run in a JVM
-`clojure -M` from `checks/` (the [Clojure CLI](https://clojure.org/guides/install_clojure)).
-The directory is the preset's name, munged like a namespace (`my-preset` → `my_preset`), and
-the ns attr-map says what it reads:
+### Checks
+
+Checks don't replace unit, integration or end-to-end tests; they add what those can't reach.
+A check runs against the whole stack as it runs, so it can assert on any component, on values
+that exist only at runtime: a row in the database, a message on the broker, what two services
+answer for the same input. That makes metamorphic tests possible (run twice with related inputs,
+compare), and what a check finds often tells which unit or E2E test to write next.
+
+`checks/` is the catalog's only code. Each file is a check, a clojure.test namespace run on the
+JVM (`clojure -M` from `checks/`, the [Clojure CLI](https://clojure.org/guides/install_clojure)),
+since checks talk to JVM services. Its directory is the preset's name, munged like a namespace
+(`my-preset` becomes `my_preset`); its ns attr-map names the components it reads:
 
 ```clojure
 (ns my_preset.orders
@@ -70,63 +110,57 @@ the ns attr-map says what it reads:
   (:require [clojure.test :refer [deftest is]]))
 ```
 
-A check is read-only; one that writes (a scenario: it acts, then asserts) says
-`:zent/writes true` in its attr-map, and runs only when named (`zent verify <preset> <check>`,
-the dashboard asking first) - never with the preset's other checks. A deftest's
-`:zent/kind` (`:invariant`, `:pseudo-oracle`, `:metamorphic`, `:heuristic`, ...) says what
-kind of oracle it is, shown next to it. A test may also say what it judged, passing or not -
-`(clojure.test/do-report {:type :zent/note :note "63 plug-ins, largest gap 1 min"})`, shown
-under it in `zent verify` and the Checks tab.
+- A check only reads. One that acts first (a scenario) says `:zent/writes true` and runs only
+  when named (`zent verify <preset> <check>`, or once the dashboard asks).
+- A deftest's `:zent/kind` (`:invariant`, `:pseudo-oracle`, `:metamorphic`, `:heuristic`...)
+  names its kind of oracle; zent only displays it.
+- `(clojure.test/do-report {:type :zent/note :note "63 plug-ins, largest gap 1 min"})` records
+  what a test judged, shown under it, passing or not.
+- Shared code goes in `checks/lib/`, on the `:paths` (`lib/acme/db.clj` is `acme.db`).
 
-Code several checks share goes in `checks/lib/`, on the `:paths` (`lib/acme/db.clj` is
-`acme.db`); discovery skips it.
-
-A result is `:pass`, `:fail` or `:unknown` (it couldn't judge: an exception, nothing run).
-`zent verify [<preset> [<check>...]] [--only=<test>,...]` runs them (MCP: `verify`), the
-dashboard's Checks tab too, live, with each test's latest result and the history; results
-are kept in `~/.cache/zent/checks/`. `zent check` refuses a check whose preset is gone or
-that observes a component its preset doesn't run.
+A result is `:pass`, `:fail` or `:unknown` (couldn't judge: an exception, nothing run).
+`zent verify [<preset> [<check>...]] [--only=<test>,...]`, the MCP `verify` tool and the Checks tab
+run them; results and history live in `~/.cache/zent/checks/`. `zent check` refuses a check whose
+preset is gone or that observes a component its preset doesn't run.
 
 ## Running it
 
-`zent help` lists every verb, `zent help <verb>` (or `zent <verb> --help`) details one.
+`zent help` lists every verb, and `zent help <verb>` (or `zent <verb> --help`) details one.
 
 | To | CLI | MCP tool |
 |---|---|---|
 | pick a stack | `zent presets`, `zent preview <preset>`, `zent apply <preset>` | `list_presets`, `preview`, `apply` |
 | see what runs | `zent status` (dashboard: `zent serve --detach --ui`) | `status` |
 | iterate on a component | `zent reload <c>`, then `zent logs [-f] <c>` | `reload`, `logs` |
-| run what's new on a `:branch` (origin's or your local one, by `:from`) | `zent pull <c>` (or the card's `pull`) | - |
-| catch a branch up with origin's default one - the clone's, your local one (`:from :local`), or as a local test (`:origin`, reverted at the next sync) | `zent rebase <c>` (or the card's `rebase` / `test on <default>`), then `zent reload <c>` | - |
-| put a `:from :clone` component's clone on the preset's `:branch` (nothing uncommitted; fetched when only origin has it) | the card's `checkout`, also in a preview | - |
-| list / clean up the `:branch` worktrees | `zent worktrees`, `zent worktrees prune` | - |
-| stop some / all but `:permanent` | `zent stop <c>...` / `zent stop` | `stop` |
+| run what's new on a `:branch` | `zent pull <c>`, or the card's `pull` | - |
+| rebase a branch onto origin's default one | `zent rebase <c>`, then `zent reload <c>` | - |
+| put a `:from :clone` clone on the preset's `:branch` | the card's `checkout`, also in a preview | - |
+| list or clean up the `:branch` worktrees | `zent worktrees`, `zent worktrees prune` | - |
+| stop some, or all but `:permanent` | `zent stop <c>...`, `zent stop` | `stop` |
 | judge the running stack | `zent verify [<preset> [<check>...]]` | `verify` |
 | test a catalog edit | `zent check` | - |
-| try an engine edit | `zent reload-code` (a loop change: `zent shutdown`, `zent apply <preset>`) | `reload_code` |
-| run a branch of your own | `zent preset save mine '{:api {:mode :on :branch "fix-x"}}'`, `zent mine` | `save_preset`, `apply` |
+| try an engine edit | `zent reload-code` (for a loop change, `zent shutdown`, then `zent apply <preset>`) | `reload_code` |
+| run a branch of your own | `zent preset save mine '{:api {:mode :on :branch "fix-x"}}'`, then `zent mine` | `save_preset`, `apply` |
 | end the day | `zent shutdown` (`:permanent` components stay up) | - |
 
-The dashboard's **Logs** tab (`/#logs`) streams the components' output, interleaved and
-coloured per component, container output included. Pills work like a chart legend (click:
-only this one, again: all; ctrl/cmd-click: add or remove), and filters (`text`, `/regexp/`,
+The dashboard's **Logs** tab (`/#logs`) interleaves every component's output, containers
+included, so one request can be followed across services. Pills work like a chart legend (click:
+only this one, again: all; ctrl/cmd-click: add or remove); filters (`text`, `/regexp/`,
 warnings, errors) live in the URL.
 
-The **Branches** tab (`/#branches`) draws each repo the preset runs as a git graph: your
-branches and origin's (one label when they coincide, ↑↓ when they don't), your clone's HEAD,
-zent's worktree and the commit running. What needs doing comes first, with its action (push,
-fast-forward, pull, rebase, checkout, reload) - a hover says what it would do, a toast offers
-the undo. It reads the repos as they are; its Fetch button alone reaches origin (no prune, no
-local branch moved). Its footer cleans up the worktrees no preset uses.
+The **Branches** tab (`/#branches`) draws each repo the preset runs as a git graph (your branches
+and origin's, your HEAD, zent's worktree, the commit running) and lists first what needs doing,
+with its action: push, fast-forward, pull, rebase, checkout, reload. A hover says what an action
+does; a toast offers its undo. Only its Fetch button reaches origin, without pruning or moving a
+local branch.
 
-Presets live under the catalog's `presets/*.edn`, one file per preset. Use `127.0.0.1`, not
-`localhost`, for the dashboard: IPv6-first resolution hangs the websocket. Never run a bare
-`zent down` to clean up: the session also tracks stacks you started yourself.
+Use `127.0.0.1`, not `localhost`, for the dashboard: IPv6-first resolution hangs the websocket.
+Don't run a bare `zent down` to clean up: the session also tracks stacks you started yourself.
 
 ## For Java/Python developers
 
-Using zent means reading and editing data, not writing Clojure. Only the engine
-(`src/zent/`) needs the language.
+Using zent means reading and editing data, not writing Clojure. Only the engine (`src/zent/`)
+needs the language.
 
 | zent | Closest familiar thing |
 |---|---|
@@ -134,8 +168,8 @@ Using zent means reading and editing data, not writing Clojure. Only the engine
 | component (`:broker`, `:webapp`...) | a service in that file |
 | `:deps` | `depends_on`, but waits until the dependency is actually ready |
 | preset | a Spring/Maven profile: "today I run these 4 services" |
-| daemon | a supervisor (`systemd`, `pm2`): starts, watches, restarts |
-| `:kind` | `:docker-compose`, `:quarkus-app` (`mvn package`, then the built jar), `:one-shot` (seed script), `:k8s`, `:external` (you run it from your IDE; zent only waits for it) |
+| daemon | a supervisor (`systemd`, `pm2`) that starts, watches and restarts |
+| `:kind` | `:docker-compose`, `:quarkus-app` (`mvn package`, then the built jar), `:one-shot` (seed script), `:k8s` (not implemented yet), `:external` (you run it from your IDE; zent only waits for it) |
 
 ### EDN in one minute
 
@@ -169,7 +203,7 @@ broker-seed:
   watch: {paths: [.], exts: [.avsc, .java]}
 ```
 
-A preset is a vector of component names; a map right after a name overrides it:
+A preset is a vector of component names. A map right after a name overrides that component:
 
 ```clojure
 [:webapp-deps
@@ -179,26 +213,44 @@ A preset is a vector of component names; a map right after a name overrides it:
                       :url "http://localhost:8080/health/readiness"}}]
 ```
 
-A `:branch` runs from where its `:from` says:
+Why EDN rather than JSON or YAML:
 
-| `:from` | runs | a sync (an apply that (re)deploys it, `zent pull <c>`) |
+- **Comments**, which JSON lacks. A catalog uses them to say why each value is what it is.
+- **No indentation rules or implicit typing.** In YAML, `no` turns into `false`, `3.10` into
+  `3.1`, and an indentation error goes unnoticed. In EDN a string is always quoted, and brackets
+  set the structure.
+- **Richer types.** Keywords (`:broker`) are distinct from strings, and sets are built in.
+- **Safe to read.** `clojure.edn/read-string` never evaluates code, so a catalog and its presets
+  stay pure data, and a catalog repo holds no code at all.
+
+### Running a branch
+
+A `:branch` in a preset runs that component from another branch; `:from` says which code:
+
+| `:from` | runs | a sync (an apply that (re)deploys it, or `zent pull <c>`) |
 |---|---|---|
-| `:origin` (default) | a worktree detached at `origin/<branch>`: what's pushed | fetches, then resets it to `origin/<branch>` |
-| `:local` | the same worktree, detached at your local `<branch>`: what's committed, no push needed | resets it to `<branch>`, no fetch |
-| `:clone` | your main clone as it is - refused unless it has `<branch>` checked out | nothing |
+| `:origin` (default) | a worktree detached at `origin/<branch>`: what's pushed | fetches, then resets the worktree to `origin/<branch>` |
+| `:local` | the same worktree, detached at your local `<branch>`: what's committed, no push needed | resets the worktree to `<branch>`, no fetch |
+| `:clone` | your main clone as it is, refused unless it has `<branch>` checked out | nothing |
 
-A reload keeps the commit there. The worktree is `~/.cache/zent/worktrees/<repo>-<branch>` either way,
-so switching `:origin`/`:local` is a reset (ignored build output stays). A sync never loses work: it
-refuses a worktree with uncommitted files or commits on no branch, saying how to keep them. Detached,
-the worktree holds no branch: your clone may check `<branch>` out meanwhile. `zent worktrees` lists them,
-`zent worktrees prune` removes those of this catalog's repos no preset uses, nothing runs from and that
-hold nothing; it refuses to run while a preset doesn't resolve or the session lists components no daemon answers for.
+The worktree (`~/.cache/zent/worktrees/<repo>-<branch>`) is there so your clone is never touched.
+Detached, it holds no branch: your clone can check `<branch>` out meanwhile. A reload keeps its
+commit; only a sync moves it, and a sync refuses a worktree holding uncommitted files or commits
+on no branch, saying how to keep them.
 
-A tool reading other repos gets their dirs through `:source-env` (`:one-shot`, `:process`,
-`:quarkus-app`; plain values go in `:env`). Each var is set to a component's checkout as the
-preset has it - its main clone, the current state on disk, unless the preset puts it on a
-`:branch` - or to a `:repo`'s main clone. The dashboard shows each dir and its branch on the
-card, preview included: what it will read, before it runs.
+`zent rebase <c>` fetches origin's default branch and rebases onto it if nothing conflicts. By
+`:from`, it moves the clone's branch (no `:branch`, `:clone`), your local `<branch>` (`:local`),
+or only the worktree's commit, as a test the next sync reverts (`:origin`). It never pushes.
+
+`zent worktrees prune` removes the clean worktrees of this catalog's repos that nothing uses, and
+refuses to guess while a preset doesn't resolve or no daemon answers for the session.
+
+### Reading other repos, and destructive steps
+
+A tool that reads other repos gets their directories through `:source-env` (`:one-shot`,
+`:process`, `:quarkus-app`; plain values go in `:env`): a component's checkout as the preset has
+it, or a `:repo`'s main clone. The card shows each directory and its branch, in a preview too,
+before anything runs.
 
 ```clojure
 :db-seed
@@ -209,71 +261,53 @@ card, preview included: what it will read, before it runs.
 [:db-seed :webapp {:mode :off :branch "feature/x"}]  ; seed from feature/x, webapp not started
 ```
 
-A destructive one-shot (a database reset) can be `:on-demand true`: listed in every preset that
-should offer it, an apply never runs it - it waits as "on demand" until `zent reload <it>` or its
-▶ button, which asks its `:confirm` question first, if it has one.
-
-Why EDN rather than JSON or YAML:
-
-- **Comments**, which JSON lacks. The catalog relies on them to explain the reason behind each value.
-- **No indentation rules or implicit typing.** In YAML, `no` turns into `false` and `3.10` into
-  `3.1`, and indentation errors are silent. In EDN a string is always quoted, and brackets set the structure.
-- **Richer types.** Keywords (`:broker`) are distinct from strings, and sets are built in.
-- **Safe to read.** `clojure.edn/read-string` never evaluates code: a catalog and its presets
-  are pure data, so a catalog repo holds no code at all.
+A destructive one-shot (a database reset) can be `:on-demand true`: offered by the presets that
+list it, never run by an apply, only by `zent reload <it>` or its ▶ button, which asks its
+`:confirm` question first.
 
 ### Typical day
 
-1. Clone the repos you need into (for example) `~/myworkdir/` (zent never clones).
-2. `preview`, then `apply` (a dry run first, like `terraform plan`: with a daemon up, it lists
-   what would stop, start or redeploy, and why). `apply` starts each component
-   once its dependencies are ready, up to 3 at once (local builds one at a time), and returns
-   once all are.
+1. Clone the repos you need (zent never clones).
+2. `preview`, then `apply`. The preview is a dry run, like `terraform plan`: what would stop,
+   start or redeploy, and why. `apply` returns once everything is ready.
 3. Run your own service in the IDE, if the preset marks it `:external`.
-4. Switch with `apply <other-preset>`. Whatever it doesn't name is stopped, except
-   `:keep-warm` (e.g. a broker) and `:permanent` (e.g. `webapp-deps`) components.
+4. Switch with `apply <other-preset>`: what it doesn't name stops, except `:keep-warm` and
+   `:permanent` components.
 
 ## One runtime: Jolt
 
-[Jolt](https://github.com/jolt-lang/jolt) is Clojure hosted on Chez Scheme instead of the
-JVM - no JVM startup cost, so `zent <preset>` responds like a real binary instead of paying
-a JVM boot every time. It's this project's only runtime: needs its own install (`jolt` on
-your PATH, separate from `clj`), reads straight from `src`/`test`/`resources`, no build step.
-
-HTTP deps are Jolt-native too: `jolt-lang/ring-chez-adapter` (server + websockets),
-`jolt-lang/http-client` (the CLI's client), `clojure.data.json` - see `zent.ui.server`'s
-docstring for why not http-kit/cheshire.
-
-Never call `jolt` directly unless you're debugging the engine itself; `zent` (`bin/zent`) is what
-every doc and docstring here means by "`zent <verb>`".
+[Jolt](https://github.com/jolt-lang/jolt) is Clojure on Chez Scheme, without the JVM: a CLI verb
+answers like a native binary instead of paying a JVM boot. It is zent's only runtime (`jolt` on
+your PATH, separate from `clj`), reading `src`/`test`/`resources` directly, with no build step.
+The HTTP deps are Jolt-native too (`jolt-lang/ring-chez-adapter`, `jolt-lang/http-client`,
+`clojure.data.json`; `zent.ui.server`'s docstring says why not http-kit or cheshire). Outside
+engine debugging, call `zent` (`bin/zent`), not `jolt`.
 
 ## Daemon and CLI
 
-`zent serve --detach` runs the resident daemon in the background (output in
-`~/.cache/zent/serve.log`, `zent attach` follows it). Every other verb - `apply`, `status`,
-`stop`, `reload`, `shutdown`, ... (full list: `zent help`) - is a client of its HTTP API,
-same as the dashboard; `zent apply <preset>` starts the daemon if none runs. The address
-and write token live in `~/.cache/zent/daemon.edn` (0600, see `zent.daemon`).
+The daemon (`zent serve --detach`, output in `~/.cache/zent/serve.log`, followed by
+`zent attach`) lets a stack outlive the command that started it, and gives the CLI, the dashboard
+and MCP one state. Every other verb is a client of its HTTP API; `zent apply` starts it if needed.
+Its address and write token are in `~/.cache/zent/daemon.edn` (0600).
 
-Presets of your own (`zent preset save <name> '<edn>'`, or by prompt through MCP) live in
-`~/.config/zent/presets/<catalog>/`, are validated against the catalog and registered with a
-running daemon on save. Unlike the catalog's own presets they may only pick components and set
-harmless keys (`schema/runtime-preset-keys`: branch, image, port, context...), never what code
-runs - otherwise a prompt could reach around every allowlist with a `:cmd`.
+Your own presets (`zent preset save <name> '<edn>'`, or a prompt through MCP) live in
+`~/.config/zent/presets/<catalog>/`, validated and registered with the daemon on save. They may
+only pick components and set harmless keys (`schema/runtime-preset-keys`: branch, image, port,
+context...), never what code runs: otherwise a prompt could reach around every allowlist with a
+`:cmd`.
 
-Secrets: a component's catalog entry may point env vars at k8s Secrets (`:secret-env`, read
-from contexts in `:allow-secret-contexts` only); a preset switches them on with
-`:use-secret-env true` and can't change what that component runs. Values go to the process env
-only, and the daemon masks them in `/api/logs` (what the MCP `logs` tool reads).
+A catalog entry may point env vars at k8s Secrets (`:secret-env`), read only from contexts in
+`:allow-secret-contexts`. A preset can switch them on (`:use-secret-env true`) but not change what
+runs with them, which could print them. Values reach the process env only, masked in `/api/logs`
+(what the MCP `logs` tool reads).
 
-`zent mcp` is an MCP server on stdio exposing the same verbs as tools (`zent.mcp`); setup in
-"Quickstart".
+`zent mcp` exposes the same verbs as MCP tools on stdio (setup in "Quickstart").
 
 ## Design docs
 
-- `docs/resource-kinds.md` - the mechanisms a component can run as (`:docker-compose`,
-  `:process`, `:external`, ...).
-- `docs/watch-design.md` - live reload (why polling, not a native watcher).
+- `docs/resource-kinds.md`: the mechanisms a component can run as (`:docker-compose`,
+  `:process`, `:external`...).
+- `docs/watch-design.md`: live reload, and why it polls instead of using a native watcher.
 
 ## Tests
 
@@ -281,8 +315,8 @@ only, and the daemon masks them in `/api/logs` (what the MCP `logs` tool reads).
 jolt test/runner.clj
 ```
 
-Jolt only: the HTTP deps bind Jolt internals (`jolt.ffi`, `jolt.io-poller`), so `clj` can't
-load the project.
+Jolt only: the HTTP deps bind Jolt internals (`jolt.ffi`, `jolt.io-poller`), so `clj` can't load
+the project.
 
 ## AI disclosure
 
