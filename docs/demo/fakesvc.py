@@ -1,11 +1,14 @@
 """A pretend service for the demo catalog: logs like a real one, answers GET /health.
 
-    python3 -u svc.py <name> <port> [--startup SECONDS]
+    python3 -u svc.py <name> <port> [--startup SECONDS] [--cpu SHARE]
+
+--cpu keeps that share of a core busy, for the card's CPU meter.
 """
 import http.server, random, sys, threading, time
 
 name, port = sys.argv[1], int(sys.argv[2])
-startup = float(sys.argv[sys.argv.index("--startup") + 1]) if "--startup" in sys.argv else 2
+opt = lambda flag, default: float(sys.argv[sys.argv.index(flag) + 1]) if flag in sys.argv else default
+startup, cpu = opt("--startup", 2), opt("--cpu", 0)
 COLORS = {"INFO": "\033[32m", "WARN": "\033[33m", "ERROR": "\033[31m", "DEBUG": "\033[36m"}
 
 CHATTER = {
@@ -21,6 +24,7 @@ CHATTER = {
     "storefront": [("INFO", "GET / 200 {d}ms"), ("INFO", "GET /cart 200 {d}ms"), ("DEBUG", "hmr update /src/Cart.tsx")],
     "mailer": [("INFO", "sent order confirmation to customer-{n}@example.com")],
     "payments": [("INFO", "POST /charges 200 {n}ms"), ("DEBUG", "breakpoint hit in ChargeService.capture")],
+    "notifier": [("INFO", "push sent to device-{n}")],
 }
 
 
@@ -34,6 +38,14 @@ def chatter():
         time.sleep(random.uniform(1.5, 4))
         level, msg = random.choice(lines)
         log(level, msg.format(n=random.randint(10, 99), d=random.randint(1, 9)))
+
+
+def burn():
+    while True:
+        end = time.monotonic() + cpu / 10
+        while time.monotonic() < end:
+            pass
+        time.sleep((1 - cpu) / 10)
 
 
 class Health(http.server.BaseHTTPRequestHandler):
@@ -53,4 +65,6 @@ time.sleep(startup / 2)
 server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Health)
 log("INFO", f"listening on :{port}")
 threading.Thread(target=chatter, daemon=True).start()
+if cpu:
+    threading.Thread(target=burn, daemon=True).start()
 server.serve_forever()

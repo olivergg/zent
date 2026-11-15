@@ -1,15 +1,18 @@
-// Drives the zent dashboard in headless Chrome through the demo scenario and records it as a webm.
+// Drives the zent dashboard in headless Chrome through the demo scenario, recording it as PNG
+// frames: <out-dir>/NNNNN.png, listed with how long each stays on screen in <out-dir>/frames.txt
+// ("<file> <ms>" per line). Chrome's screencast, not Playwright's video: lossless frames, sent
+// only when the page changes - its VP8 video blurred the cards' small type.
 // Usage: node record.js <dashboard-url> <out-dir>   (see record.sh, which does it all)
+const fs = require('fs');
 const { chromium } = require('playwright-core');
 const [url, outDir] = process.argv.slice(2);
-const W = 1280, H = 760;
+const W = 1280, H = 900, TICK = 100;  // frames resampled on a 100ms grid: 10 fps at most
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 (async () => {
   const b = await chromium.launch({ executablePath: CHROME, headless: true });
-  const ctx = await b.newContext({ viewport: { width: W, height: H },
-                                   recordVideo: { dir: outDir, size: { width: W, height: H } } });
-  // headless video has no pointer: draw one
+  const ctx = await b.newContext({ viewport: { width: W, height: H } });
+  // headless frames have no pointer: draw one
   await ctx.addInitScript(() => addEventListener('DOMContentLoaded', () => {
     const c = document.createElement('div');
     c.style.cssText = 'position:fixed;z-index:99999;width:14px;height:14px;border-radius:50%;'
@@ -21,60 +24,79 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
 
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
+  // every frame Chrome paints, with when (s); each acked, or Chrome stops sending
+  const shots = [], cdp = await ctx.newCDPSession(p);
+  cdp.on('Page.screencastFrame', ({ data, metadata, sessionId }) => {
+    cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
+    const png = Buffer.from(data, 'base64');
+    // the first ones can come before the page has its size: img2webp wants one size throughout
+    if (png.readUInt32BE(16) !== W || png.readUInt32BE(20) !== H) return;
+    const file = `${String(shots.length).padStart(5, '0')}.png`;
+    fs.writeFileSync(`${outDir}/${file}`, png);
+    shots.push({ file, t: metadata.timestamp * 1000 });
+  });
+  fs.mkdirSync(outDir, { recursive: true });
+  await cdp.send('Page.startScreencast', { format: 'png', maxWidth: W, maxHeight: H });
   const pause = ms => p.waitForTimeout(ms);
-  const click = async (sel, ms = 900) => {
-    const loc = p.locator(sel).first(), bb = await loc.boundingBox();
-    await p.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2, { steps: 12 }); await pause(350);
-    await loc.click(); await pause(ms);
+  const point = async (sel, ms = 900) => {
+    const bb = await p.locator(sel).first().boundingBox();
+    await p.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2, { steps: 12 }); await pause(ms);
   };
-  // every card of `names` in one of `states` (data-status, the UI's STATE_CLASS)
+  const click = async (sel, ms = 900) => { await point(sel, 350); await p.locator(sel).first().click(); await pause(ms); };
+  // every card of `want` in one of its states (data-status, the UI's STATE_CLASS)
   const until = (want, timeout = 60000) => p.waitForFunction(want => Object.entries(want).every(([n, states]) =>
     states.split(' ').includes(document.querySelector(`.node[data-name="${n}"]`)?.dataset.status)), want, { timeout });
   const card = n => `.node[data-name="${n}"]`;
-  const play = n => `.preset-row:has([data-preset="${n}"]) .act.play`;
+  const preview = async name => { await click('#preset', 700); await click(`[data-preset="${name}"]`, 2600); };
 
   await p.goto(url);
-  await p.waitForSelector('[data-preset="shop"]'); await pause(1200);
+  await p.waitForSelector('#preset'); await pause(1200);
 
-  // 1. preview a preset, then start it: the graph fills in, dependencies first
-  await click('[data-preset="shop"]', 2200);
-  await click('#preview-banner .play', 0);
-  await until({ postgres: 'up', seed: 'done', broker: 'up', 'catalog-api': 'up', 'orders-api': 'up', storefront: 'up' });
-  await pause(1800);
+  // 1. preview a preset - its verdict, what's worth a look - then start it: dependencies first
+  await preview('shop');
+  await click('#run-toggle', 0);
+  await until({ postgres: 'up', broker: 'up', 'catalog-api': 'up', 'orders-api': 'up', storefront: 'up' });
+  await pause(4000);                                                 // the meters fill in: orders-api runs hot
+  await point(card('orders-api'), 1800);
 
   // 2. a component's detail, then its logs
   await click(card('orders-api'), 1800);
-  await click('#detail .open-logs', 2500);
-  await click('.pill[aria-pressed="true"]', 1500);                   // again: every component
-  await click('#log-term', 200); await p.keyboard.type('/order|cart/', { delay: 60 }); await pause(1500);
+  await click('#detail .open-logs', 2200);
+  await click('#log-pills .pill[aria-pressed="true"]', 1200);       // again: every component
+  await click('#log-term', 200); await p.keyboard.type('/order|cart/', { delay: 60 }); await pause(1800);
   await p.fill('#log-term', ''); await p.dispatchEvent('#log-term', 'input'); await pause(300);
-  await click('[data-level="warn"]', 1500);
-  await click('[data-level=""]', 300);
+
   // 3. judge the running stack: the preset's checks, one failing
-  await click('#checks-tab', 1200);
+  await click('#tabs [data-tab="checks"]', 1000);
   await click('#checks-run-all', 0);
-  await p.waitForSelector('#checks-tree li[data-status="fail"]', { timeout: 60000 });
-  await p.waitForSelector('#checks-run-all:not([disabled])', { timeout: 60000 }); await pause(1200);
-  await click('#checks-tree li[data-status="fail"]', 3000);
-  await click('#tabs [data-tab="graph"]', 600);
-  await p.keyboard.press('Escape'); await pause(600);
+  await p.waitForSelector('#checks-run-all:not([disabled])', { timeout: 90000 }); await pause(1500);
+  await click('#checks-tree >> text=Orders listed', 2800);
 
-  // 4. preview a switch: what it stops, starts, keeps warm - then make it
-  await click('[data-preset="checkout"]', 3000);
-  await click('#preview-banner .play', 0);
-  await until({ payments: 'external', mailer: 'failed', 'orders-api': 'up' });
+  // 4. the repos the preset runs: catalog-api is behind main - rebase it, from here
+  await click('#tabs [data-tab="branches"]', 2200);
+  await click('#branches-grid button[data-verb="rebase"]', 1400);  // asks first, in a bubble
+  await click('#confirm-go', 0);
+  await p.waitForSelector('.toast', { timeout: 30000 }); await pause(3000);
+
+  // 5. switch preset: the preview says what it stops; the mailer's branch fails to build, the notifier is skipped
+  await click('#tabs [data-tab="stack"]', 800);
+  await preview('checkout');
+  await click('#run-toggle', 0);
+  await until({ payments: 'external', mailer: 'failed', notifier: 'skipped', 'orders-api': 'up' });
   await pause(1500);
-  await click(card('mailer') + ' .name', 3000);                      // its branch's build broke
+  await click(card('mailer'), 3500);
 
-  // 5. switch again: broker isn't needed but :keep-warm, postgres :permanent
-  await click(play('browse'), 0);
-  await until({ 'catalog-api': 'up', storefront: 'up', broker: 'idle' });
-  await pause(1500);
-  await click('#show-stopped', 2500);
-  await click(card('broker') + ' .act.stop', 0);
-  await until({ broker: 'stopped' }, 20000); await pause(2000);
-
-  const video = p.video(); await ctx.close(); await b.close();
+  await cdp.send('Page.stopScreencast');
+  const end = Date.now(); await ctx.close(); await b.close();
   if (errs.length) { console.error('page errors:', errs); process.exit(1); }
-  console.log(await video.path());
+
+  // on a TICK grid, the frame on screen at each tick; a frame held over several ticks, one entry
+  const timeline = [];
+  for (let t = shots[0].t, i = 0; t < end; t += TICK) {
+    while (i + 1 < shots.length && shots[i + 1].t <= t) i++;
+    const last = timeline[timeline.length - 1];
+    if (last?.file === shots[i].file) last.ms += TICK; else timeline.push({ file: shots[i].file, ms: TICK });
+  }
+  fs.writeFileSync(`${outDir}/frames.txt`, timeline.map(f => `${f.file} ${f.ms}\n`).join(''));
+  console.log(`${timeline.length} frames, ${((end - shots[0].t) / 1000).toFixed(1)}s`);
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

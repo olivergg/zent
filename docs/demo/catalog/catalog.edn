@@ -3,7 +3,7 @@
 {:name :acme
  :components
  {:postgres
-  {:kind :process :repo "shop-db" :cmd "python3 -u svc.py postgres 7101 --startup 3" :port 7101
+  {:kind :process :repo "shop-db" :cmd "python3 -u svc.py postgres 7101 --startup 2" :port 7101
    :readiness {:type :http-poll :url "http://127.0.0.1:7101/health"}
    :permanent true}
 
@@ -12,7 +12,7 @@
    :deps [:postgres] :attached-to :postgres :description "schema + 2,000 test orders"}
 
   :broker
-  {:kind :process :repo "shop-broker" :cmd "python3 -u svc.py broker 7102 --startup 4" :port 7102
+  {:kind :process :repo "shop-broker" :cmd "python3 -u svc.py broker 7102 --startup 2" :port 7102
    :readiness {:type :http-poll :url "http://127.0.0.1:7102/health"}
    :keep-warm true}
 
@@ -22,13 +22,17 @@
    :links [{:url "http://127.0.0.1:7103/health" :label "health"}]}
 
   :orders-api
-  {:kind :process :repo "orders-api" :cmd "python3 -u svc.py orders-api 7104 --startup 4" :port 7104
+  {:kind :process :repo "orders-api" :cmd "python3 -u svc.py orders-api 7104 --startup 3 --cpu 0.7" :port 7104
    :deps [:seed :broker] :readiness {:type :http-poll :url "http://127.0.0.1:7104/health"}
    :links [{:url "http://127.0.0.1:7104/health" :label "health"}]}
 
   :mailer
   {:kind :process :repo "mailer" :build-cmd "./build.sh" :cmd "python3 -u svc.py mailer 7105" :port 7105
    :deps [:broker] :readiness {:type :http-poll :url "http://127.0.0.1:7105/health"}}
+
+  :notifier
+  {:kind :process :repo "notifier" :cmd "python3 -u svc.py notifier 7108" :port 7108
+   :deps [:mailer] :readiness {:type :http-poll :url "http://127.0.0.1:7108/health"}}
 
   :payments
   {:kind :process :repo "payments" :cmd "python3 -u svc.py payments 7106" :port 7106

@@ -1,4 +1,4 @@
 ;; checkout work: payments run from the IDE, the mailer on its feature branch
-[:postgres :seed :broker :orders-api
+[:postgres :seed :broker :orders-api :notifier
  :payments {:kind :external :readiness {:type :http-poll :url "http://127.0.0.1:7106/health"}}
  :mailer {:branch "feature/smtp-tls"}]
