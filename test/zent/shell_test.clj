@@ -1,7 +1,8 @@
 (ns zent.shell-test
   "Exercises zent.shell/sh! with real, harmless sub-processes only -
   echo/pwd/printenv. No docker/mvn/kubectl, no destructive commands."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [zent.shell :as shell]))
 
 (deftest sh-basic-test
@@ -30,6 +31,22 @@
     (let [t0 (System/currentTimeMillis)]
       (is (nil? (shell/sh-timeout! ["sleep" "5"] 300)))
       (is (< (- (System/currentTimeMillis) t0) 2000)))))
+
+(defn- zombie-children []
+  (let [me (str (.pid (java.lang.ProcessHandle/current)))]
+    (->> (:out (shell/sh! ["ps" "-axo" "ppid=,stat="]))
+         str/split-lines
+         (map #(str/split (str/trim %) #"\s+"))
+         (filter (fn [[ppid stat]] (and (= me ppid) (str/starts-with? stat "Z"))))
+         count)))
+
+(deftest no-zombie-test
+  (testing "given a spawned child that exits unwaited, or a sh-timeout! child killed past its timeout, then neither stays a zombie"
+    (let [before (zombie-children)]
+      (shell/spawn! ["true"] :log-file (str (java.io.File/createTempFile "zent-reap" ".log")))
+      (shell/sh-timeout! ["sleep" "5"] 100)
+      (Thread/sleep 500)
+      (is (= before (zombie-children))))))
 
 (deftest sh-env-test
   (testing ":env is visible to the sub-process"

@@ -54,7 +54,9 @@
         (.redirectOutput pb (java.lang.ProcessBuilder$Redirect/appendTo f))
         (.redirectErrorStream pb true))
       (.inheritIO pb))
-    (.start pb)))
+    ;; jolt reaps a child only when asked (no JVM reaper thread): onExit waits on one,
+    ;; else every exited child the caller doesn't .waitFor stays a zombie
+    (doto (.start pb) (.onExit))))
 
 (defn sh-timeout!
   "`cmd`'s stdout, nil when it failed, couldn't run or outlived `timeout-ms` (then killed) - for a
@@ -70,7 +72,8 @@
                p (.start pb)]
            (if (.waitFor p (long timeout-ms) java.util.concurrent.TimeUnit/MILLISECONDS)
              (when (zero? (.exitValue p)) (slurp f))
-             (do (.destroyForcibly p) nil)))
+             ;; waited, else a zombie - see spawn!
+             (do (.destroyForcibly p) (.waitFor p) nil)))
          (catch Exception _ nil)
          (finally (.delete f)))))
 
