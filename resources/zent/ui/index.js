@@ -312,7 +312,7 @@ function renderVerdict() {
     }
     if (want && g.behind > 0) {
       looks.push(`${at} is ${g.behind} commit${g.behind > 1 ? "s" : ""} behind <code>${escHtml(g.base)}</code>` +
-        (g.dirty ? "" : act("rebase", n, from === "origin" ? "Test on " + escHtml(g.base) : "Rebase")));
+        ((g.dirty || want === g.base) && from !== "clone" ? "" : act("rebase", n, from === "origin" ? "Test on " + escHtml(g.base) : "Rebase")));
     }
     if (g.pull > 0) looks.push(`${at}: origin has ${g.pull} new commit(s) - the apply resets its worktree to them`);
     if (!want && g.dirty) looks.push(`${at} runs your clone as it is, with ${g.dirty} uncommitted file(s)`);
@@ -1360,11 +1360,13 @@ function brStates(p) {
   if (g.behind > 0) {
     const c = p.conflicts;
     const note = c == null ? "no conflict" : c.length ? `conflicts on ${plural(c.length, "file")}: ${escHtml(c.join(", "))}` : "conflicts unknown";
-    const why = g.branch == null && !wt ? "detached HEAD" : dirty.length ? "uncommitted files: commit or stash them first"
+    const why = g.branch == null && !wt ? "detached HEAD" : wt && target === base ? `on ${base} itself`
+      : wt && dirty.length ? "uncommitted files: commit or stash them first"
       : g["held-at"] ? `${target} is checked out in ${g["held-at"]}` : c?.length ? "it conflicts: rebase it by hand" : null;
     out.push([`${originBase} is ${g.behind} ahead`, "warn",
               ["rebase", from === "origin" ? `Test on ${base}` : "Rebase",
-               (from === "origin" ? `runs ${theirs} rebased onto ${originBase}, locally in its worktree` : `rebases ${mine} onto ${originBase}`) + ` - ${note}`, true, why],
+               (from === "origin" ? `runs ${theirs} rebased onto ${originBase}, locally in its worktree` : `rebases ${mine} onto ${originBase}`) + ` - ${note}` +
+               (!wt && dirty.length ? `, ${plural(dirty.length, "uncommitted file")} autostashed` : ""), true, why],
               minus(reach(p, [ref("origin/" + base)?.sha]), reach(p, [runSha]))]);
   }
   return out;

@@ -180,9 +180,13 @@
 (deftest rebase-refusal-test
   (let [st {:branch "feature/x" :base "master" :dirty 0 :behind 3}]
     (is (nil? (source/rebase-refusal st)))
-    (is (re-find #"uncommitted" (source/rebase-refusal (assoc st :dirty 1))))
+    (is (nil? (source/rebase-refusal (assoc st :dirty 1))) "a clone's uncommitted files are autostashed")
+    (is (nil? (source/rebase-refusal (assoc st :dirty 1 :from :clone))))
+    (is (re-find #"uncommitted" (source/rebase-refusal (assoc st :dirty 1 :from :local))))
+    (is (re-find #"uncommitted" (source/rebase-refusal (assoc st :dirty 1 :from :origin))))
     (is (re-find #"already" (source/rebase-refusal (assoc st :behind 0))))
-    (is (re-find #"itself" (source/rebase-refusal (assoc st :branch "master"))))
+    (is (nil? (source/rebase-refusal (assoc st :branch "master"))) "a clone on its default branch catches up")
+    (is (re-find #"itself" (source/rebase-refusal (assoc st :branch "master" :from :local))))
     (is (re-find #"detached" (source/rebase-refusal (dissoc st :branch))))))
 
 (deftest rebase-test
@@ -212,12 +216,41 @@
       (is (re-find #"conflicts with origin/master on f.txt" message))
       (is (= ["f.txt"] (source/merge-conflicts clone "origin/master" "HEAD")))
       (is (= before (git! clone "rev-parse" "HEAD")))))
-  (testing "given an uncommitted file, then nothing moves"
+  (testing "given an uncommitted file, then it is autostashed: the branch rebased, the file put back"
+    (let [clone (repos "g.txt")]
+      (spit (str clone "/f.txt") "wip\n")
+      (let [{:keys [ok message]} (source/rebase! (cfg-of clone))]
+        (is ok message)
+        (is (re-find #"1 uncommitted file\(s\) put back" message) message))
+      (is (= (git! clone "rev-parse" "origin/master") (git! clone "merge-base" "HEAD" "origin/master")))
+      (is (= "wip\n" (slurp (str clone "/f.txt"))))
+      (is (= "" (git! clone "stash" "list")))))
+  (testing "given a staged file origin's master adds too, then rebased, the file kept in the stash"
+    (let [clone (repos "g.txt")]
+      (spit (str clone "/g.txt") "mine\n") (git! clone "add" "g.txt")
+      (let [{:keys [ok message]} (source/rebase! (cfg-of clone))]
+        (is ok message)
+        (is (re-find #"conflict with it: kept in the stash" message) message))
+      (is (= (git! clone "rev-parse" "origin/master") (git! clone "merge-base" "HEAD" "origin/master")))
+      (is (not= "" (git! clone "stash" "list")))))
+  (testing "given the clone on master itself, behind, with an uncommitted file, then fast-forwarded, the file put back"
+    (let [clone (repos "g.txt")]
+      (git! clone "checkout" "--quiet" "master")
+      (spit (str clone "/f.txt") "wip\n")
+      (let [{:keys [ok message]} (source/rebase! (cfg-of clone))]
+        (is ok message)
+        (is (not (re-find #"force-with-lease" message)) "a fast-forward: origin's master untouched"))
+      (is (= (git! clone "rev-parse" "origin/master") (git! clone "rev-parse" "HEAD")))
+      (is (= "wip\n" (slurp (str clone "/f.txt"))))))
+  (testing "given an untracked file origin's master adds (not autostashed), then the rebase is aborted, nothing moves"
     (let [clone (repos "g.txt")
           before (git! clone "rev-parse" "HEAD")]
-      (spit (str clone "/f.txt") "wip\n")
-      (is (not (:ok (source/rebase! (cfg-of clone)))))
-      (is (= before (git! clone "rev-parse" "HEAD"))))))
+      (spit (str clone "/g.txt") "mine\n")
+      (let [{:keys [ok message]} (source/rebase! (cfg-of clone))]
+        (is (not ok))
+        (is (re-find #"aborted: rebase feature by hand" message) message))
+      (is (= before (git! clone "rev-parse" "HEAD")))
+      (is (= "mine\n" (slurp (str clone "/g.txt")))))))
 
 (deftest push-test
   (let [clone (repos "g.txt")

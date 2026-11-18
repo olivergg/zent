@@ -62,13 +62,14 @@
     :see ["reload" "rebase" "worktrees"]}
    {:verb "rebase" :group "Everyday" :args "<component>"
     :doc "fetch, then rebase its branch onto origin's default branch"
-    :more ["Nothing uncommitted, behind, and no conflict merge-tree can see: else it says why and"
-           "touches nothing. A rebase that stops anyway is aborted. Reload to run it. By :from:"
-           "  no :branch, :clone  the clone's branch"
+    :more ["Behind, and no conflict merge-tree can see: else it says why and touches nothing. A"
+           "rebase that stops anyway is aborted. Reload to run it. By :from:"
+           "  no :branch, :clone  the clone's branch, its uncommitted files autostashed (left in the"
+           "                     stash if they conflict with the rebased branch)"
            "  :local             your local <branch>, in zent's worktree - refused while another"
-           "                     checkout has it out (rebase it there)"
+           "                     checkout has it out (rebase it there), or with uncommitted files"
            "  :origin            a local test: the worktree's commit rebased, no branch moved -"
-           "                     the next apply or pull reverts it"
+           "                     the next apply or pull reverts it ; refused with uncommitted files"
            "zent never pushes: a rebased branch on origin needs your push --force-with-lease."]
     :see ["reload" "pull"]}
    {:verb "worktrees" :group "Everyday" :args "[prune]"

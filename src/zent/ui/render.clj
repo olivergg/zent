@@ -386,7 +386,7 @@
 (defn- rebase-button
   "The rebase a click away when `chip` is behind and nothing refuses it - what it moves depends on
   :from (zent.source/rebase!)."
-  [cname {:keys [from branch base behind pushed local-ahead preview-of] :as chip}]
+  [cname {:keys [from branch base behind ahead pushed local-ahead preview-of dirty] :as chip}]
   (when (and (pos? behind) (not (source/rebase-refusal chip)))
     (let [onto (str "origin/" base)
           path (str "/api/rebase/" (name cname) (when preview-of (str "?preset=" preview-of)))]
@@ -401,7 +401,11 @@
                                      (when local-ahead " It is on origin: push --force-with-lease afterwards."))
                            "rebase")
         (git-button (str "Fetch, then rebase " branch " onto " onto " if nothing conflicts")
-                    path (str "Rebase " branch " onto " onto "?" (when pushed " It is on origin: push --force-with-lease afterwards."))
+                    path (str "Rebase " branch " onto " onto "?"
+                              (when (pos? (or dirty 0)) (str " Its " dirty " uncommitted file(s) are stashed, then put back."))
+                              ;; on its default branch with nothing of its own, a fast-forward: origin's stays as is
+                              (when (and pushed (or (not= branch base) (pos? (or ahead 0))))
+                                " It is on origin: push --force-with-lease afterwards."))
                     "rebase")))))
 
 (defn- checkout-button

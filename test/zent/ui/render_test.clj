@@ -391,7 +391,10 @@
                                              :git (merge {:sha "abc" :branch "feature/z" :base "main" :behind 2 :pushed true} %)})]
       (is (str/includes? (card {}) "hx-post=\"/api/rebase/svc\""))
       (is (str/includes? (card {}) "hx-confirm=\"Rebase feature/z onto origin/main? It is on origin: push --force-with-lease afterwards.\""))
-      (is (not (str/includes? (card {:dirty 1}) "act git-act")) "uncommitted files: no button")))
+      (is (str/includes? (card {:dirty 1}) "Its 1 uncommitted file(s) are stashed, then put back.") "a clone's: autostashed")
+      (is (not (str/includes? (card {:dirty 1 :from :local}) "act git-act")) "a worktree's uncommitted files: no button")
+      (is (str/includes? (card {:branch "main"}) "hx-confirm=\"Rebase main onto origin/main?\"") "on main, nothing of its own: a fast-forward")
+      (is (str/includes? (card {:branch "main" :ahead 1}) "push --force-with-lease afterwards") "on main with commits of its own")))
   (testing "given origin moved past a worktree's commit, then +N and a pull button"
     (let [html (render/component-card :svc {:kind :process :status :up :wanted-branch "feature/w" :from :origin
                                             :source {:dir "/wt/svc" :worktree "/wt/svc"}

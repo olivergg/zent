@@ -160,15 +160,18 @@
 
 (defn rebase-refusal
   "Why `st` (checkout-git's, :branch the preset's in a worktree) can't be rebased onto its default
-  branch here - nil when it can: a branch, nothing uncommitted, behind, for :from :local held by no
-  other checkout. Where it's done depends on :from (rebase!)."
-  [{:keys [branch base dirty behind held-at]}]
-  (cond (not branch) "detached HEAD: no branch to rebase"
-        held-at (str branch " is checked out in " held-at ": rebase it there")
-        (not base) "no origin/HEAD, origin/master or origin/main to rebase onto"
-        (= branch base) (str "on " base " itself")
-        (pos? (or dirty 0)) (str dirty " uncommitted file(s): commit or stash them first")
-        (not (pos? (or behind 0))) (str "already on origin/" base)))
+  branch here - nil when it can: a branch, behind, for :from :local held by no other checkout, and
+  nothing uncommitted in zent's worktrees (a clone's is autostashed). Where it's done depends on
+  :from (rebase!)."
+  [{:keys [branch base dirty behind held-at from]}]
+  (let [worktree? (#{:origin :local} from)]
+    (cond (not branch) "detached HEAD: no branch to rebase"
+          held-at (str branch " is checked out in " held-at ": rebase it there")
+          (not base) "no origin/HEAD, origin/master or origin/main to rebase onto"
+          ;; a clone on its default branch catches up with origin's (a fast-forward unless it has commits of its own)
+          (and worktree? (= branch base)) (str "on " base " itself")
+          (and worktree? (pos? (or dirty 0))) (str dirty " uncommitted file(s): commit or stash them first")
+          (not (pos? (or behind 0))) (str "already on origin/" base))))
 
 (defn merge-conflicts
   "What rebasing `tip` onto `onto` in `dir`'s repo would conflict on, by git merge-tree (no checkout
@@ -179,19 +182,28 @@
       (if (= 1 exit) (vec (distinct (rest (remove str/blank? (str/split-lines (str out)))))) []))))
 
 (defn- run-rebase!
-  "`git rebase onto` in `dir`, aborted if it stops: nil, or why it failed."
-  [dir onto what]
-  (let [{:keys [exit err]} (shell/sh! ["git" "-C" dir "rebase" "--quiet" onto])]
-    (when-not (zero? exit)
-      (shell/sh! ["git" "-C" dir "rebase" "--abort"])
-      (str "the rebase stopped (" (str/trim (str err)) "), aborted: rebase " what " by hand"))))
+  "`git rebase onto` in `dir` - `--autostash` if `autostash?` - aborted if it stops: {:failed why}
+  or {:stash-conflict? true} when the rebase went through but the autostash didn't apply back
+  cleanly (git keeps it in the stash), else {}."
+  [dir onto what & [autostash?]]
+  (let [stash #(git dir "rev-parse" "--verify" "--quiet" "refs/stash")
+        before (stash)
+        {:keys [exit err]} (shell/sh! (cond-> ["git" "-C" dir "rebase" "--quiet"] autostash? (conj "--autostash") true (conj onto)))]
+    (cond
+      (not (zero? exit))
+      (do (shell/sh! ["git" "-C" dir "rebase" "--abort"])
+          {:failed (str "the rebase stopped (" (str/trim (str err)) "), aborted: rebase " what " by hand")})
+      ;; an autostash that applies back is dropped: a new stash entry left means it conflicted (git's
+      ;; message is localised, the ref isn't)
+      (not= before (stash)) {:stash-conflict? true}
+      :else {})))
 
 (defn rebase!
   "Fetches origin's default branch - that one only, no prune: no other origin/* ref moves - then,
   when rebase-refusal has nothing against it and merge-tree sees no conflict, rebases onto it, by
   `cfg`'s :from:
 
-    no :branch, :clone  the main clone's branch
+    no :branch, :clone  the main clone's branch, its uncommitted files autostashed
     :local              the local <branch>, checked out in zent's worktree for the rebase (refused
                         when another checkout holds it), the worktree detached again after
     :origin             a local test: the worktree's detached HEAD, no branch moved, kept under
@@ -204,7 +216,7 @@
         dir (checkout-dir cfg)
         fetch (when-let [base (:base (git-status dir))]
                 (shell/sh! ["git" "-C" dir "fetch" "--quiet" "--no-prune" "origin" base]))
-        st (some-> (git-status dir) (cond-> (worktree? cfg) (assoc :branch branch)))
+        st (some-> (git-status dir) (assoc :from mode) (cond-> (worktree? cfg) (assoc :branch branch)))
         onto (str "origin/" (:base st))
         local (str "refs/heads/" branch)
         tip (if (= :local mode) local "HEAD")
@@ -229,7 +241,7 @@
             {:keys [exit err]} (shell/sh! ["git" "-C" dir "checkout" "--quiet" branch])]
         (if-not (zero? exit)
           {:ok false :message (str branch " can't be checked out in zent's worktree (" (str/trim (str err)) "): rebase it in the clone")}
-          (let [failed (run-rebase! dir onto branch)]
+          (let [{:keys [failed]} (run-rebase! dir onto branch)]
             (shell/sh! (cond-> ["git" "-C" dir "checkout" "--quiet" "--detach"] failed (conj head)))
             (if failed
               {:ok false :message failed}
@@ -241,7 +253,7 @@
                                (str "; origin/" branch " is now behind it: push --force-with-lease")))}))))
 
       (= :origin mode)
-      (if-let [failed (run-rebase! dir onto (str "origin/" branch))]
+      (if-let [failed (:failed (run-rebase! dir onto (str "origin/" branch)))]
         {:ok false :message failed}
         (do (shell/sh-or-throw! ["git" "-C" dir "update-ref" (branch/test-ref branch) "HEAD"])
             {:ok true
@@ -249,13 +261,23 @@
                            " - the next apply or pull reverts it")}))
 
       :else
-      (if-let [failed (run-rebase! dir onto (:branch st))]
-        {:ok false :message failed}
-        {:ok true
-         ;; ORIG_HEAD is the commit before the rebase; --keep: nothing uncommitted is lost (none was allowed in)
-         :undo ["git" "-C" dir "reset" "--quiet" "--keep" (git dir "rev-parse" "ORIG_HEAD")]
-         :message (str "rebased " (:branch st) done " - undo: git -C " dir " reset --keep ORIG_HEAD"
-                       (when pushed (str "; origin/" (:branch st) " is now behind it: push --force-with-lease")))}))))
+      (let [own (rev-count dir (str onto "..HEAD"))
+            {:keys [failed stash-conflict?]} (run-rebase! dir onto (:branch st) true)]
+        (if failed
+          {:ok false :message failed}
+          {:ok true
+           ;; ORIG_HEAD is the commit before the rebase; --keep refuses rather than lose an uncommitted change
+           :undo ["git" "-C" dir "reset" "--quiet" "--keep" (git dir "rev-parse" "ORIG_HEAD")]
+           :message (str "rebased " (:branch st) done
+                         (when (pos? (or (:dirty st) 0))
+                           (if stash-conflict?
+                             (str "; your " (:dirty st) " uncommitted file(s) conflict with it: kept in the stash, git -C "
+                                  dir " stash pop to resolve")
+                             (str ", your " (:dirty st) " uncommitted file(s) put back")))
+                         " - undo: git -C " dir " reset --keep ORIG_HEAD"
+                         ;; only commits of its own were rewritten: a fast-forward leaves origin's branch as it was
+                         (when (and pushed (pos? (or own 0)))
+                           (str "; origin/" (:branch st) " is now behind it: push --force-with-lease")))})))))
 
 (defn checkout-refusal
   "Why the clone of `st` (checkout-git's, with the preset's :wanted-branch) can't be switched to that
