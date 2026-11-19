@@ -660,11 +660,11 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .git > [title] { cursor: help; }
 .node .git > :not(.branch) { flex: none; }
 .node .branch.off, .node .git .want { color: var(--madder); border-color: var(--madder); }
-/* where the code comes from: origin's or your local branch (a worktree, synced on deploy) or the clone, as is */
+/* where the code comes from: zent's worktree at origin's or your local branch (synced on deploy), or your main worktree, as is */
 .node .git .from { padding: 0 4px; border-radius: 2px; color: var(--card); }
-.node .git .from.origin { background: var(--indigo); }
-.node .git .from.local { background: var(--verdigris); }
-.node .git .from.clone { background: var(--muted); }
+.node .git .from.origin-worktree { background: var(--indigo); }
+.node .git .from.local-worktree { background: var(--verdigris); }
+.node .git .from.main-worktree { background: var(--muted); }
 /* an :origin worktree running a local test rebase: the next sync reverts it */
 .node .git .from.test { background: var(--weld); color: var(--ink); }
 /* a preview: what an apply's sync would do to the worktree */
@@ -1392,7 +1392,7 @@ body:not([data-tab="branches"]) .branches-view { display: none; }
 .br-head { display: flex; align-items: center; gap: 8px; padding-top: 12px; }
 .br-name { font-weight: 650; font-size: 14px; letter-spacing: -.01em; }
 .br-src { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 10px; --c: #0a84ff; color: var(--c); background: color-mix(in srgb, var(--c) 11%, transparent); white-space: nowrap; }
-.br-src[data-from="origin"] { --c: #8e5bd6; }
+.br-src[data-from="origin-worktree"] { --c: #8e5bd6; }
 .br-comps { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--faint); }
 .br-fresh { margin-left: auto; font-size: 11px; color: var(--faint); white-space: nowrap; }
 .br-fresh.stale { color: var(--amber-ink); }

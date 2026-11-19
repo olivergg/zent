@@ -133,4 +133,4 @@
       (cond-> (assoc r :from from :branch (:branch cfg) :git g :dir dir :clone workdir)
         (and (:base g) (pos? (or (:behind g) 0)))
         (assoc :conflicts (source/merge-conflicts dir (str "origin/" (:base g))
-                                                  (if (= :local from) (str "refs/heads/" (:branch cfg)) "HEAD")))))))
+                                                  (if (= :local-worktree from) (str "refs/heads/" (:branch cfg)) "HEAD")))))))

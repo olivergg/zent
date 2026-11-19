@@ -1,7 +1,7 @@
 (ns zent.source
   "Workspace-first source resolution: no auto-cloning - fails with the clone command if the repo
-  isn't under ~/workspace. A :branch runs, by :from, from a worktree at origin/<branch> (:origin)
-  or at the local <branch> (:local) - zent.branch - or from the main clone as it is (:clone)."
+  isn't under ~/workspace. A :branch runs, by :from, from a worktree at origin/<branch> (:origin-worktree)
+  or at the local <branch> (:local-worktree) - zent.branch - or from the main worktree as it is (:main-worktree)."
   (:require [clojure.string :as str]
             [zent.branch :as branch :refer [git sync-ref]]
             [zent.shell :as shell]))
@@ -26,21 +26,25 @@
   (= branch (current-branch dir)))
 
 (defn from
-  "Where a :branch runs from: :origin (the default: a worktree at origin/<branch>), :local (a
-  worktree at the local <branch>) or :clone (the main clone as it is); nil without a :branch."
+  "Which code of a :branch runs: :origin-worktree (the default: a worktree at origin/<branch>), :local-worktree (a
+  worktree at the local <branch>) or :main-worktree (the main worktree as it is); nil without a :branch."
   [{:keys [branch from]}]
-  (when branch (or from :origin)))
+  (when branch (or from :origin-worktree)))
+
+(def worktree-from
+  "The :from values that run a worktree of zent's - the rest is the main worktree."
+  #{:origin-worktree :local-worktree})
 
 (defn worktree?
   "Whether `cfg` runs from a worktree of its own."
   [cfg]
-  (contains? #{:origin :local} (from cfg)))
+  (contains? worktree-from (from cfg)))
 
 (defn resolve-source
   ([repo] (resolve-source repo {}))
   ([repo {:keys [workspace-dir branch org] :as opts}]
-   ;; resolving leaves the main clone's files and branches alone: a worktree for :origin/:local
-   ;; (zent.branch), as it is for :clone, which must have the branch checked out - only checkout! switches it
+   ;; resolving leaves the main worktree's files and branches alone: a worktree for :origin-worktree/:local-worktree
+   ;; (zent.branch), as it is for :main-worktree, which must have the branch checked out - only checkout! switches it
    (let [dir (main-clone-dir repo workspace-dir)
          mode (from opts)]
      (cond
@@ -53,11 +57,11 @@
 
        (not mode) dir
 
-       (not= :clone mode) (branch/resolve-worktree dir repo branch mode)
+       (not= :main-worktree mode) (branch/resolve-worktree dir repo branch mode)
 
        (main-clone-on? dir branch) dir
 
-       :else (throw (ex-info (str repo ": :from :clone runs " dir " as it is, which must have " branch " checked out - it has "
+       :else (throw (ex-info (str repo ": :from :main-worktree runs " dir " as it is, which must have " branch " checked out - it has "
                                   (or (current-branch dir) "no branch"))
                              {:dir dir :hint (str "git -C " dir " checkout " branch)}))))))
 
@@ -65,7 +69,7 @@
   (main-clone-dir repo workspace-dir))
 
 (defn checkout-dir
-  "The dir a component runs from - its worktree for :from :origin/:local, else the main clone -
+  "The dir a component runs from - its worktree for :from :origin-worktree/:local-worktree, else the main worktree -
   WITHOUT resolve-source's side effects (creating, fetching and hard-resetting worktrees): what a
   liveness check or a display reads."
   [{:keys [repo branch workspace-dir] :as cfg}]
@@ -77,7 +81,7 @@
   "Why a pull (sync, then redeploy) means nothing for `cfg` - nil when it runs from a worktree."
   [cfg]
   (when-not (worktree? cfg)
-    (str "it runs " (checkout-dir cfg) " as it is (" (if (:branch cfg) ":from :clone" "no :branch")
+    (str "it runs " (checkout-dir cfg) " as it is (" (if (:branch cfg) ":from :main-worktree" "no :branch")
          "): nothing to pull - reload it")))
 
 (defn parse-status
@@ -141,7 +145,7 @@
   "git-status of the dir `cfg` runs from, with :from (zent.source/from). For a worktree, also :pull -
   commits its ref (origin/<branch> as of the last fetch, or the local branch) has that it doesn't -
   and :unreachable - commits on no branch, which block its next sync (zent.branch/at-risk); for
-  :origin, :test? when it runs a local test rebase (rebase!); for :local, :local-ahead and
+  :origin-worktree, :test? when it runs a local test rebase (rebase!); for :local-worktree, :local-ahead and
   :local-behind - the local branch against origin/<branch>, when that exists - and :held-at, the
   checkout that has it checked out, if any."
   [{:keys [branch] :as cfg}]
@@ -152,23 +156,23 @@
         mode (assoc :from mode)
         (worktree? cfg) (assoc :pull (rev-count dir (str "HEAD.." (sync-ref mode branch)))
                                :unreachable (apply rev-count dir branch/unreachable-revs))
-        (= :origin mode) (assoc :test? (boolean (and (:sha st) (= (:sha st) (git dir "rev-parse" "--verify" "--quiet" (branch/test-ref branch)))
+        (= :origin-worktree mode) (assoc :test? (boolean (and (:sha st) (= (:sha st) (git dir "rev-parse" "--verify" "--quiet" (branch/test-ref branch)))
                                                       (not= (:sha st) (git dir "rev-parse" "--verify" "--quiet" (str "origin/" branch))))))
-        (= :local mode) (merge (when-let [ahead (rev-count dir (str "origin/" branch "..refs/heads/" branch))]
+        (= :local-worktree mode) (merge (when-let [ahead (rev-count dir (str "origin/" branch "..refs/heads/" branch))]
                                  {:local-ahead ahead :local-behind (rev-count dir (str "refs/heads/" branch "..origin/" branch))})
                                (when-let [at (checked-out-at dir (str "refs/heads/" branch))] {:held-at at}))))))
 
 (defn rebase-refusal
   "Why `st` (checkout-git's, :branch the preset's in a worktree) can't be rebased onto its default
-  branch here - nil when it can: a branch, behind, for :from :local held by no other checkout, and
-  nothing uncommitted in zent's worktrees (a clone's is autostashed). Where it's done depends on
+  branch here - nil when it can: a branch, behind, for :from :local-worktree held by no other checkout, and
+  nothing uncommitted in zent's worktrees (a main worktree's is autostashed). Where it's done depends on
   :from (rebase!)."
   [{:keys [branch base dirty behind held-at from]}]
-  (let [worktree? (#{:origin :local} from)]
+  (let [worktree? (worktree-from from)]
     (cond (not branch) "detached HEAD: no branch to rebase"
           held-at (str branch " is checked out in " held-at ": rebase it there")
           (not base) "no origin/HEAD, origin/master or origin/main to rebase onto"
-          ;; a clone on its default branch catches up with origin's (a fast-forward unless it has commits of its own)
+          ;; a main worktree on its default branch catches up with origin's (a fast-forward unless it has commits of its own)
           (and worktree? (= branch base)) (str "on " base " itself")
           (and worktree? (pos? (or dirty 0))) (str dirty " uncommitted file(s): commit or stash them first")
           (not (pos? (or behind 0))) (str "already on origin/" base))))
@@ -203,11 +207,11 @@
   when rebase-refusal has nothing against it and merge-tree sees no conflict, rebases onto it, by
   `cfg`'s :from:
 
-    no :branch, :clone  the main clone's branch, its uncommitted files autostashed
-    :local              the local <branch>, checked out in zent's worktree for the rebase (refused
-                        when another checkout holds it), the worktree detached again after
-    :origin             a local test: the worktree's detached HEAD, no branch moved, kept under
-                        zent.branch/test-ref until the next sync drops it
+    no :branch, :main-worktree  the main worktree's branch, its uncommitted files autostashed
+    :local-worktree             the local <branch>, checked out in zent's worktree for the rebase (refused
+                                when another checkout holds it), the worktree detached again after
+    :origin-worktree            a local test: the worktree's detached HEAD, no branch moved, kept under
+                                zent.branch/test-ref until the next sync drops it
 
   A rebase that stops anyway is aborted. {:ok true :message} or {:ok false :message}: what
   happened, the undo included, or why not. Never pushes."
@@ -219,13 +223,13 @@
         st (some-> (git-status dir) (assoc :from mode) (cond-> (worktree? cfg) (assoc :branch branch)))
         onto (str "origin/" (:base st))
         local (str "refs/heads/" branch)
-        tip (if (= :local mode) local "HEAD")
-        st (cond-> st (and st (= :local mode)) (assoc :behind (rev-count dir (str local ".." onto))
+        tip (if (= :local-worktree mode) local "HEAD")
+        st (cond-> st (and st (= :local-worktree mode)) (assoc :behind (rev-count dir (str local ".." onto))
                                                       :held-at (checked-out-at dir local)))
         {:keys [behind pushed]} st
         why (cond (and fetch (not (zero? (:exit fetch)))) (str "git fetch failed: " (str/trim (str (:err fetch))))
                   (nil? st) (str dir " isn't a checkout")
-                  (and (= :local mode) (not (git dir "rev-parse" "--verify" "--quiet" local)))
+                  (and (= :local-worktree mode) (not (git dir "rev-parse" "--verify" "--quiet" local)))
                   (str "no local branch " branch " to rebase")
                   :else (or (rebase-refusal st)
                             (when-let [files (merge-conflicts dir onto tip)]
@@ -235,12 +239,12 @@
     (cond
       why {:ok false :message why}
 
-      (= :local mode)
+      (= :local-worktree mode)
       (let [old (git dir "rev-parse" local)
             head (git dir "rev-parse" "HEAD")
             {:keys [exit err]} (shell/sh! ["git" "-C" dir "checkout" "--quiet" branch])]
         (if-not (zero? exit)
-          {:ok false :message (str branch " can't be checked out in zent's worktree (" (str/trim (str err)) "): rebase it in the clone")}
+          {:ok false :message (str branch " can't be checked out in zent's worktree (" (str/trim (str err)) "): rebase it in your main worktree")}
           (let [{:keys [failed]} (run-rebase! dir onto branch)]
             (shell/sh! (cond-> ["git" "-C" dir "checkout" "--quiet" "--detach"] failed (conj head)))
             (if failed
@@ -252,7 +256,7 @@
                              (when (git dir "rev-parse" "--verify" "--quiet" (str "refs/remotes/origin/" branch))
                                (str "; origin/" branch " is now behind it: push --force-with-lease")))}))))
 
-      (= :origin mode)
+      (= :origin-worktree mode)
       (if-let [failed (:failed (run-rebase! dir onto (str "origin/" branch)))]
         {:ok false :message failed}
         (do (shell/sh-or-throw! ["git" "-C" dir "update-ref" (branch/test-ref branch) "HEAD"])
@@ -280,11 +284,11 @@
                            (str "; origin/" (:branch st) " is now behind it: push --force-with-lease")))})))))
 
 (defn checkout-refusal
-  "Why the clone of `st` (checkout-git's, with the preset's :wanted-branch) can't be switched to that
-  branch - nil when it can: :from :clone, on another branch, nothing uncommitted (untracked files
-  included: git might carry them over, zent doesn't guess)."
+  "Why the main worktree of `st` (checkout-git's, with the preset's :wanted-branch) can't be switched to
+  that branch - nil when it can: :from :main-worktree, on another branch, nothing uncommitted (untracked
+  files included: git might carry them over, zent doesn't guess)."
   [{:keys [from wanted-branch branch dirty]}]
-  (cond (not= :clone from) "only :from :clone runs the clone's own branch: nothing to check out"
+  (cond (not= :main-worktree from) "only :from :main-worktree runs the main worktree's own branch: nothing to check out"
         (= wanted-branch branch) (str "already on " branch)
         (pos? (or dirty 0)) (str dirty " uncommitted file(s): commit or stash them first")))
 

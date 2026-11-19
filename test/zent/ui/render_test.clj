@@ -216,15 +216,15 @@
       (is (not (str/includes? html "stop-all"))))))
 
 (deftest runs-from-test
-  (testing "given :origin, then origin's branch labelled, its commit, the fetch's age, and what moves it"
-    (let [html (render/runs-from {:from :origin :branch "feature/x" :sha "abcdef1234" :fetched-at 0} "/wt" 120000)]
+  (testing "given :origin-worktree, then origin's branch labelled, its commit, the fetch's age, and what moves it"
+    (let [html (render/runs-from {:from :origin-worktree :branch "feature/x" :sha "abcdef1234" :fetched-at 0} "/wt" 120000)]
       (is (str/includes? html "<span class=\"bn\" data-kind=\"remote\" title=\"origin/feature/x\"><i class=\"ico\" data-i=\"remote\"></i>origin/x</span>"))
       (is (str/includes? html "<code class=\"sha\">abcdef1</code> <span class=\"runs-meta fetched\">fetched 2 min ago</span>"))
       (is (str/includes? html "Push to run a change"))))
-  (testing "given :local, then your branch labelled, in zent's worktree"
-    (is (re-find #"data-kind=\"local\".*zent's worktree, on your branch.*Commit to run a change"
-                 (render/runs-from {:from :local :branch "feature/x" :sha "abcdef1234"} "/wt" 0))))
-  (testing "given the clone, then its dir and its branch labelled, and that zent never touches it"
+  (testing "given :local-worktree, then your branch labelled, in zent's worktree"
+    (is (re-find #"data-kind=\"local\".*zent's worktree, on your local branch.*Commit to run a change"
+                 (render/runs-from {:from :local-worktree :branch "feature/x" :sha "abcdef1234"} "/wt" 0))))
+  (testing "given the main worktree, then its dir and its branch labelled, and that zent never touches it"
     (let [html (render/detail-panel :svc {:kind :process :status :up :git {:sha "abcdef1234" :branch "main"}
                                           :source {:dir "/w/svc"} :now 0})]
       (is (str/includes? html "<span>Runs</span><span><span class=\"runs\"><span class=\"runs-what\"><span class=\"bn\" data-kind=\"folder\""))
@@ -316,7 +316,7 @@
       (is (nil? (chip {}))))
     (testing "no :branch and the default one on disk: nothing to flag"
       (is (= [true false false false false] ((juxt :default? :off? :wt? :lose? :stale?) (chip {:git git})))))
-    (testing "given no :branch, the clone runs as it is: a feature branch there isn't off"
+    (testing "given no :branch, the main worktree runs as it is: a feature branch there isn't off"
       (is (= [false false] ((juxt :default? :off?) (chip {:git (assoc git :branch "feature/x")})))))
     (testing "given a :branch, then off is any other branch - the default one included"
       (is (:off? (chip {:git git :wanted-branch "feature/x"})))
@@ -336,20 +336,20 @@
   (is (= "kafka2" (render/short-branch "kafka2"))))
 
 (deftest component-card-git-chip-test
-  (let [card #(render/component-card :svc (merge {:kind :process :status :up :from :origin
+  (let [card #(render/component-card :svc (merge {:kind :process :status :up :from :origin-worktree
                                                   :source {:dir "/w/svc" :worktree "/w/svc"}} %))
-        git {:sha "abcdef1234" :base "master" :behind 3 :ahead 1 :unreachable 1 :dirty 2 :pushed false :from :origin}]
+        git {:sha "abcdef1234" :base "master" :behind 3 :ahead 1 :unreachable 1 :dirty 2 :pushed false :from :origin-worktree}]
     (testing "given a last fetch, then its age comes from the render's :now: same input, same card"
       (let [args {:git (assoc git :fetched-at 1000) :wanted-branch "feature/y" :now 61000}]
         (is (str/includes? (card args) "(as of the last fetch, 1m00s ago)"))
         (is (= (card args) (card args)))))
-    (testing "given every flag up in an :origin worktree, then each count says what it is, what blocks the next sync
+    (testing "given every flag up in a :origin-worktree worktree, then each count says what it is, what blocks the next sync
               in red, and a test rebase a click away"
       (let [html (card {:git git :wanted-branch "feature/y" :deployed-sha "0000000"})]
         (is (str/includes? html ">y</span>") "its window shows the bare branch")
-        (is (str/includes? html "<span class=\"branch wt\" title=\"feature/y&#10;the preset's :branch: origin's, in a worktree\""))
-        (is (str/includes? html "<span class=\"from origin\" title=\"runs origin/feature/y in its own worktree"))
-        (is (str/includes? html "&#10227; origin</span>"))
+        (is (str/includes? html "<span class=\"branch wt\" title=\"feature/y&#10;the preset's :branch, :from :origin-worktree: what's pushed, in a worktree\""))
+        (is (str/includes? html "<span class=\"from origin-worktree\" title=\"runs origin/feature/y in its own worktree"))
+        (is (str/includes? html "&#10227; origin worktree</span>"))
         (is (str/includes? html "(never fetched)\">&#8595;3 master</span>"))
         (is (not (str/includes? html "act git-act")) "uncommitted files: no rebase")
         (is (str/includes? html "&#9888;1 on no branch</span>"))
@@ -359,7 +359,7 @@
           (is (str/includes? html "An apply that redeploys it or a pull fetches, then resets it to origin/feature/y - refused while it holds uncommitted files or commits on no branch; a reload keeps its commit"))
           (is (str/includes? html "the next sync refuses until you keep them (git branch rescue/feature/y HEAD)"))
           (is (str/includes? html "running 0000000, the disk is at abcdef1: reload to run it")))))
-    (testing "given a clean :origin worktree behind, then a local test rebase a click away"
+    (testing "given a clean :origin-worktree worktree behind, then a local test rebase a click away"
       (let [html (card {:git (assoc git :dirty 0 :unreachable 0) :wanted-branch "feature/y"})]
         (is (str/includes? html "test on master</button>"))
         (is (str/includes? html "A local test: no branch moves, the next apply or pull reverts it.") "its confirmation")))
@@ -369,52 +369,52 @@
         (is (str/includes? html "a local test, no branch moved - the next apply or pull reverts it"))
         (is (str/includes? html ">undo test</button>"))
         (is (not (str/includes? html "unpushed")))))
-    (testing "given :from :local, then its badge, what syncs it, its branch against origin's, and a rebase of it"
-      (let [html (card {:from :local :wanted-branch "feature/y"
-                        :git {:sha "abc" :base "master" :behind 2 :ahead 3 :from :local :pull 1 :local-ahead 3 :local-behind 2}})]
-        (is (str/includes? html "<span class=\"from local moved\" title=\"runs your local feature/y in its own worktree, detached - commit to it to run a change, no push needed. An apply that redeploys it or a pull resets it to your feature/y"))
-        (is (str/includes? html "&#9095; local +1</span>"))
+    (testing "given :from :local-worktree, then its badge, what syncs it, its branch against origin's, and a rebase of it"
+      (let [html (card {:from :local-worktree :wanted-branch "feature/y"
+                        :git {:sha "abc" :base "master" :behind 2 :ahead 3 :from :local-worktree :pull 1 :local-ahead 3 :local-behind 2}})]
+        (is (str/includes? html "<span class=\"from local-worktree moved\" title=\"runs your local feature/y in its own worktree, detached - commit to it to run a change, no push needed. An apply that redeploys it or a pull resets it to your feature/y"))
+        (is (str/includes? html "&#9095; local worktree +1</span>"))
         (is (str/includes? html "hx-post=\"/api/pull/svc\""))
         (is (str/includes? html "&#8593;3 unpushed on y</span>"))
         (is (str/includes? html "&#8595;2 on origin</span>"))
-        (is (str/includes? html "pull --rebase in your clone"))
+        (is (str/includes? html "pull --rebase in your main worktree"))
         (is (str/includes? html "hx-confirm=\"Rebase your local branch feature/y onto origin/master? It moves feature/y (refused while another checkout has it out). It is on origin: push --force-with-lease afterwards.\""))
         (is (str/includes? html ">rebase</button>")))))
-  (testing "given the main clone on a feature branch, no :branch: it runs as it is, nothing red"
+  (testing "given the main worktree on a feature branch, no :branch: it runs as it is, nothing red"
     (let [html (render/component-card :svc {:kind :process :status :up :source {:dir "/w/svc"}
                                             :git {:sha "abc" :branch "feature/z" :base "main" :ahead 4 :pushed true}})]
       (is (str/includes? html "<span class=\"branch\" title=\"feature/z&#10;no :branch in the preset"))
-      (is (str/includes? html "<span class=\"from clone\" title=\"runs your local clone as it is, uncommitted changes included - nothing syncs it, a reload restarts what's on disk\">&#9998; clone</span>"))
-      (is (str/includes? html "safe here: the clone runs as it is\">&#8593;4 unpushed</span>"))))
-  (testing "given a clean clone behind its default branch, then a rebase button, warning when the branch is on origin"
+      (is (str/includes? html "<span class=\"from main-worktree\" title=\"runs your main worktree as it is, uncommitted changes included - nothing syncs it, a reload restarts what's on disk\">&#9998; main worktree</span>"))
+      (is (str/includes? html "safe here: your main worktree runs as it is\">&#8593;4 unpushed</span>"))))
+  (testing "given a clean main worktree behind its default branch, then a rebase button, warning when the branch is on origin"
     (let [card #(render/component-card :svc {:kind :process :status :up :source {:dir "/w/svc"}
                                              :git (merge {:sha "abc" :branch "feature/z" :base "main" :behind 2 :pushed true} %)})]
       (is (str/includes? (card {}) "hx-post=\"/api/rebase/svc\""))
       (is (str/includes? (card {}) "hx-confirm=\"Rebase feature/z onto origin/main? It is on origin: push --force-with-lease afterwards.\""))
-      (is (str/includes? (card {:dirty 1}) "Its 1 uncommitted file(s) are stashed, then put back.") "a clone's: autostashed")
-      (is (not (str/includes? (card {:dirty 1 :from :local}) "act git-act")) "a worktree's uncommitted files: no button")
+      (is (str/includes? (card {:dirty 1}) "Its 1 uncommitted file(s) are stashed, then put back.") "a main worktree's: autostashed")
+      (is (not (str/includes? (card {:dirty 1 :from :local-worktree}) "act git-act")) "a worktree's uncommitted files: no button")
       (is (str/includes? (card {:branch "main"}) "hx-confirm=\"Rebase main onto origin/main?\"") "on main, nothing of its own: a fast-forward")
       (is (str/includes? (card {:branch "main" :ahead 1}) "push --force-with-lease afterwards") "on main with commits of its own")))
   (testing "given origin moved past a worktree's commit, then +N and a pull button"
-    (let [html (render/component-card :svc {:kind :process :status :up :wanted-branch "feature/w" :from :origin
+    (let [html (render/component-card :svc {:kind :process :status :up :wanted-branch "feature/w" :from :origin-worktree
                                             :source {:dir "/wt/svc" :worktree "/wt/svc"}
                                             :git {:sha "abc" :base "main" :pull 3}})]
-      (is (str/includes? html "&#10227; origin +3</span>"))
+      (is (str/includes? html "&#10227; origin worktree +3</span>"))
       (is (str/includes? html "hx-post=\"/api/pull/svc\""))
       (is (str/includes? html "origin has 3 more commit(s)"))))
-  (testing "given :from :clone and the clone on another branch, then red, saying the deploy refuses, and a
+  (testing "given :from :main-worktree and the main worktree on another branch, then red, saying the deploy refuses, and a
             checkout a click away - unless something is uncommitted, or it runs from a worktree"
-    (let [card #(render/component-card :svc (merge {:kind :process :status :up :wanted-branch "feature/w" :from :clone
+    (let [card #(render/component-card :svc (merge {:kind :process :status :up :wanted-branch "feature/w" :from :main-worktree
                                                     :source {:dir "/w/svc"} :git {:sha "abc" :branch "main" :base "main"}} %))
           html (card {})]
       (is (str/includes? html "class=\"branch off\""))
-      (is (str/includes? html "the preset's :from :clone wants feature/w checked out here"))
-      (is (str/includes? html "&#9998; clone</span>"))
+      (is (str/includes? html "the preset's :from :main-worktree wants feature/w checked out here"))
+      (is (str/includes? html "&#9998; main worktree</span>"))
       (is (str/includes? html "hx-post=\"/api/checkout/svc\""))
-      (is (str/includes? html "hx-confirm=\"Check out feature/w in your clone, now on main? Every component running this clone moves with it.\""))
+      (is (str/includes? html "hx-confirm=\"Check out feature/w in your main worktree, now on main? Every component running this main worktree moves with it.\""))
       (is (str/includes? (card {:preview-of "mine"}) "hx-post=\"/api/checkout/svc?preset=mine\""))
       (is (not (str/includes? (card {:git {:sha "abc" :branch "main" :base "main" :dirty 1}}) "/api/checkout/")))
-      (is (not (str/includes? (card {:from :origin :source {:dir "/wt/svc" :worktree "/wt/svc"}}) "/api/checkout/")))))
+      (is (not (str/includes? (card {:from :origin-worktree :source {:dir "/wt/svc" :worktree "/wt/svc"}}) "/api/checkout/")))))
   (testing "in a preview: the rebase names its preset, a :branch never deployed shows its worktree to come, and
             an existing one what the apply would do to it"
     (is (str/includes? (render/component-card :svc {:kind :process :status :off :preview? true :preview-of "mine"
@@ -422,14 +422,14 @@
                                                     :git {:sha "abc" :branch "feature/z" :base "main" :behind 2}})
                        "hx-post=\"/api/rebase/svc?preset=mine\""))
     (is (str/includes? (render/component-card :svc {:kind :process :status :off :preview? true :wanted-branch "feature/new"
-                                                    :from :origin :source {:dir "/wt/svc" :worktree "/wt/svc"}})
-                       "<span class=\"from origin pending\""))
+                                                    :from :origin-worktree :source {:dir "/wt/svc" :worktree "/wt/svc"}})
+                       "<span class=\"from origin-worktree pending\""))
     (is (str/includes? (render/component-card :svc {:kind :process :status :off :preview? true :wanted-branch "feature/new"
-                                                    :from :local :source {:dir "/wt/svc" :worktree "/wt/svc"}})
+                                                    :from :local-worktree :source {:dir "/wt/svc" :worktree "/wt/svc"}})
                        "&#9888; created at apply from feature/new</span>"))
     (let [pv #(render/component-card :svc {:kind :process :status :off :preview? true :preview-of "mine" :wanted-branch "feature/w"
-                                           :from :origin :source {:dir "/wt/svc" :worktree "/wt/svc"}
-                                           :git (merge {:sha "abc" :base "main" :from :origin} %)})]
+                                           :from :origin-worktree :source {:dir "/wt/svc" :worktree "/wt/svc"}
+                                           :git (merge {:sha "abc" :base "main" :from :origin-worktree} %)})]
       (is (str/includes? (pv {:pull 2}) "apply: reset +2</span>"))
       (is (not (str/includes? (pv {:pull 2}) "/api/pull/")) "no pull from a preview")
       (is (str/includes? (pv {}) "apply: keeps</span>"))

@@ -397,7 +397,7 @@
                                                        (select-keys (get view k) [:status :deployed-sha])))}
                                  (try (if-let [{:keys [git from branch] :as p} (graph/project cfg)]
                                         ;; a worktree is detached: its branch is the preset's
-                                        (assoc p :where (render/runs-from (assoc git :from from :branch (if (#{:origin :local} from) branch (:branch git)))
+                                        (assoc p :where (render/runs-from (assoc git :from from :branch (if (source/worktree-from from) branch (:branch git)))
                                                                           dir (System/currentTimeMillis)))
                                         {:error (str dir " isn't a checkout")})
                                       (catch Exception e {:error (ex-message e)})))))

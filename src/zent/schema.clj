@@ -52,9 +52,10 @@
    [:readiness {:optional true} Readiness]
    [:watch {:optional true} Watch]
    [:branch {:optional true} git-ref]
-   ;; with :branch: where it runs from (zent.source/from) - a worktree at origin/<branch> (the
-   ;; default) or at the local <branch>, or the main clone as it is, refused unless on <branch>
-   [:from {:optional true} [:enum :origin :local :clone]]
+   ;; with :branch: which checkout runs it (zent.source/from, docs/glossary.md) - :origin-worktree (the default:
+   ;; zent's worktree at origin/<branch>), :local-worktree (that worktree at the local <branch>) or :main-worktree
+   ;; (your clone as it is, refused unless on <branch>)
+   [:from {:optional true} [:enum :origin-worktree :local-worktree :main-worktree]]
    [:workspace-dir {:optional true} :string]
    [:org {:optional true} :string]
    ;; NOT :deps: doesn't order anything or gate readiness. A declared fact

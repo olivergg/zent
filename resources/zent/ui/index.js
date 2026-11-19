@@ -301,21 +301,21 @@ function renderVerdict() {
   const blocks = [], looks = [];
   for (const [n, c] of Object.entries(comps)) {
     const g = c.git || {}, want = c["wanted-branch"], from = c.from, at = `<b>${escHtml(n)}</b>`;
-    if (from === "clone" && want && g.branch && g.branch !== want) {
-      blocks.push(`${at} runs your clone, on <code>${escHtml(g.branch)}</code> - the preset wants <code>${escHtml(want)}</code>` +
+    if (from === "main-worktree" && want && g.branch && g.branch !== want) {
+      blocks.push(`${at} runs your main worktree, on <code>${escHtml(g.branch)}</code> - the preset wants <code>${escHtml(want)}</code>` +
         (g.dirty ? ` <span class="why">commit or stash its ${g.dirty} uncommitted file(s) first</span>`
-                 : act("checkout", n, "Check out", `Check out ${want} in your clone? Every component running it moves with it.`)));
+                 : act("checkout", n, "Check out", `Check out ${want} in your main worktree? Every component running it moves with it.`)));
     }
-    if ((from === "origin" || from === "local") && (g.dirty || g.unreachable)) {
+    if ((from === "origin-worktree" || from === "local-worktree") && (g.dirty || g.unreachable)) {
       blocks.push(`${at}'s worktree holds ${g.dirty ? g.dirty + " uncommitted file(s)" : ""}${g.dirty && g.unreachable ? " and " : ""}` +
         `${g.unreachable ? g.unreachable + " commit(s) on no branch" : ""}: the apply refuses to sync it <span class="why">keep or drop them first</span>`);
     }
     if (want && g.behind > 0) {
       looks.push(`${at} is ${g.behind} commit${g.behind > 1 ? "s" : ""} behind <code>${escHtml(g.base)}</code>` +
-        ((g.dirty || want === g.base) && from !== "clone" ? "" : act("rebase", n, from === "origin" ? "Test on " + escHtml(g.base) : "Rebase")));
+        ((g.dirty || want === g.base) && from !== "main-worktree" ? "" : act("rebase", n, from === "origin-worktree" ? "Test on " + escHtml(g.base) : "Rebase")));
     }
     if (g.pull > 0) looks.push(`${at}: origin has ${g.pull} new commit(s) - the apply resets its worktree to them`);
-    if (!want && g.dirty) looks.push(`${at} runs your clone as it is, with ${g.dirty} uncommitted file(s)`);
+    if (!want && g.dirty) looks.push(`${at} runs your main worktree as it is, with ${g.dirty} uncommitted file(s)`);
   }
   const steps = Object.entries(comps).filter(([, c]) => c.kind === "one-shot");
   const demand = steps.filter(([, c]) => c["on-demand"]).map(([n]) => n);
@@ -1257,7 +1257,7 @@ const bn = (kind, full, { shown = bareBranch(full), cls = "", extra = "", tip } 
 // a label's text, for what can't hold markup (a confirm's question)
 const textOf = (html) => Object.assign(document.createElement("div"), { innerHTML: html }).textContent;
 // where a project's code comes from, as its badge says it - the line under it ("Runs", the server's) says the rule
-const SOURCE = { origin: "follows origin", local: "follows your branch", clone: "your clone" };
+const SOURCE = { "origin-worktree": "origin worktree", "local-worktree": "local worktree", "main-worktree": "main worktree" };
 const bareBranch = (b) => String(b ?? "").replace(/^(feature|bugfix|bug|fix|hotfix|chore|release)\//, "");
 const shortSha = (s) => (s || "").slice(0, 7);
 const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
@@ -1266,10 +1266,10 @@ const ageText = (ms) => { const m = Math.round(ms / 60e3); return m < 60 ? Math.
 const agoText = (ms) => ms < 60e3 ? "just now" : ageText(ms) + " ago";
 const previewQuery = () => shownPreset() ? "?preset=" + encodeURIComponent(shownPreset()) : "";
 
-/* Where a project's code runs: from (origin|local|clone), wt (a zent worktree), the commit, its uncommitted
-   files, and the commits it was deployed from - by what runs now: a one-shot done long ago doesn't count. */
+/* Where a project's code runs: from (origin-worktree|local-worktree|main-worktree), wt (a zent worktree), the commit, its
+   uncommitted files, and the commits it was deployed from - by what runs now: a one-shot done long ago doesn't count. */
 function brRun(p) {
-  const from = p.from || "clone", wt = from !== "clone";
+  const from = p.from || "main-worktree", wt = from !== "main-worktree";
   return { from, wt, sha: wt ? p.worktree?.sha : p.head.sha, dirty: wt ? (p.worktree?.dirty || []) : p.head.dirty,
            deployed: p.components.filter((c) => ["up", "unready", "idle"].includes(c.status)).map((c) => c["deployed-sha"]).filter(Boolean) };
 }
@@ -1321,9 +1321,9 @@ function brStates(p) {
   const target = p.branch || p.head.branch, L = ref(target), R = ref("origin/" + target);
   const mine = bn("local", target || ""), theirs = bn("remote", "origin/" + target, { shown: "origin/" + bareBranch(target) });
   const base = p.base || g.base, originBase = bn("remote", "origin/" + base, { shown: "origin/" + base });
-  if (from === "clone" && p.branch && p.head.branch !== p.branch)
+  if (from === "main-worktree" && p.branch && p.head.branch !== p.branch)
     out.push([`On ${p.head.branch ? bn("local", p.head.branch) : "a detached HEAD"}, the preset wants ${bn("local", p.branch)}`, "bad",
-              ["checkout", "Check out", `checks out ${bn("local", p.branch)} in your clone`, true,
+              ["checkout", "Check out", `checks out ${bn("local", p.branch)} in your main worktree`, true,
                p.head.dirty.length ? "uncommitted files: commit or stash them first" : null],
               new Set([p.head.sha])]);
   if (wt && dirty.length) out.push([`${plural(dirty.length, "file")} edited by hand in zent's worktree`, "bad", null, new Set([runSha])]);
@@ -1331,18 +1331,18 @@ function brStates(p) {
   if (wt && g.unreachable > 0) out.push([`${plural(g.unreachable, "commit")} on no branch in zent's worktree`, "bad", null, new Set([runSha])]);
   if (L && R && target !== base) {
     const ahead = minus(reach(p, [L.sha]), reach(p, [R.sha])), behind = minus(reach(p, [R.sha]), reach(p, [L.sha]));
-    // :origin runs what's pushed: your local commits on the same branch don't run until pushed
+    // :origin-worktree runs what's pushed: your local commits on the same branch don't run until pushed
     const pushNote = (L.behind > 0 ? `replaces ${plural(L.behind, "commit")} on ${theirs} (force-with-lease)` : `sends ${plural(L.ahead, "commit")} to ${theirs}`)
-      + (from === "origin" ? ", then Pull to run them" : "");
-    const notRunning = from === "origin" ? ` - they don't run: zent runs ${theirs}` : "";
+      + (from === "origin-worktree" ? ", then Pull to run them" : "");
+    const notRunning = from === "origin-worktree" ? ` - they don't run: zent runs ${theirs}` : "";
     if (L.ahead > 0 && L.behind > 0)
       out.push([`${mine} and ${theirs} diverged: ↑${L.ahead} ↓${L.behind}${notRunning}`, "bad", ["push", "Push", pushNote, true], new Set([...ahead, ...behind])]);
     else if (L.ahead > 0)
-      out.push([`${plural(L.ahead, "commit")} on ${mine} not pushed${notRunning}`, from === "origin" ? "bad" : "warn", ["push", "Push", pushNote, true], ahead]);
+      out.push([`${plural(L.ahead, "commit")} on ${mine} not pushed${notRunning}`, from === "origin-worktree" ? "bad" : "warn", ["push", "Push", pushNote, true], ahead]);
     else if (L.behind > 0)
       out.push([`${mine} is ${L.behind} behind ${theirs}`, "bad",
                 ["sync", "Sync", `fast-forwards ${mine} to ${theirs}: nothing of yours is lost`, false,
-                 p.head.branch === target ? null : `your clone has ${p.head.branch || "no branch"} checked out: sync ${target} there`], behind]);
+                 p.head.branch === target ? null : `your main worktree has ${p.head.branch || "no branch"} checked out: sync ${target} there`], behind]);
   } else if (L && !R && target !== base && L.ahead !== 0) {
     out.push([`${mine} isn't on origin`, "warn", ["push", "Push", `creates ${theirs}`, true], reach(p, [L.sha])]);
   }
@@ -1351,9 +1351,9 @@ function brStates(p) {
   if (M && MR && M.ahead > 0)
     out.push([`${plural(M.ahead, "commit")} on ${bn("local", base, { shown: base })} not pushed`, "warn", null, minus(reach(p, [M.sha]), reach(p, [MR.sha]))]);
   if (wt && g.pull > 0)
-    out.push([`zent's worktree is ${g.pull} behind ${from === "local" ? mine : theirs}`, "bad",
+    out.push([`zent's worktree is ${g.pull} behind ${from === "local-worktree" ? mine : theirs}`, "bad",
               ["pull", "Pull", `moves the worktree ${plural(g.pull, "commit")} ahead, then redeploys`, false, dirty.length ? "files edited by hand in zent's worktree" : null],
-              minus(reach(p, [from === "local" ? L?.sha : R?.sha]), reach(p, [runSha]))]);
+              minus(reach(p, [from === "local-worktree" ? L?.sha : R?.sha]), reach(p, [runSha]))]);
   if (deployed && runSha && deployed !== runSha)
     out.push([`Changed since it started: runs <code class="sha">${shortSha(deployed)}</code>, the disk has <code class="sha">${shortSha(runSha)}</code>`, "warn",
               ["reload", "Reload", `restarts it on <code class="sha">${shortSha(runSha)}</code>`, false], new Set([deployed, runSha])]);
@@ -1364,8 +1364,8 @@ function brStates(p) {
       : wt && dirty.length ? "uncommitted files: commit or stash them first"
       : g["held-at"] ? `${target} is checked out in ${g["held-at"]}` : c?.length ? "it conflicts: rebase it by hand" : null;
     out.push([`${originBase} is ${g.behind} ahead`, "warn",
-              ["rebase", from === "origin" ? `Test on ${base}` : "Rebase",
-               (from === "origin" ? `runs ${theirs} rebased onto ${originBase}, locally in its worktree` : `rebases ${mine} onto ${originBase}`) + ` - ${note}` +
+              ["rebase", from === "origin-worktree" ? `Test on ${base}` : "Rebase",
+               (from === "origin-worktree" ? `runs ${theirs} rebased onto ${originBase}, locally in its worktree` : `rebases ${mine} onto ${originBase}`) + ` - ${note}` +
                (!wt && dirty.length ? `, ${plural(dirty.length, "uncommitted file")} autostashed` : ""), true, why],
               minus(reach(p, [ref("origin/" + base)?.sha]), reach(p, [runSha]))]);
   }
@@ -1399,9 +1399,9 @@ function brRows(p, labels) {
 // the labels on each commit: branches local + origin merged when they coincide, HEAD, worktrees
 function brLabels(p) {
   const labels = new Map(), add = (sha, html) => sha && labels.set(sha, (labels.get(sha) || "") + html), { wt } = brRun(p);
-  // your clone's HEAD, always, first - then the branch it's on (HEAD -> branch, as git log --decorate)
-  add(p.head.sha, `<span class="bn head-tag" data-tip="${escHtml("Your clone's HEAD\n" + (!p.head.branch ? "Detached, on no branch"
-    : `On ${p.head.branch}` + (wt ? " - free: zent runs its worktree, not your clone" : " - what runs")))}">HEAD</span>`);
+  // your main worktree's HEAD, always, first - then the branch it's on (HEAD -> branch, as git log --decorate)
+  add(p.head.sha, `<span class="bn head-tag" data-tip="${escHtml("Your main worktree's HEAD\n" + (!p.head.branch ? "Detached, on no branch"
+    : `On ${p.head.branch}` + (wt ? " - free: zent runs its worktree, not your main worktree" : " - what runs")))}">HEAD</span>`);
   // a label's hover: its full name, then where it stands against the other side
   for (const n of new Set(p.refs.map((r) => r.branch))) {
     const L = p.refs.find((r) => r.name === n), R = p.refs.find((r) => r.name === "origin/" + n);
@@ -1474,7 +1474,7 @@ function brCell(p) {
   states.forEach(([, , a], i) => { if (a && !seen.has(a[0])) { seen.add(a[0]); acts.push([...a, i]); } });
   const [deployed] = brRun(p).deployed;
   const tipOf = (c) => `${c.subject}\n${shortSha(c.sha)} · ${c.author} · ${c.time ? new Date(c.time).toLocaleString() : ""}` +
-    (deployed === c.sha ? "\nRunning: deployed from this commit" : "") + (p.head.sha === c.sha ? "\nYour clone's HEAD" : "") + "\nClick to copy its hash";
+    (deployed === c.sha ? "\nRunning: deployed from this commit" : "") + (p.head.sha === c.sha ? "\nYour main worktree's HEAD" : "") + "\nClick to copy its hash";
   const pad = ` style="padding-left:${indent}px"`;
   const row = (r) => r.wip
     ? `<div class="br-row wip"${pad} data-sha="wip" data-tip="Uncommitted\n${escHtml(r.wip.join("\n"))}"><span class="br-msg">${plural(r.wip.length, "uncommitted file")}</span></div>`
@@ -1551,7 +1551,7 @@ function initBranchesControls() {
     [bn("local", "main", { shown: "main", tip: "" }), "yours"], [bn("remote", "origin/main", { shown: "origin/main", tip: "" }), "origin's"],
     [bn("both", "main", { shown: "main", tip: "" }), "both, one commit"], [bn("local", "x", { extra: `<b class="ab">↑2 ↓1</b>`, tip: "" }), "ahead / behind origin"],
     [bn("wt", "worktree", { shown: "worktree", cls: "wt", tip: "" }), "zent's worktree, what runs"],
-    [`<span class="bn head-tag">HEAD</span>${ring("#28b463")}`, "your clone's HEAD"], [ring("none", "#28b463"), "running"],
+    [`<span class="bn head-tag">HEAD</span>${ring("#28b463")}`, "your main worktree's HEAD"], [ring("none", "#28b463"), "running"],
     [ring("#e8a200", "#fff", `stroke-dasharray="2 2"`), "uncommitted"]
   ].map(([m, t]) => `<span>${m}${t}</span>`).join("");
   document.getElementById("branches-fetch").onclick = fetchBranches;

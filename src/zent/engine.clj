@@ -179,7 +179,7 @@
 
 (defn- watch-targets
   "{name {:spec ... :scan ...}} for the resolved components that declare a
-  :watch, in the main clone they run from. Not a worktree (:from :origin/:local):
+  :watch, in the main worktree they run from. Not a worktree (:from :origin-worktree/:local-worktree):
   only zent moves it, by a sync that redeploys anyway. checkout-dir, not
   resolve-source: this runs on serve!'s loop, which must not fetch and reset a
   worktree the deploy worker may be building from."

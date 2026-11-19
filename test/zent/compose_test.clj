@@ -176,18 +176,18 @@
                 (assoc-in [:components :seed :source-env] {"API" {:component :api}})
                 (assoc-in [:components :api2] {:kind :quarkus-app :repo "api" :port 8081}))
         resolve #(compose/resolve-preset (assoc-in cat [:presets :p] (apply compose/run %)) :p)]
-    (testing "given one [repo branch] from :origin and :local, then refused, naming both"
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"api@x has one worktree, run :from :origin by :api and :from :local by :api2"
-                            (resolve [:api {:branch "x"} :api2 {:branch "x" :from :local}])))
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"by :api2 and :from :local by :api, :seed :source-env API"
-                            (resolve [:seed :api {:mode :off :branch "x" :from :local} :api2 {:branch "x"}]))
+    (testing "given one [repo branch] from :origin-worktree and :local-worktree, then refused, naming both"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"api@x has one worktree, run :from :origin-worktree by :api and :from :local-worktree by :api2"
+                            (resolve [:api {:branch "x"} :api2 {:branch "x" :from :local-worktree}])))
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"by :api2 and :from :local-worktree by :api, :seed :source-env API"
+                            (resolve [:seed :api {:mode :off :branch "x" :from :local-worktree} :api2 {:branch "x"}]))
           "a :source-env pinned to it counts"))
-    (testing "given the same :from, another branch, or :clone (the main clone, no worktree), then fine"
-      (is (map? (resolve [:api {:branch "x" :from :local} :api2 {:branch "x" :from :local}])))
-      (is (map? (resolve [:api {:branch "x"} :api2 {:branch "y" :from :local}])))
-      (is (map? (resolve [:api {:branch "x"} :api2 {:branch "x" :from :clone}]))))
+    (testing "given the same :from, another branch, or :main-worktree (no worktree), then fine"
+      (is (map? (resolve [:api {:branch "x" :from :local-worktree} :api2 {:branch "x" :from :local-worktree}])))
+      (is (map? (resolve [:api {:branch "x"} :api2 {:branch "y" :from :local-worktree}])))
+      (is (map? (resolve [:api {:branch "x"} :api2 {:branch "x" :from :main-worktree}]))))
     (testing "a :source-env carries its source's :from"
-      (is (= :local (get-in (resolve [:seed :api {:branch "x" :from :local}]) [:seed :source-env "API" :from]))))))
+      (is (= :local-worktree (get-in (resolve [:seed :api {:branch "x" :from :local-worktree}]) [:seed :source-env "API" :from]))))))
 
 (deftest catalog-repos-test
   (testing "the components' repos, and those their :source-env reads directly"
@@ -198,8 +198,8 @@
 (deftest worktree-users-test
   (testing "given presets on branches, then each worktree with the presets using it, a broken preset named apart"
     (let [cat (-> catalog
-                  (assoc-in [:presets :a] (compose/run :api {:branch "x"} :ui {:branch "y" :from :clone}))
-                  (assoc-in [:presets :b] (compose/run :api {:branch "x" :from :local}))
+                  (assoc-in [:presets :a] (compose/run :api {:branch "x"} :ui {:branch "y" :from :main-worktree}))
+                  (assoc-in [:presets :b] (compose/run :api {:branch "x" :from :local-worktree}))
                   (assoc-in [:presets :broken] (compose/run :api {:branch "z" :port "no"})))]
       (is (= {:users {(zent.branch/worktree-path "api" "x") #{:a :b}} :unresolved #{:broken}}
              (compose/worktree-users cat))))))

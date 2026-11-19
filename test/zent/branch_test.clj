@@ -100,8 +100,8 @@
   (let [{:keys [clone other wt]} (repos)]
     (with-redefs [branch/worktree-path (fn [_ _] wt)]
       (commit! clone "local only")
-      (testing "given :local and the clone on feature, then the worktree runs the local commit, detached"
-        (branch/resolve-worktree clone "repo" "feature" :local)
+      (testing "given :local-worktree and the main worktree on feature, then the worktree runs the local commit, detached"
+        (branch/resolve-worktree clone "repo" "feature" :local-worktree)
         (is (= (git! clone "rev-parse" "feature") (git! wt "rev-parse" "HEAD")))
         (is (= "HEAD" (git! wt "rev-parse" "--abbrev-ref" "HEAD")))
         (is (= "feature" (git! clone "rev-parse" "--abbrev-ref" "HEAD")) "the clone keeps it checked out"))
@@ -110,54 +110,54 @@
           (git! other "fetch" "--quiet" "origin") (git! other "checkout" "--quiet" "feature")
           (commit! other "on origin") (git! other "push" "--quiet" "origin" "feature")
           (commit! clone "local again")
-          (branch/resolve-worktree clone "repo" "feature" :local)
+          (branch/resolve-worktree clone "repo" "feature" :local-worktree)
           (is (= (git! clone "rev-parse" "feature") (git! wt "rev-parse" "HEAD")))
           (is (= origin-ref (git! clone "rev-parse" "origin/feature")) "no fetch")))
-      (testing "given a switch to :origin and back, then a reset each time - an ignored build output survives"
+      (testing "given a switch to :origin-worktree and back, then a reset each time - an ignored build output survives"
         (.mkdirs (java.io.File. (str wt "/target")))
         (spit (str wt "/target/app.jar") "built")
-        (branch/resolve-worktree clone "repo" "feature" :origin)
+        (branch/resolve-worktree clone "repo" "feature" :origin-worktree)
         (is (= (git! clone "rev-parse" "origin/feature") (git! wt "rev-parse" "HEAD")))
-        (branch/resolve-worktree clone "repo" "feature" :local)
+        (branch/resolve-worktree clone "repo" "feature" :local-worktree)
         (is (= (git! clone "rev-parse" "feature") (git! wt "rev-parse" "HEAD")))
         (is (= "built" (slurp (str wt "/target/app.jar"))))))))
 
 (deftest resolve-worktree-never-loses-work-test
   (let [{:keys [clone wt]} (repos)]
     (with-redefs [branch/worktree-path (fn [_ _] wt)]
-      (branch/resolve-worktree clone "repo" "feature" :local)
+      (branch/resolve-worktree clone "repo" "feature" :local-worktree)
       (commit! clone "to sync")
       (testing "given an uncommitted file, then the sync refuses, the file and the commit kept, saying how"
         (spit (str wt "/wip.txt") "wip")
         (let [head (git! wt "rev-parse" "HEAD")
-              e (refusal #(branch/resolve-worktree clone "repo" "feature" :local))]
+              e (refusal #(branch/resolve-worktree clone "repo" "feature" :local-worktree))]
           (is (re-find #"1 uncommitted file" (ex-message e)))
           (is (= (str "git -C " wt " stash") (:hint (ex-data e))))
           (is (= head (git! wt "rev-parse" "HEAD")))
           (is (= "wip" (slurp (str wt "/wip.txt"))))))
       (testing "given *sync* false, then nothing is checked nor changed"
-        (binding [branch/*sync* false] (branch/resolve-worktree clone "repo" "feature" :local))
+        (binding [branch/*sync* false] (branch/resolve-worktree clone "repo" "feature" :local-worktree))
         (is (= "wip" (slurp (str wt "/wip.txt")))))
       (testing "given a commit of its own, on no branch, then the sync refuses, the commit kept"
         (git! wt "add" ".") (git! wt "commit" "--quiet" "-m" "in the worktree")
         (let [head (git! wt "rev-parse" "HEAD")
-              e (refusal #(branch/resolve-worktree clone "repo" "feature" :origin))]
+              e (refusal #(branch/resolve-worktree clone "repo" "feature" :origin-worktree))]
           (is (re-find #"1 commit\(s\) on no branch" (ex-message e)))
           (is (= (str "git -C " wt " branch rescue/feature HEAD") (:hint (ex-data e))))
           (is (= head (git! wt "rev-parse" "HEAD")))
           (testing "and once a branch keeps it, the sync goes through"
             (git! wt "branch" "rescue/feature" "HEAD")
-            (branch/resolve-worktree clone "repo" "feature" :local)
+            (branch/resolve-worktree clone "repo" "feature" :local-worktree)
             (is (= (git! clone "rev-parse" "feature") (git! wt "rev-parse" "HEAD")))))))))
 
 (deftest resolve-worktree-no-local-branch-test
-  (testing "given :local and no local branch, then an error saying how to make it"
+  (testing "given :local-worktree and no local branch, then an error saying how to make it"
     (let [{:keys [clone wt]} (repos)]
       (with-redefs [branch/worktree-path (fn [_ _] wt)]
         (git! clone "checkout" "--quiet" "master") (git! clone "branch" "--quiet" "-D" "feature")
-        (let [e (refusal #(branch/resolve-worktree clone "repo" "feature" :local))]
+        (let [e (refusal #(branch/resolve-worktree clone "repo" "feature" :local-worktree))]
           (is (re-find #"no local branch feature" (ex-message e)))
-          (is (= (str "git -C " clone " branch feature origin/feature, or :from :origin") (:hint (ex-data e))))
+          (is (= (str "git -C " clone " branch feature origin/feature, or :from :origin-worktree") (:hint (ex-data e))))
           (is (not (.exists (java.io.File. wt)))))))))
 
 (deftest at-risk-cant-tell-test
@@ -185,7 +185,7 @@
     (with-redefs [branch/worktrees-root (constantly root)]
       (git! clone "checkout" "--quiet" "master")
       (git! clone "branch" "--quiet" "a" "feature") (git! clone "branch" "--quiet" "b" "feature")
-      (doseq [b ["a" "b" "feature"]] (branch/resolve-worktree clone "repo" b :local))
+      (doseq [b ["a" "b" "feature"]] (branch/resolve-worktree clone "repo" b :local-worktree))
       (spit (str (branch/worktree-path "repo" "b") "/wip.txt") "wip")
       (git! (branch/worktree-path "repo" "a") "update-ref" (branch/test-ref "a") "HEAD")
       (let [entries (branch/worktrees)

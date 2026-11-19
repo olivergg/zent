@@ -139,7 +139,7 @@ preset is gone or that observes a component its preset doesn't run.
 | iterate on a component | `zent reload <c>`, then `zent logs [-f] <c>` | `reload`, `logs` |
 | run what's new on a `:branch` | `zent pull <c>`, or the card's `pull` | - |
 | rebase a branch onto origin's default one | `zent rebase <c>`, then `zent reload <c>` | - |
-| put a `:from :clone` clone on the preset's `:branch` | the card's `checkout`, also in a preview | - |
+| put a `:from :main-worktree` clone on the preset's `:branch` | the card's `checkout`, also in a preview | - |
 | list or clean up the `:branch` worktrees | `zent worktrees`, `zent worktrees prune` | - |
 | stop some, or all but `:permanent` | `zent stop <c>...`, `zent stop` | `stop` |
 | judge the running stack | `zent verify [<preset> [<check>...]]` | `verify` |
@@ -212,7 +212,7 @@ A preset is a vector of component names. A map right after a name overrides that
 
 ```clojure
 [:webapp-deps
- :front {:branch "feature/x"}                ; run from a worktree of origin/feature/x (:from :origin)
+ :front {:branch "feature/x"}                ; what's pushed on feature/x, in zent's worktree (:from :origin-worktree)
  :webapp {:kind :external                    ; running in IntelliJ
           :readiness {:type :http-poll
                       :url "http://localhost:8080/health/readiness"}}]
@@ -230,22 +230,26 @@ Why EDN rather than JSON or YAML:
 
 ### Running a branch
 
-A `:branch` in a preset runs that component from another branch; `:from` says which code:
+A `:branch` in a preset is the branch it wants for that component; `:from` says which checkout runs
+it, in git's words (`docs/glossary.md`): your clone is git's **main worktree**, zent's are worktrees
+linked to it. Without a `:branch`, your main worktree runs as it is, on whatever branch it has out:
 
 | `:from` | runs | a sync (an apply that (re)deploys it, or `zent pull <c>`) |
 |---|---|---|
-| `:origin` (default) | a worktree detached at `origin/<branch>`: what's pushed | fetches, then resets the worktree to `origin/<branch>` |
-| `:local` | the same worktree, detached at your local `<branch>`: what's committed, no push needed | resets the worktree to `<branch>`, no fetch |
-| `:clone` | your main clone as it is, refused unless it has `<branch>` checked out | nothing |
+| `:origin-worktree` (default) | zent's worktree, detached at `origin/<branch>`: what's pushed | fetches, then resets the worktree to `origin/<branch>` |
+| `:local-worktree` | the same worktree, detached at your local `<branch>`: what's committed, pushed or not | resets the worktree to `<branch>`, no fetch |
+| `:main-worktree` | your clone as it is, uncommitted changes included, refused unless it has `<branch>` checked out | nothing |
 
-The worktree (`~/.cache/zent/worktrees/<repo>-<branch>`) is there so your clone is never touched.
-Detached, it holds no branch: your clone can check `<branch>` out meanwhile. A reload keeps its
-commit; only a sync moves it, and a sync refuses a worktree holding uncommitted files or commits
+zent's worktree (`~/.cache/zent/worktrees/<repo>-<branch>`) is there so your main worktree is never
+touched. Detached, it holds no branch: your main worktree can check `<branch>` out meanwhile, or
+another one - `:local-worktree` runs a branch you committed while you work on the next. A reload keeps
+its commit; only a sync moves it, and a sync refuses a worktree holding uncommitted files or commits
 on no branch, saying how to keep them.
 
 `zent rebase <c>` fetches origin's default branch and rebases onto it if nothing conflicts. By
-`:from`, it moves the clone's branch (no `:branch`, `:clone`), your local `<branch>` (`:local`),
-or only the worktree's commit, as a test the next sync reverts (`:origin`). It never pushes.
+`:from`, it moves your main worktree's branch (no `:branch`, `:main-worktree`), your local `<branch>`
+(`:local-worktree`), or only the worktree's commit, as a test the next sync reverts
+(`:origin-worktree`). It never pushes.
 
 `zent worktrees prune` removes the clean worktrees of this catalog's repos that nothing uses, and
 refuses to guess while a preset doesn't resolve or no daemon answers for the session.
@@ -254,7 +258,7 @@ refuses to guess while a preset doesn't resolve or no daemon answers for the ses
 
 A tool that reads other repos gets their directories through `:source-env` (`:one-shot`,
 `:process`, `:quarkus-app`; plain values go in `:env`): a component's checkout as the preset has
-it, or a `:repo`'s main clone. The card shows each directory and its branch, in a preview too,
+it, or a `:repo`'s main worktree. The card shows each directory and its branch, in a preview too,
 before anything runs.
 
 ```clojure
@@ -310,6 +314,7 @@ runs with them, which could print them. Values reach the process env only, maske
 
 ## Design docs
 
+- `docs/glossary.md`: zent's words, one per thing (`:from`, main worktree, worktree, statuses, verbs).
 - `docs/resource-kinds.md`: the mechanisms a component can run as (`:docker-compose`,
   `:process`, `:external`...).
 - `docs/watch-design.md`: live reload, and why it polls instead of using a native watcher.

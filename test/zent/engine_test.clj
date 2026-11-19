@@ -748,17 +748,17 @@
                                    {:svc {:watch {:paths ["src"]} :repo "repo" :workspace-dir root}})))))))
     (testing "given its repo not cloned, then it's just not watched"
       (is (= {} (#'engine/watch-targets {:svc {:watch {:paths ["src"]} :repo "nope" :workspace-dir root}}))))
-    (testing "given it runs from a worktree, :origin or :local, then not watched - only a sync moves it;
-              :from :clone runs the main clone, watched"
+    (testing "given it runs from a worktree, :origin-worktree or :local-worktree, then not watched - only a sync moves it;
+              :from :main-worktree runs the main worktree, watched"
       (let [svc {:watch {:paths ["src"]} :repo "repo" :workspace-dir root :branch "x"}]
         (with-redefs [zent.branch/worktree-path (fn [& _] root)]
-          (is (= {} (#'engine/watch-targets {:a svc :b (assoc svc :from :local)})))
-          (is (= #{:c} (set (keys (#'engine/watch-targets {:c (assoc svc :from :clone)}))))))))))
+          (is (= {} (#'engine/watch-targets {:a svc :b (assoc svc :from :local-worktree)})))
+          (is (= #{:c} (set (keys (#'engine/watch-targets {:c (assoc svc :from :main-worktree)}))))))))))
 
 (deftest serve-pull-refused-for-a-clone-test
-  (testing "given a component running a main clone as it is, then a :pull is refused, saying why - nothing
+  (testing "given a component running a main worktree as it is, then a :pull is refused, saying why - nothing
             redeployed"
-    (let [catalog {:components {:svc {:kind :process :cmd "run" :repo "svc" :branch "x" :from :clone}
+    (let [catalog {:components {:svc {:kind :process :cmd "run" :repo "svc" :branch "x" :from :main-worktree}
                                 :plain {:kind :process :cmd "run" :repo "svc"}}
                    :presets {:p {:svc {:mode :on} :plain {:mode :on}}}}
           control (atom [])
@@ -774,7 +774,7 @@
         (loop [i 0] (when (and (< @deploys 2) (< i 300)) (Thread/sleep 10) (recur (inc i))))
         (swap! control conj {:action :pull :name :svc :id 1} {:action :pull :name :plain :id 2})
         (loop [i 0] (when (and (< (count @handled) 2) (< i 300)) (Thread/sleep 10) (recur (inc i))))
-        (is (re-find #"^svc: it runs .*/svc as it is \(:from :clone\): nothing to pull" (str (:error (first (filter #(= 1 (:id %)) @handled))))))
+        (is (re-find #"^svc: it runs .*/svc as it is \(:from :main-worktree\): nothing to pull" (str (:error (first (filter #(= 1 (:id %)) @handled))))))
         (is (re-find #"\(no :branch\)" (str (:error (first (filter #(= 2 (:id %)) @handled))))))
         (is (= 2 @deploys))
         (finally (swap! control conj {:action :shutdown :id 99}) (deref serving 3000 nil))))))

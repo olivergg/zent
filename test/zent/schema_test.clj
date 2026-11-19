@@ -136,12 +136,13 @@
 (deftest from-test
   (let [errors #(try (schema/validate-component! :ui %) nil (catch clojure.lang.ExceptionInfo e (:errors (ex-data e))))
         ui {:kind :process :repo "ui" :cmd "x"}]
-    (testing "given :from with a :branch, then each mode is valid; an unknown one isn't"
-      (doseq [from [:origin :local :clone]]
+    (testing "given :from with a :branch, then each value is valid; an unknown one isn't, the old names included"
+      (doseq [from [:origin-worktree :local-worktree :main-worktree]]
         (is (nil? (errors (assoc ui :branch "b" :from from))) (str from)))
-      (is (some? (errors (assoc ui :branch "b" :from :upstream)))))
+      (doseq [from [:upstream :origin :local :clone]]
+        (is (some? (errors (assoc ui :branch "b" :from from))) (str from))))
     (testing "given :from without a :branch, then refused - it means nothing there"
-      (is (= {:from ["needs a :branch"]} (errors (assoc ui :from :local)))))
+      (is (= {:from ["needs a :branch"]} (errors (assoc ui :from :local-worktree)))))
     (testing ":from is a runtime preset's and a secret component's to set"
       (is (contains? schema/runtime-preset-keys :from))
       (is (contains? schema/secret-safe-overrides :from)))))

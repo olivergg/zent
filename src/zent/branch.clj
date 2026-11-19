@@ -1,7 +1,7 @@
 (ns zent.branch
   "Per-branch git worktrees, under ~/.cache/zent/worktrees/, detached at origin/<branch> (:from
-  :origin, the branch pushed) or at the local refs/heads/<branch> (:from :local, no push needed).
-  Detached: no local branch is ever moved or held, so the main clone stays free to check <branch>
+  :origin-worktree) or at the local refs/heads/<branch> (:from :local-worktree, no push needed).
+  Detached: no local branch is ever moved or held, so the main worktree stays free to check <branch>
   out. A sync (reset --hard) never drops work: it refuses a worktree with uncommitted files or
   commits no ref keeps (unreachable)."
   (:require [clojure.java.io :as io]
@@ -17,7 +17,7 @@
   (str (worktrees-root) "/" repo-name "-" (str/replace branch "/" "_")))
 
 (defn test-ref
-  "The ref an :origin worktree's local test rebase (zent.source/rebase!) is kept under: the
+  "The ref a :origin-worktree worktree's local test rebase (zent.source/rebase!) is kept under: the
   unreachable check spares it, the next sync drops it."
   [branch]
   (str "refs/zent/test/" branch))
@@ -42,9 +42,9 @@
     (when (zero? exit) (str/trim (str out)))))
 
 (defn sync-ref
-  "The ref a worktree mode syncs to."
+  "The ref a worktree's :from syncs to."
   [mode branch]
-  (if (= :local mode) (str "refs/heads/" branch) (str "origin/" branch)))
+  (if (= :local-worktree mode) (str "refs/heads/" branch) (str "origin/" branch)))
 
 (def unreachable-revs
   "rev-list's args for the commits HEAD has that no branch, remote ref or refs/zent/* ref keeps."
@@ -89,24 +89,24 @@
 (defn- local-ref!
   "refs/heads/<branch> of `clone`, or throws saying how to make it."
   [clone branch]
-  (let [ref (sync-ref :local branch)]
+  (let [ref (sync-ref :local-worktree branch)]
     (when-not (git clone "rev-parse" "--verify" "--quiet" (str ref "^{commit}"))
-      (throw (ex-info (str "no local branch " branch " in " clone " (:from :local runs it)")
-                      {:dir clone :hint (str "git -C " clone " branch " branch " origin/" branch ", or :from :origin")})))
+      (throw (ex-info (str "no local branch " branch " in " clone " (:from :local-worktree runs it)")
+                      {:dir clone :hint (str "git -C " clone " branch " branch " origin/" branch ", or :from :origin-worktree")})))
     ref))
 
 (defn resolve-worktree
   "Creates `repo-name`'s worktree for `branch` from `main-clone-dir` if missing, then - when
-  *sync* - resets it to origin/<branch> (`from` :origin, the default, fetched first) or to the
-  local <branch> (:local, no fetch); returns its path. A failed creation throws, so does a sync
+  *sync* - resets it to origin/<branch> (`from` :origin-worktree, the default, fetched first) or to the
+  local <branch> (:local-worktree, no fetch); returns its path. A failed creation throws, so does a sync
   that would lose work; a failed fetch (offline) keeps the worktree as it is."
-  ([main-clone-dir repo-name branch] (resolve-worktree main-clone-dir repo-name branch :origin))
+  ([main-clone-dir repo-name branch] (resolve-worktree main-clone-dir repo-name branch :origin-worktree))
   ([main-clone-dir repo-name branch from]
    (locking (repo-lock main-clone-dir)
      (let [worktree-dir (worktree-path repo-name branch)
            exists? (.exists (io/file worktree-dir))
            sync? (or *sync* (not exists?))
-           local? (= :local from)
+           local? (= :local-worktree from)
            ref (if local? (when sync? (local-ref! main-clone-dir branch)) (sync-ref from branch))
            shown (if local? branch ref)
            ;; the worktrees share the main clone's refs: fetching there updates origin/<branch> for both

@@ -34,23 +34,23 @@
                                                (is (= "another-repo" repo-name))
                                                (is (= "feature/foo" b))
                                                (str worktree-dir "@" (name from)))]
-        (is (= (str worktree-dir "@origin")
+        (is (= (str worktree-dir "@origin-worktree")
                (source/resolve-source "another-repo" {:workspace-dir root :branch "feature/foo"})))
-        (is (= (str worktree-dir "@local")
-               (source/resolve-source "another-repo" {:workspace-dir root :branch "feature/foo" :from :local})))))))
+        (is (= (str worktree-dir "@local-worktree")
+               (source/resolve-source "another-repo" {:workspace-dir root :branch "feature/foo" :from :local-worktree})))))))
 
 (deftest resolve-source-clone-test
   (let [root (str (System/getProperty "java.io.tmpdir") "/zent-source-test-main-" (System/currentTimeMillis))
         repo-dir (str root "/some-repo")
         on (fn [b] (fn [_] {:exit 0 :out (str b "\n") :err ""}))]
     (.mkdirs (File. repo-dir))
-    (testing "given :from :clone and the main clone on the branch, then the main clone as it is - no worktree"
+    (testing "given :from :main-worktree and the main clone on the branch, then the main clone as it is - no worktree"
       (with-redefs [zent.shell/sh! (on "feature/foo")
                     branch/resolve-worktree (fn [& _] (throw (ex-info "must not be called" {})))]
-        (is (= repo-dir (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo" :from :clone})))))
-    (testing "given :from :clone and the main clone elsewhere, then it refuses, saying how to fix it - zent never switches it"
+        (is (= repo-dir (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo" :from :main-worktree})))))
+    (testing "given :from :main-worktree and the main clone elsewhere, then it refuses, saying how to fix it - zent never switches it"
       (with-redefs [zent.shell/sh! (on "main")]
-        (let [e (try (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo" :from :clone}) nil
+        (let [e (try (source/resolve-source "some-repo" {:workspace-dir root :branch "feature/foo" :from :main-worktree}) nil
                      (catch clojure.lang.ExceptionInfo e e))]
           (is (re-find #"must have feature/foo checked out - it has main" (ex-message e)))
           (is (= (str "git -C " repo-dir " checkout feature/foo") (:hint (ex-data e)))))))
@@ -89,12 +89,12 @@
           (is (= (branch/worktree-path "some-repo" "feature/x") (:worktree d)))
           (is (= (:worktree d) (:dir d))))))
 
-    (testing "given :from :clone, then it reads the main clone; :from :local, the worktree"
+    (testing "given :from :main-worktree, then it reads the main clone; :from :local-worktree, the worktree"
       (with-redefs [zent.shell/sh! (fn [_] {:exit 0 :out "feature/x\n" :err ""})]
         (is (= {:workdir repo-dir :dir repo-dir :branch "feature/x"}
-               (source/describe {:repo "some-repo" :workspace-dir root :branch "feature/x" :from :clone})))
+               (source/describe {:repo "some-repo" :workspace-dir root :branch "feature/x" :from :main-worktree})))
         (is (= (branch/worktree-path "some-repo" "feature/x")
-               (:worktree (source/describe {:repo "some-repo" :workspace-dir root :branch "feature/x" :from :local}))))))
+               (:worktree (source/describe {:repo "some-repo" :workspace-dir root :branch "feature/x" :from :local-worktree}))))))
 
     (testing "a detached HEAD or a non-repo directory reports no branch rather
               than the literal string git prints"
@@ -181,12 +181,12 @@
   (let [st {:branch "feature/x" :base "master" :dirty 0 :behind 3}]
     (is (nil? (source/rebase-refusal st)))
     (is (nil? (source/rebase-refusal (assoc st :dirty 1))) "a clone's uncommitted files are autostashed")
-    (is (nil? (source/rebase-refusal (assoc st :dirty 1 :from :clone))))
-    (is (re-find #"uncommitted" (source/rebase-refusal (assoc st :dirty 1 :from :local))))
-    (is (re-find #"uncommitted" (source/rebase-refusal (assoc st :dirty 1 :from :origin))))
+    (is (nil? (source/rebase-refusal (assoc st :dirty 1 :from :main-worktree))))
+    (is (re-find #"uncommitted" (source/rebase-refusal (assoc st :dirty 1 :from :local-worktree))))
+    (is (re-find #"uncommitted" (source/rebase-refusal (assoc st :dirty 1 :from :origin-worktree))))
     (is (re-find #"already" (source/rebase-refusal (assoc st :behind 0))))
     (is (nil? (source/rebase-refusal (assoc st :branch "master"))) "a clone on its default branch catches up")
-    (is (re-find #"itself" (source/rebase-refusal (assoc st :branch "master" :from :local))))
+    (is (re-find #"itself" (source/rebase-refusal (assoc st :branch "master" :from :local-worktree))))
     (is (re-find #"detached" (source/rebase-refusal (dissoc st :branch))))))
 
 (deftest rebase-test
@@ -256,19 +256,19 @@
   (let [clone (repos "g.txt")
         origin-sha #(git! clone "ls-remote" "origin" "refs/heads/feature")]
     (testing "given a branch origin doesn't have, then it is pushed"
-      (is (:ok (source/push! (cfg-of clone :branch "feature" :from :clone))))
+      (is (:ok (source/push! (cfg-of clone :branch "feature" :from :main-worktree))))
       (is (str/starts-with? (origin-sha) (git! clone "rev-parse" "feature"))))
     (testing "given nothing new, then refused"
       (git! clone "fetch" "--quiet" "origin")
-      (is (re-find #"nothing origin doesn't" (:message (source/push! (cfg-of clone :branch "feature" :from :clone))))))
+      (is (re-find #"nothing origin doesn't" (:message (source/push! (cfg-of clone :branch "feature" :from :main-worktree))))))
     (testing "given it rewritten (a rebase), then pushed with a lease, replacing origin's"
       (git! clone "commit" "--quiet" "--amend" "-m" "rewritten")
-      (let [{:keys [ok message]} (source/push! (cfg-of clone :branch "feature" :from :clone))]
+      (let [{:keys [ok message]} (source/push! (cfg-of clone :branch "feature" :from :main-worktree))]
         (is ok message)
         (is (re-find #"replacing 1 on origin \(force-with-lease\)" message))
         (is (str/starts-with? (origin-sha) (git! clone "rev-parse" "feature")))))
     (testing "given the default branch, then refused"
-      (is (re-find #"default branch" (:message (source/push! (cfg-of clone :branch "master" :from :clone))))))))
+      (is (re-find #"default branch" (:message (source/push! (cfg-of clone :branch "master" :from :main-worktree))))))))
 
 (deftest sync-clone-test
   (let [clone (repos "g.txt")]
@@ -286,13 +286,13 @@
       (is (re-find #"rebase it by hand" (:message (source/sync-clone! (cfg-of clone))))))))
 
 (deftest checkout-refusal-test
-  (let [st {:from :clone :wanted-branch "feature/x" :branch "master" :dirty 0}]
+  (let [st {:from :main-worktree :wanted-branch "feature/x" :branch "master" :dirty 0}]
     (is (nil? (source/checkout-refusal st)))
     (is (nil? (source/checkout-refusal (dissoc st :branch))) "detached")
     (is (re-find #"uncommitted" (source/checkout-refusal (assoc st :dirty 1))))
     (is (re-find #"already" (source/checkout-refusal (assoc st :branch "feature/x"))))
-    (is (re-find #":from :clone" (source/checkout-refusal (assoc st :from :origin))))
-    (is (re-find #":from :clone" (source/checkout-refusal (dissoc st :from :wanted-branch))) "no :branch")))
+    (is (re-find #":from :main-worktree" (source/checkout-refusal (assoc st :from :origin-worktree))))
+    (is (re-find #":from :main-worktree" (source/checkout-refusal (dissoc st :from :wanted-branch))) "no :branch")))
 
 (deftest checkout-test
   (let [clone (repos "g.txt")
@@ -300,23 +300,23 @@
         on #(git! clone "rev-parse" "--abbrev-ref" "HEAD")]
     (testing "given an untracked file, then nothing moves"
       (spit (str clone "/wip.txt") "wip\n")
-      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "master" :from :clone))]
+      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "master" :from :main-worktree))]
         (is (not ok))
         (is (re-find #"uncommitted" message))
         (is (= "feature" (on))))
       (.delete (File. (str clone "/wip.txt"))))
     (testing "given a clean clone on another branch, then the preset's is checked out, the undo told"
-      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "master" :from :clone))]
+      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "master" :from :main-worktree))]
         (is ok message)
         (is (re-find #"undo: git -C .*clone checkout feature$" message))
         (is (= "master" (on)))))
     (testing "given a branch only origin has, then it is fetched and tracked"
       (git! other "push" "--quiet" "origin" "master:remote-only")
-      (is (:ok (source/checkout! (cfg-of clone :branch "remote-only" :from :clone))))
+      (is (:ok (source/checkout! (cfg-of clone :branch "remote-only" :from :main-worktree))))
       (is (= "remote-only" (on)))
       (is (= "origin/remote-only" (git! clone "rev-parse" "--abbrev-ref" "@{upstream}"))))
     (testing "given a branch nobody has, then git's own refusal, nothing moved"
-      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "nope" :from :clone))]
+      (let [{:keys [ok message]} (source/checkout! (cfg-of clone :branch "nope" :from :main-worktree))]
         (is (not ok))
         (is (re-find #"nope can't be checked out" message))
         (is (= "remote-only" (on)))))))
@@ -324,10 +324,10 @@
 (deftest rebase-local-test
   (let [clone (repos "g.txt")
         wt (str (.getParent (File. clone)) "/wt")
-        cfg (cfg-of clone :branch "feature" :from :local)]
+        cfg (cfg-of clone :branch "feature" :from :local-worktree)]
     (with-redefs [branch/worktree-path (fn [_ _] wt)]
       (git! clone "push" "--quiet" "origin" "feature")
-      (branch/resolve-worktree clone "clone" "feature" :local)
+      (branch/resolve-worktree clone "clone" "feature" :local-worktree)
       (testing "given the clone has feature checked out, then refused, saying to rebase it there"
         (let [before (git! clone "rev-parse" "feature")
               {:keys [ok message]} (source/rebase! cfg)]
@@ -357,7 +357,7 @@
       (branch/resolve-worktree clone "clone" "feature")
       (let [branches #(git! clone "for-each-ref" "--format=%(refname) %(objectname)" "refs/heads" "refs/remotes/origin/feature")
             before (branches)]
-        (testing "given an :origin worktree behind master, then a local test: its HEAD rebased, no branch moved"
+        (testing "given a :origin-worktree worktree behind master, then a local test: its HEAD rebased, no branch moved"
           (let [{:keys [ok message]} (source/rebase! cfg)]
             (is ok message)
             (is (re-find #"local test" message))
@@ -374,13 +374,13 @@
 (deftest checkout-git-local-test
   (let [clone (repos "g.txt")
         wt (str (.getParent (File. clone)) "/wt")
-        cfg (cfg-of clone :branch "feature" :from :local)]
+        cfg (cfg-of clone :branch "feature" :from :local-worktree)]
     (with-redefs [branch/worktree-path (fn [_ _] wt)]
       (git! clone "push" "--quiet" "origin" "feature")
-      (branch/resolve-worktree clone "clone" "feature" :local)
+      (branch/resolve-worktree clone "clone" "feature" :local-worktree)
       (spit (str clone "/h.txt") "h") (git! clone "add" ".") (git! clone "commit" "--quiet" "-m" "local")
       (testing "given a new commit on the local branch, then the worktree may pull it, and it's unpushed on feature"
-        (is (= {:from :local :pull 1 :unreachable 0 :local-ahead 1 :local-behind 0}
+        (is (= {:from :local-worktree :pull 1 :unreachable 0 :local-ahead 1 :local-behind 0}
                (select-keys (source/checkout-git cfg) [:from :pull :unreachable :local-ahead :local-behind]))))
       (testing "given a commit made in the worktree itself, then it's on no branch"
         (spit (str wt "/w.txt") "w") (git! wt "add" ".") (git! wt "commit" "--quiet" "-m" "in wt")

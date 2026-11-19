@@ -91,20 +91,20 @@
                 (merge ref coords))))))
 
 (defn- refuse-split-worktrees!
-  "Refuses `resolved` running one [repo branch] worktree from two refs - :from :origin and :local
+  "Refuses `resolved` running one [repo branch] worktree from two refs - :from :origin-worktree and :local-worktree
   (zent.source/from) - its components' or their :source-env's: one dir can't be at both."
   [resolved]
   (let [uses (for [[k cfg] resolved
                    [who coords] (cons [k cfg] (for [[var ref] (:source-env cfg)] [(str k " :source-env " var) ref]))
                    :let [mode (source/from coords)]
-                   :when (#{:origin :local} mode)]
+                   :when (source/worktree-from mode)]
                {:at [(:repo coords) (:branch coords)] :who who :from mode})]
     (doseq [[[repo branch] us] (group-by :at uses)
             :let [by-from (group-by :from us)]
             :when (< 1 (count by-from))]
       (let [who #(str/join ", " (sort (map (comp str :who) (by-from %))))]
-        (throw (ex-info (format "%s@%s has one worktree, run :from :origin by %s and :from :local by %s - it can't be at both"
-                                repo branch (who :origin) (who :local))
+        (throw (ex-info (format "%s@%s has one worktree, run :from :origin-worktree by %s and :from :local-worktree by %s - it can't be at both"
+                                repo branch (who :origin-worktree) (who :local-worktree))
                         {:repo repo :branch branch}))))))
 
 (defn resolve-preset

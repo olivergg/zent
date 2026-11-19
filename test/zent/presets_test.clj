@@ -65,5 +65,5 @@
 (deftest runtime-from-test
   (testing "given a user preset running a branch from the local one, then it's saved"
     (let [dir (str (System/getProperty "java.io.tmpdir") "/zent-presets-from-" (System/nanoTime))]
-      (presets/save! catalog dir :mine "[:db {:branch \"x\" :from :local}]")
-      (is (= {:db {:mode :on :branch "x" :from :local}} (:mine (presets/load-files dir)))))))
+      (presets/save! catalog dir :mine "[:db {:branch \"x\" :from :local-worktree}]")
+      (is (= {:db {:mode :on :branch "x" :from :local-worktree}} (:mine (presets/load-files dir)))))))

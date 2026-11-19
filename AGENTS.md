@@ -23,9 +23,9 @@ smaller change.
    the engine; nothing there lists kinds by name.
 5. **Never touch what zent can't prove it owns.** A PID is re-checked by `ps` identity
    before a kill; `:permanent` survives every implicit teardown; a deploy or a sync
-   never touches the main clone's files or branches (`:branch` runs from a worktree, only
+   never touches the main worktree's files or branches (`:branch` runs from zent's worktree, only
    `origin/*` refs get fetched), only an explicit `zent rebase` or the card's `checkout`
-   (`:from :clone`) moves them; no auto-clone.
+   (`:from :main-worktree`) moves them; no auto-clone.
 6. **Security defaults on.** Every kubectl pins `--context`, which must be in the catalog's
    allowlist (the kubeconfig may hold prod). Runtime presets (CLI, MCP) pick components
    and branch/image/port/context, never what code runs (`:cmd`, `:env`, `:scripts`), and
@@ -131,6 +131,8 @@ What a catalog's components themselves need is listed in that catalog's repo.
   call (zent.mcp captures per call, the rest goes to stderr).
 - Kinds and their keys: `src/zent/schema.clj`, `docs/resource-kinds.md`. A catalog's format:
   `README.md` ("A catalog repo", "For Java/Python developers").
+- Names: `docs/glossary.md` - one word per thing, in code, CLI, MCP, dashboard and docs alike; a new
+  name gets its line there, a rename updates it.
 
 ## Useful to know
 
@@ -149,13 +151,13 @@ What a catalog's components themselves need is listed in that catalog's repo.
   `--remote-debugging-port` and read the page's state over the DevTools protocol
   (`Runtime.evaluate`, e.g. `document.querySelectorAll('.ln').length`).
 - `:branch` runs, by `:from`, a worktree in `~/.cache/zent/worktrees/<repo>-<branch>` detached
-  at `origin/<branch>` (`:origin`, the default: pushed code, fetched first) or at the local
-  `<branch>` (`:local`: committed code, no fetch), or the main clone as it is (`:clone`, refused
-  unless it has `<branch>` checked out - the card's `checkout` does it, on a clone with nothing
-  uncommitted). A worktree is synced (reset --hard) by an apply that
+  at `origin/<branch>` (`:origin-worktree`, the default: pushed code, fetched first) or at the local
+  `<branch>` (`:local-worktree`: committed code, no fetch), or the main worktree - the user's clone -
+  as it is (`:main-worktree`, refused unless it has `<branch>` checked out - the card's `checkout`
+  does it, on a main worktree with nothing uncommitted). A worktree is synced (reset --hard) by an apply that
   (re)deploys it or a `zent pull` - a reload keeps its commit - and the sync refuses one holding
   uncommitted files or commits on no branch (`zent.branch/at-risk`). No sync moves or holds a
-  local branch; only `zent rebase` of a `:local` one moves it. `zent worktrees [prune]` lists /
+  local branch; only `zent rebase` of a `:local-worktree` one moves it. `zent worktrees [prune]` lists /
   removes them.
 - State: `~/.cache/zent/` (session, logs, `serve.log`, worktrees), user presets in
   `~/.config/zent/presets/`.
