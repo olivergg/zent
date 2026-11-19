@@ -30,7 +30,7 @@
 (deftest describe-kinds-test
   (testing "every field of a builtin kind is described, :kind itself excluded"
     (let [fields (get (schema/describe-kinds) :quarkus-app)
-          by-key (into {} (map (juxt :key identity)) fields)]
+          by-key (into {} (map (juxt :key #(dissoc % :description))) fields)]
       (is (not (contains? by-key :kind)))
       (is (= {:key :repo :required true :type :string} (:repo by-key)))
       (is (= {:key :port :required true :type :int} (:port by-key)))

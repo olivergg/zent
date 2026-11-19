@@ -129,8 +129,10 @@ What a catalog's components themselves need is listed in that catalog's repo.
   once the client restarts it (`/mcp` reconnect in Claude Code), whatever `reload-code` did
   to the daemon. Its stdout is the protocol - code it runs must not print outside a tool
   call (zent.mcp captures per call, the rest goes to stderr).
-- Kinds and their keys: `src/zent/schema.clj`, `docs/resource-kinds.md`. A catalog's format:
-  `README.md` ("A catalog repo", "For Java/Python developers").
+- Kinds and their keys: `docs/reference.md`, generated from `src/zent/schema.clj` - a new key gets
+  its `:description` there, then `jolt run -m zent.reference > docs/reference.md` (a test fails
+  otherwise); why the kinds: `docs/resource-kinds.md`. A catalog's format: `README.md` ("A catalog
+  repo", "For Java/Python developers").
 - Names: `docs/glossary.md` - one word per thing, in code, CLI, MCP, dashboard and docs alike; a new
   name gets its line there, a rename updates it.
 

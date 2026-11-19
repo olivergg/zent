@@ -314,6 +314,8 @@ runs with them, which could print them. Values reach the process env only, maske
 
 ## Design docs
 
+- `docs/reference.md`: every key a catalog, a component of each kind and a preset may hold
+  (generated from the schema).
 - `docs/glossary.md`: zent's words, one per thing (`:from`, main worktree, worktree, statuses, verbs).
 - `docs/resource-kinds.md`: the mechanisms a component can run as (`:docker-compose`,
   `:process`, `:external`...).
