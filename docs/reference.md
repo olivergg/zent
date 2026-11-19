@@ -39,7 +39,7 @@ Whatever its `:kind`:
 | `:org` | string |  | The GitHub organisation of its repo, for the git clone command zent prints when the repo is missing. |
 | `:related` | list of keyword |  | Components it's coupled to, shown in the dashboard - no start order, no readiness wait (that's :deps). |
 | `:permanent` | boolean |  | Never stopped implicitly: a preset switch, a stop-everything or zent exiting leave it up; only a stop naming it does. For a shared dependency meant to outlive any one run. |
-| `:keep-warm` | boolean |  | Left running, idle, by a preset switch that doesn't need it, for the next one that does; a stop-everything or zent exiting still stop it. |
+| `:keep-warm` | boolean |  | Left running, warm, by a preset switch that doesn't need it, for the next one that does; a stop-everything or zent exiting still stop it. |
 | `:links` | list of map |  | URLs worth opening, each {:url :label}: the card's links. |
 
 ## `:kind :compose-services`

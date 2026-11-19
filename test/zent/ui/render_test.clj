@@ -6,7 +6,7 @@
 (deftest component-card-source-env-test
   (testing "given a strip reading other checkouts, then each dir shows with its branch
             and its var as the tooltip - what it reads, before it runs"
-    (let [html (render/component-card :seed {:kind :one-shot :status :ready :attached-to :db
+    (let [html (render/component-card :seed {:kind :one-shot :status :on-demand :attached-to :db
                                              :source-env {"SCHEMA" {:dir "/w/api/db" :branch "feature/x"}}})]
       (is (str/includes? html "title=\"SCHEMA\""))
       (is (str/includes? html "<span class=\"branch\" title=\"feature/x\">feature/x</span>"))
@@ -22,8 +22,8 @@
 (deftest component-card-status-label-test
   (testing "each status gets its label-of wording, :external reading as
             plain \"up\""
-    (doseq [[status label] {:pending "pending" :deploying "starting" :up "up"
-                             :done "done" :idle "idle" :failed "failed" :external "up" :off "off" :down "stopped"
+    (doseq [[status label] {:waiting "waiting" :deploying "starting" :up "up"
+                             :done "done" :warm "warm" :failed "failed" :external "up" :off "off" :stopped "stopped"
                              :unready "unready"}]
       (is (str/includes? (render/component-card :svc {:kind :process :status status})
                           (str "<span class=\"state\">" label "</span>"))))))
@@ -37,20 +37,20 @@
       (is (str/includes? html "act reload"))
       (is (str/includes? html "disabled"))))
 
-  (testing "given a one-shot, then the button runs it: \"Run\" while :ready (on demand,
+  (testing "given a one-shot, then the button runs it: \"Run\" while :on-demand (
             never run), \"Run again\" once :done - a service keeps \"Reload now\""
-    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :ready}) "title=\"Run\""))
-    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :ready})
+    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :on-demand}) "title=\"Run\""))
+    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :on-demand})
                        "<span class=\"state\">on demand</span>"))
     (is (str/includes? (render/component-card :seed {:kind :one-shot :status :done}) "title=\"Run again\""))
     (is (str/includes? (render/component-card :svc {:kind :process :status :up}) "title=\"Reload now\"")))
 
   (testing "given a :confirm, then the button asks it before posting; without, it doesn't ask"
-    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :ready :confirm "Wipe the DB?"})
+    (is (str/includes? (render/component-card :seed {:kind :one-shot :status :on-demand :confirm "Wipe the DB?"})
                        "hx-confirm=\"Wipe the DB?\""))
-    (is (not (str/includes? (render/component-card :seed {:kind :one-shot :status :ready}) "hx-confirm"))))
+    (is (not (str/includes? (render/component-card :seed {:kind :one-shot :status :on-demand}) "hx-confirm"))))
 
-  (testing "stop: only :up/:deploying/:idle/:unready (still running)"
+  (testing "stop: only :up/:deploying/:warm/:unready (still running)"
     (is (str/includes? (render/component-card :svc {:kind :process :status :up}) "act stop"))
     (is (str/includes? (render/component-card :svc {:kind :process :status :unready}) "act stop"))
     (is (str/includes? (render/component-card :svc {:kind :process :status :unready}) "act reload"))
@@ -114,19 +114,19 @@
 
 (deftest component-card-shots-test
   (let [shots [[:seed {:kind :one-shot :status :done :description "Load the data"}]
-               [:purge {:kind :one-shot :status :ready :confirm "Delete rows?"}]
+               [:purge {:kind :one-shot :status :on-demand :confirm "Delete rows?"}]
                [:replay {:kind :one-shot :status :deploying}]]
         card #(render/component-card :db (merge {:kind :process :status :up :shots shots} %))]
     (testing "given a host's one-shots, then one button each: its state, what it does on hover, a run that asks first"
       (let [html (card {})]
         (is (str/includes? html "data-shot=\"seed\" data-state=\"done\" title=\"seed - done\nLoad the data\""))
-        (is (str/includes? html "data-shot=\"purge\" data-state=\"ondemand\""))
+        (is (str/includes? html "data-shot=\"purge\" data-state=\"on-demand\""))
         (is (str/includes? html "title=\"Run\" hx-post=\"/api/trigger/purge\" hx-swap=\"none\" hx-disabled-elt=\"this\" hx-confirm=\"Delete rows?\""))
         (is (str/includes? html "title=\"Run again\" hx-post=\"/api/trigger/seed\""))
         (is (not (str/includes? html "/api/trigger/replay")) "running: nothing to run")))
     (testing "given an :on-demand one never run, then it says so whatever its status - an apply won't start it"
-      (is (str/includes? (card {:shots [[:purge {:kind :one-shot :status :pending :on-demand true}]]}) "data-state=\"ondemand\""))
-      (is (str/includes? (card {:shots [[:seed {:kind :one-shot :status :pending}]]}) "data-state=\"idle\"")))
+      (is (str/includes? (card {:shots [[:purge {:kind :one-shot :status :waiting :on-demand true}]]}) "data-state=\"on-demand\""))
+      (is (str/includes? (card {:shots [[:seed {:kind :one-shot :status :waiting}]]}) "data-state=\"idle\"")))
     (testing "in a preview, nothing runs"
       (is (not (str/includes? (card {:preview? true}) "/api/trigger/"))))))
 
@@ -153,7 +153,7 @@
       (is (str/includes? html "<span class=\"socket live\" style=\"--i:0\" title=\"localhost:6379\nSomething listens here\"><b>6379</b>"))))
 
   (testing "before the stack is up, declared names show with no health yet"
-    (let [html (render/component-card :db {:kind :docker-compose :status :pending :services [:redis]})]
+    (let [html (render/component-card :db {:kind :docker-compose :status :waiting :services [:redis]})]
       (is (str/includes? html "svc-name\">redis"))
       (is (str/includes? html "data-health=\"\"")))))
 
@@ -188,6 +188,12 @@
     (let [html (render/run-summary {:a {:status :up} :b {:status :external} :c {:status :deploying}})]
       (is (str/includes? html "<b>2</b> up"))
       (is (str/includes? html "<b>1</b> starting"))))
+
+  (testing "a one-shot counts under its own label"
+    (let [html (render/run-summary {:a {:kind :one-shot :status :deploying} :b {:kind :one-shot :status :on-demand}})]
+      (is (str/includes? html "<span class=\"t-running\"><b>1</b> running</span>"))
+      (is (str/includes? html "<span class=\"t-on-demand\"><b>1</b> on demand</span>"))
+      (is (str/includes? html "Still starting."))))
 
   (testing "a failed component blocks and is named"
     (let [html (render/run-summary {:a {:status :up} :b {:status :failed}})]
@@ -260,7 +266,7 @@
       (is (str/includes? html "class=\"btn danger\" hx-post=\"/api/stop/svc\""))))
 
   (testing "selected in a preview: nothing is deployed, so nothing to reload or stop"
-    (let [html (render/detail-panel :svc {:kind :process :status :pending :preview? true})]
+    (let [html (render/detail-panel :svc {:kind :process :status :waiting :preview? true})]
       (is (not (str/includes? html "hx-post")))
       (is (str/includes? html "Show log")))))
 
@@ -280,10 +286,10 @@
 
 (deftest capsule-wording-test
   (testing "until it runs, a capsule says what it is to the stack: where everything leads, or on demand"
-    (let [state #(second (re-find #"class=\"state\">([^<]*)" (render/component-card :job (merge {:kind :one-shot :status :pending} %))))]
+    (let [state #(second (re-find #"class=\"state\">([^<]*)" (render/component-card :job (merge {:kind :one-shot :status :waiting} %))))]
       (is (= "the point of it" (state {:terminus true :on-demand true})))
       (is (= "on demand" (state {:on-demand true})))
-      (is (= "queued" (state {})))
+      (is (= "waiting" (state {})))
       (is (= "running" (state {:terminus true :status :deploying})) "once it runs, its state"))))
 
 (deftest link-follows-its-port-test
@@ -295,12 +301,12 @@
       (is (str/includes? (card {}) "href=\"http://localhost:8081/x\"")))))
 
 (deftest one-shot-labels-test
-  (testing "a one-shot reads as a job: not run / queued / running, never stopped"
-    (doseq [[status label] {:off "not run" :down "not run" :pending "queued" :deploying "running" :done "done"}]
+  (testing "a one-shot reads as a job: not run / waiting / running, never stopped"
+    (doseq [[status label] {:off "not run" :stopped "not run" :waiting "waiting" :deploying "running" :done "done"}]
       (is (str/includes? (render/component-card :job {:kind :one-shot :status status})
                          (str "<span class=\"state\">" label "</span>"))
           (str status)))
-    (is (str/includes? (render/component-card :svc {:kind :process :status :down}) ">stopped<"))))
+    (is (str/includes? (render/component-card :svc {:kind :process :status :stopped}) ">stopped<"))))
 
 (deftest stopping-card-test
   (testing "a stopping card says so and offers neither reload nor stop"

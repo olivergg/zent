@@ -21,14 +21,14 @@
 
 (defn await!
   "Long-polls /api/events until the daemon has processed the command a POST
-  queued (`queued`, its {:id :seq} reply), calling (on-change name old-status
-  new-status) on every status transition, in the order they happened.
-  Returns the final view."
+  queued (`queued`, its {:id :seq} reply), calling (on-change name kind
+  old-status new-status) on every status transition, in the order they
+  happened - keywords, nil for no old status. Returns the final view."
   [d {:keys [id] since :seq} on-change]
   (loop [since since]
     (let [{:keys [events done seq]} (request d :get (str "/api/events?since=" since "&id=" id))]
-      (doseq [{:keys [component from to]} events]
-        (on-change (keyword component) from to))
+      (doseq [{:keys [component kind from to]} events]
+        (on-change (keyword component) (some-> kind keyword) (some-> from keyword) (keyword to)))
       (if done
         (request d :get "/api/view")
         (recur seq)))))

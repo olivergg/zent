@@ -61,14 +61,14 @@
       (is (= [:db] (:members s))))))
 
 (deftest shown-components-test
-  (let [comps {:db {:status :up} :api {:status :down} :old {:status :down} :warm {:status :idle}}]
+  (let [comps {:db {:status :up} :api {:status :stopped} :old {:status :stopped} :warm {:status :warm}}]
     (testing "the preset's own, stopped or not, plus what still runs outside it"
       (is (= #{:db :api :warm} (set (keys (state/shown-components {:components comps :members [:db :api]}))))))
     (testing "no :members yet: everything"
       (is (= comps (state/shown-components {:components comps}))))))
 
 (deftest record-transitions-clock-test
-  (let [s0 (step {} 1000 {:api {:status :pending}})
+  (let [s0 (step {} 1000 {:api {:status :waiting}})
         s1 (step s0 3000 {:api {:status :deploying}})
         s2 (step s1 3500 {:api {:status :deploying}})
         s3 (step s2 45000 {:api {:status :up}})
@@ -118,7 +118,7 @@
 
 (deftest set-usage-test
   (testing "given a sample, then each shown component gets its :usage, and one without loses a stale one"
-    (let [s {:components {:a {:status :up :usage {:cpu 50}} :b {:status :down :usage {:cpu 5}}}}
+    (let [s {:components {:a {:status :up :usage {:cpu 50}} :b {:status :stopped :usage {:cpu 5}}}}
           after (state/set-usage s {:a {:cpu 10 :rss 1 :level :calm} :zz {:cpu 1}})]
       (is (= {:cpu 10 :rss 1 :level :calm} (get-in after [:components :a :usage])))
       (is (not (contains? (get-in after [:components :b]) :usage)))

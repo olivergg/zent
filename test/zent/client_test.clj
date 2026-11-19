@@ -20,7 +20,7 @@
                   body (assoc :body (java.io.ByteArrayInputStream. (.getBytes ^String body "UTF-8")))))))
 
 (use-fixtures :each (fn [t]
-                      (reset! state/view-state (assoc-in state/empty-state [:components :api] {:status :up}))
+                      (reset! state/view-state (assoc-in state/empty-state [:components :api] {:kind :process :status :up}))
                       (reset! state/control [])
                       (reset! server/csrf-token "test-token")
                       (with-redefs [client/send! in-process] (t))))
@@ -47,4 +47,4 @@
                          (state/observe-handled! [{:id (:id queued)}]))]
       (is (= "up" (get-in (client/await! d queued #(swap! changes conj %&)) [:components :api :status])))
       @engine
-      (is (= [[:api "up" "deploying"] [:api "deploying" "up"]] @changes)))))
+      (is (= [[:api :process :up :deploying] [:api :process :deploying :up]] @changes)))))

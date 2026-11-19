@@ -47,18 +47,19 @@
   ([at before after]
   (let [was (update-vals (:components before) :status)
         after (update after :components #(into {} (for [[k c] %] [k (stamp at (get-in before [:components k]) c)])))
-        changes (for [[k {:keys [status]}] (:components after)
+        changes (for [[k {:keys [status kind]}] (:components after)
                       :when (not= status (get was k))]
-                  [k (get was k) status])]
+                  [k (get was k) status kind])]
     (if (empty? changes)
       after
       ;; fnil and the 0 default: a state from before the journal existed
       ;; survives a code reload (defonce)
-      (-> (reduce (fn [s [k from to]]
+      (-> (reduce (fn [s [k from to kind]]
                     (let [n (inc (:event-seq s 0))]
                       (-> s
                           (assoc :event-seq n)
-                          (update :events (fnil conj []) {:seq n :at at :component k :from from :to to}))))
+                          ;; :kind - a one-shot's label differs (zent.ui.render/label-of)
+                          (update :events (fnil conj []) {:seq n :at at :component k :kind kind :from from :to to}))))
                   after changes)
           (update :events #(vec (take-last max-events %))))))))
 
@@ -69,7 +70,7 @@
   (let [own (set members)]
     (if (empty? own)
       components
-      (into {} (filter (fn [[k c]] (or (own k) (not (#{:down :off} (:status c))))) components)))))
+      (into {} (filter (fn [[k c]] (or (own k) (not (#{:stopped :off} (:status c))))) components)))))
 
 (defn- swap-view!
   "swap! on view-state, recording the status transitions `f` makes."
@@ -126,20 +127,20 @@
 
 (declare resting-status)
 
-(defn- with-idle
-  "A component the engine keeps warm (:zent.engine/idle) reads :idle, and
+(defn- with-warm
+  "A component the engine keeps warm (:zent.engine/warm) reads :warm, and
   back to its resting status once a preset needs it again."
   [c cfg]
   (cond
-    (:zent.engine/idle cfg) (assoc c :status :idle)
-    (= :idle (:status c)) (assoc c :status (resting-status cfg))
+    (:zent.engine/warm cfg) (assoc c :status :warm)
+    (= :warm (:status c)) (assoc c :status (resting-status cfg))
     :else c))
 
 (defn set-preset
   "`state` showing `resolved` as preset `preset-name`. :source is filled in
   later (observe-preset-resolved!), since it shells out to git. A component
   already shown keeps its status - a shared one mustn't flash back to
-  :pending on every apply naming it."
+  :waiting on every apply naming it."
   [state preset-name resolved & [{:keys [repo-url-template]}]]
   (-> state
       (assoc :preset preset-name :started-at (System/currentTimeMillis))
@@ -153,7 +154,7 @@
               (fn [comps]
                 (reduce (fn [acc [k cfg]]
                           (assoc acc k
-                                 (with-idle
+                                 (with-warm
                                   (merge {:kind (:kind cfg)
                                          :mode (:mode cfg)
                                          :deps (vec (:deps cfg))
@@ -173,7 +174,7 @@
                                          :repo-url (repo-url cfg repo-url-template)
                                          ;; replaced by the discovered list on deploy
                                          :services (:services cfg)
-                                         :status :pending}
+                                         :status :waiting}
                                         (select-keys (get comps k)
                                                      [:status :service-status :handle-summary :error :git :deployed-sha]))
                                   cfg)))
@@ -333,12 +334,12 @@
 (defn- resting-status
   "What a component settles into once deployed - from mode and kind, not
   the handle: a nil handle means both \"finished one-shot\" and \"off\".
-  A one-shot rests at :done, like a completed k8s Job - or :ready when it's
-  :on-demand and an apply skipped it: shown, with its reload, unlike :off."
+  A one-shot rests at :done, like a completed k8s Job - or :on-demand when
+  an apply skipped it for being one: shown, with its reload, unlike :off."
   [{:keys [mode kind] :as cfg}]
   (cond
     (not= :on mode) :off
-    (engine/on-demand-skip? cfg) :ready
+    (engine/on-demand-skip? cfg) :on-demand
     (= :external kind) :external
     (= :one-shot kind) :done
     :else :up))
@@ -371,7 +372,7 @@
   (swap-view! mark-status name :stopping))
 
 (defn observe-manual-stop! [name]
-  (swap-view! mark-status name :down))
+  (swap-view! mark-status name :stopped))
 
 (defn observe-liveness-check!
   "A deployed component's liveness flipped: down reads as plain :failed,

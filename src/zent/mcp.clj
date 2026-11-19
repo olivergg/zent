@@ -22,9 +22,10 @@ describe_catalog to see components and their fields, save_preset to compose
 one, preview to check what it would run, apply to start it (it waits until
 everything settled), then status/logs/reload/stop. Applying a preset stops
 what it doesn't name, except :permanent components and :keep-warm ones
-(left running as idle for the next preset); one already running is
+(left running, warm, for the next preset); one already running is
 redeployed if the preset configures it differently. One-shots (seeding
-scripts) end as done; status shows not run/queued/running for them. A
+scripts) end as done; status shows not run/waiting/running/on demand for
+them. A
 preset is EDN: a vector of component names, each optionally followed by a
 map of overrides, e.g. [:db :api {:branch \"feature/x\"}]. A saved
 preset may only choose components and set :branch/:image/:port/:context/
@@ -82,7 +83,7 @@ credentials its catalog entry points at, if it declares any.")
     :props {:name (prop "string" "preset name")} :required ["name"]
     :call (fn [args] (cli/delete-preset! ctx (keyword (arg args :name))))}
    {:name "apply"
-    :description "Switch the running stack to a preset (starting the daemon if needed); blocks until it settled and reports each component. Components not in it are stopped, except :permanent ones and :keep-warm ones (kept running, idle); a running one the preset configures differently is redeployed."
+    :description "Switch the running stack to a preset (starting the daemon if needed); blocks until it settled and reports each component. Components not in it are stopped, except :permanent ones and :keep-warm ones (kept running, warm); a running one the preset configures differently is redeployed."
     :props {:preset (prop "string" "preset name")} :required ["preset"]
     :call (fn [args] (cli/apply! ctx (keyword (arg args :preset))))}
    {:name "stop"

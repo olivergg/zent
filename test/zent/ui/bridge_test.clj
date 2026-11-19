@@ -117,19 +117,19 @@
       (is (= fresh @state/catalog))
       (is (= {:reloaded 0 :failed nil} (:code-reload @state/view-state))))))
 
-(deftest idle-status-test
-  (testing "given a running component the engine keeps warm, then it reads :idle,
+(deftest warm-status-test
+  (testing "given a running component the engine keeps warm, then it reads :warm,
             and its resting status again once a preset needs it"
     (swap! state/view-state state/set-preset :a {:db {:kind :docker-compose :mode :on}})
     (state/observe-deploy-ok! :db {:kind :docker-compose :mode :on} nil)
-    (swap! state/view-state state/set-preset :b {:db {:kind :docker-compose :mode :on :zent.engine/idle true}})
-    (is (= :idle (get-in @state/view-state [:components :db :status])))
+    (swap! state/view-state state/set-preset :b {:db {:kind :docker-compose :mode :on :zent.engine/warm true}})
+    (is (= :warm (get-in @state/view-state [:components :db :status])))
     (swap! state/view-state state/set-preset :a {:db {:kind :docker-compose :mode :on}})
     (is (= :up (get-in @state/view-state [:components :db :status])))))
 
 (deftest mark-status-and-command-errors-test
   (testing "a status for a name the view doesn't show invents nothing"
-    (is (= state/empty-state (state/mark-status state/empty-state :typo :down))))
+    (is (= state/empty-state (state/mark-status state/empty-state :typo :stopped))))
   (testing "a handled command's :error is kept under its id"
     (state/observe-handled! [{:id 4} {:id 5 :error "unknown preset"}])
     (is (= 5 (:handled @state/view-state)))

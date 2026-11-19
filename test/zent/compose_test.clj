@@ -211,6 +211,6 @@
            (compose/running-worktrees
             {:api {:status "up" :source {:worktree "/wt/api"} :source-env {:LIB {:worktree "/wt/lib"}}}
              :seed {:status "deploying" :source-env {:LIB {:worktree "/wt/lib"}}}
-             :old {:status "down" :source {:worktree "/wt/old"}}
+             :old {:status "stopped" :source {:worktree "/wt/old"}}
              :off {:status "off" :source {:worktree "/wt/off"}}
              :clone {:status "up" :source {:dir "/w/clone"}}})))))

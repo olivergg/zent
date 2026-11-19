@@ -17,13 +17,13 @@ let showStopped = localStorage.getItem("zent.showStopped") !== "false";
 // the wrapper's own data-status (CSS/layout only now - the label text
 // itself is server-rendered, see zent.ui.render's state-label).
 const STATE_CLASS = {
-  pending: "queued", deploying: "starting", up: "up", done: "done", idle: "idle", stopping: "stopping",
-  failed: "failed", external: "external", off: "off", down: "stopped", ready: "ready", unready: "unready",
-  skipped: "skipped"
+  waiting: "waiting", deploying: "starting", up: "up", done: "done", warm: "warm", stopping: "stopping",
+  failed: "failed", external: "external", off: "off", stopped: "stopped", "on-demand": "on-demand",
+  unready: "unready", skipped: "skipped"
 };
 const WOVEN = new Set(["up", "done", "external"]);
 // what isn't settled yet: down (red) or on its way (amber) - the colour of a wire leaving it
-const UNSETTLED = { failed: "bad", unready: "bad", skipped: "bad", starting: "wait", queued: "wait" };
+const UNSETTLED = { failed: "bad", unready: "bad", skipped: "bad", starting: "wait", waiting: "wait" };
 
 /* Motion follows what the stack does, live view only: a card that joins
    rises in, row by row; one that changes status is washed in its new
@@ -39,7 +39,7 @@ const recent = (t) => performance.now() - (t ?? -Infinity) < MOTION_MS;
 function noteChanges(components) {
   const now = performance.now(), primed = Object.keys(seenStatus).length > 0;
   for (const [name, c] of Object.entries(components)) {
-    const s = STATE_CLASS[c.status] || "queued";
+    const s = STATE_CLASS[c.status] || "waiting";
     if (!(name in seenStatus)) { if (primed) arrivedAt[name] = now; }
     else if (seenStatus[name] !== s) {
       changedAt[name] = now;
@@ -47,9 +47,9 @@ function noteChanges(components) {
     }
     seenStatus[name] = s;
   }
-  // a run settling: from starting or stopping to ready
+  // a run settling: from starting or stopping to up
   const health = healthOf(components);
-  if (wasBusy && health === "ready" && view.preset) {
+  if (wasBusy && health === "up" && view.preset) {
     const n = Object.values(components).filter((c) => c.status === "up").length;
     toast("up", view.preset + " is up", n + (n === 1 ? " component" : " components") + " running");
   }
@@ -57,13 +57,13 @@ function noteChanges(components) {
 }
 
 /* A run as a whole: failed while one is failed or unready, else starting or
-   stopping while one is on its way, else ready (up, done, external, an
-   on-demand one-shot ready, a kept-warm one idle). */
+   stopping while one is on its way, else up (up, done, external, on
+   demand, warm). */
 function healthOf(components) {
   const s = new Set(Object.values(components).map((c) => c.status));
   return s.has("failed") || s.has("unready") ? "failed"
-    : s.has("pending") || s.has("deploying") ? "starting"
-    : s.has("stopping") ? "stopping" : "ready";
+    : s.has("waiting") || s.has("deploying") ? "starting"
+    : s.has("stopping") ? "stopping" : "up";
 }
 
 /* A toast: what just happened, for a few seconds - a failure longer, and a
@@ -375,7 +375,7 @@ function weave(host, data, all) {
   // (:members, the summary's rule too: zent.ui.state/shown-components; a preview has none - all its own)
   const members = new Set(data.members?.length ? data.members : allNames);
   const visible = Object.fromEntries(Object.entries(data.components)
-    .filter(([name, c]) => (c.status !== "down" && c.status !== "off") || (all && members.has(name))));
+    .filter(([name, c]) => (c.status !== "stopped" && c.status !== "off") || (all && members.has(name))));
   const hiddenCount = allNames.length - Object.keys(visible).length;
 
   // :attached-to one-shots ride under their host's card when it's shown, so
@@ -438,7 +438,7 @@ function hostOf(name, components) {
 }
 
 function nodeEl(name, c) {
-  const status = STATE_CLASS[c.status] || "queued";
+  const status = STATE_CLASS[c.status] || "waiting";
   const el = document.createElement("div");
   el.className = "node";
   el.setAttribute("role", "button");
@@ -1271,7 +1271,7 @@ const previewQuery = () => shownPreset() ? "?preset=" + encodeURIComponent(shown
 function brRun(p) {
   const from = p.from || "main-worktree", wt = from !== "main-worktree";
   return { from, wt, sha: wt ? p.worktree?.sha : p.head.sha, dirty: wt ? (p.worktree?.dirty || []) : p.head.dirty,
-           deployed: p.components.filter((c) => ["up", "unready", "idle"].includes(c.status)).map((c) => c["deployed-sha"]).filter(Boolean) };
+           deployed: p.components.filter((c) => ["up", "unready", "warm"].includes(c.status)).map((c) => c["deployed-sha"]).filter(Boolean) };
 }
 
 async function loadBranches() {

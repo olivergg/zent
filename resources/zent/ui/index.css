@@ -130,7 +130,7 @@ body[data-switching] { cursor: progress; }
   content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--led);
 }
 .run[data-state="preview"] .run-label small::before { background: none; border: 1px solid var(--verdigris); }
-/* the LED: the live run's health (index.js healthOf) - ready glows steady,
+/* the LED: the live run's health (index.js healthOf) - up glows steady,
    starting or stopping breathes, failed holds; opacity only, on the GPU */
 .run[data-health="starting"] { --led: var(--weld); }
 .run[data-health="stopping"] { --led: var(--grey); }
@@ -363,9 +363,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .capsule[data-state="running"] i { background: var(--weld); animation: led 1s steps(2, jump-none) infinite; }
 .node .capsule[data-state="failed"] i { background: #e5463b; }
 /* on demand: its amber strip hatched - an apply never runs it */
-.node:has(.capsule[data-state="ondemand"]) .ear { background: repeating-linear-gradient(135deg, #ffb340 0 3px, #fde9c4 3px 6px); }
-.node .capsule[data-state="ondemand"] { color: #b06d00; }
-.node .capsule[data-state="ondemand"] i { background: transparent; box-shadow: inset 0 0 0 1.5px #ff9f0a; }
+.node:has(.capsule[data-state="on-demand"]) .ear { background: repeating-linear-gradient(135deg, #ffb340 0 3px, #fde9c4 3px 6px); }
+.node .capsule[data-state="on-demand"] { color: #b06d00; }
+.node .capsule[data-state="on-demand"] i { background: transparent; box-shadow: inset 0 0 0 1.5px #ff9f0a; }
 /* what a one-shot reads (:source-env): one checkout per row, once selected */
 .node .source-env { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 4px; }
 .node:not([data-selected="true"]) .source-env { display: none; }
@@ -500,7 +500,7 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .meta .state { margin-left: auto; flex: none; }
 /* the plate says only what the LED can't: a settled or not-yet-started state goes without words, and
    the folder and repo shortcuts wait for the pointer */
-.node:is([data-status="up"], [data-status="external"], [data-status="queued"], [data-status="off"], [data-status="stopped"]) .meta .state,
+.node:is([data-status="up"], [data-status="external"], [data-status="waiting"], [data-status="off"], [data-status="stopped"]) .meta .state,
 .node:not(:hover, :focus-within) .meta :is(.workdir-open, .repo-link) { display: none; }
 .node .meta { margin: 0; min-height: 0; }
 .node .meta .state { margin-left: 0; font-size: 11px; }
@@ -519,8 +519,8 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .shot[data-state="done"] i { background: #28b463; box-shadow: 0 0 4px rgba(40, 180, 99, .8); }
 .node .shot[data-state="running"] i { background: var(--weld); animation: led 1s steps(2, jump-none) infinite; }
 .node .shot[data-state="failed"] { color: var(--madder); } .node .shot[data-state="failed"] i { background: #e5463b; }
-.node .shot[data-state="ondemand"] { background: repeating-linear-gradient(135deg, #fff7e8 0 4px, #fde9c4 4px 8px); box-shadow: 0 0 0 1px rgba(255, 159, 10, .7); color: #b06d00; }
-.node .shot[data-state="ondemand"] i { background: transparent; box-shadow: inset 0 0 0 1.5px #ff9f0a; }
+.node .shot[data-state="on-demand"] { background: repeating-linear-gradient(135deg, #fff7e8 0 4px, #fde9c4 4px 8px); box-shadow: 0 0 0 1px rgba(255, 159, 10, .7); color: #b06d00; }
+.node .shot[data-state="on-demand"] i { background: transparent; box-shadow: inset 0 0 0 1.5px #ff9f0a; }
 .node .shot .act.run { display: none; padding: 0 0 0 2px; font-size: 9px; color: #0a84ff; }
 .node .shot:hover .act.run { display: inline; }
 /* git: the branch in its window; what blocks or asks for a click stays, the rest shows once selected */
@@ -534,9 +534,9 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
    healthy") - the dashed border is what still marks external as "zent
    didn't start this", not a different colour */
 .node:is([data-status="up"], [data-status="external"]), .tally .t-up { --c: var(--verdigris); }
-.node:is([data-status="done"], [data-status="ready"]), .tally .t-done { --c: var(--indigo); }
+.node:is([data-status="done"], [data-status="on-demand"]), .tally .t-done { --c: var(--indigo); }
 .node[data-status="stopping"] { --c: var(--grey); }
-.node[data-status="starting"], .tally .t-starting { --c: var(--weld); }
+.node[data-status="starting"], .tally :is(.t-starting, .t-running) { --c: var(--weld); }
 .node:is([data-status="failed"], [data-status="unready"], [data-status="skipped"]),
 .tally :is(.t-failed, .t-unready, .t-skipped) { --c: var(--madder); }
 /* skipped: an apply left it out, a dependency having failed - dashed, nothing ran */
@@ -545,17 +545,17 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .state { color: color-mix(in srgb, var(--c, var(--ink)) 65%, var(--ink)); }
 .node[data-status="external"] { border-left-style: dashed; }
 /* done: a one-shot that ran to completion, like a finished k8s Job;
-   ready: an :on-demand one-shot waiting for its reload - shown, not run */
-.node[data-status="ready"] { border-style: dashed; }
+   on-demand: an :on-demand one-shot waiting for its reload - shown, not run */
+.node[data-status="on-demand"] { border-style: dashed; }
 /* stopping: a stop is tearing it down - greyed, the pick running backwards */
 .node[data-status="stopping"] { opacity: 0.75; }
 /* unready: running but its readiness failing, between up and failed */
 .node[data-status="unready"] { border-style: dashed; }
-.node:is([data-status="ready"], [data-status="stopping"], [data-status="unready"]) .state { font-style: italic; }
+.node:is([data-status="on-demand"], [data-status="stopping"], [data-status="unready"]) .state { font-style: italic; }
 .node[data-status="off"],
 .node[data-status="stopped"]  { opacity: 0.5; font-style: italic; }
-/* idle: kept warm, still running, but no current preset needs it */
-.node[data-status="idle"] { opacity: 0.6; border-left-style: dotted; }
+/* warm: kept warm, still running, but no current preset needs it */
+.node[data-status="warm"] { opacity: 0.6; border-left-style: dotted; }
 /* off has nothing to restart (its mode is off, not merely torn down) -
    stopped keeps its reload button (faded like the rest of the card until
    hovered, same as any other node) so a manual stop is reversible. */
@@ -914,10 +914,10 @@ body[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .node .shot { position: relative; overflow: hidden; border-radius: 5px; padding-left: 11px; color: var(--ink); }
 .node .shot::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
   background: linear-gradient(90deg, #ffb340, #e08a00); box-shadow: inset -.5px 0 0 rgba(0, 0, 0, .35); }
-.node .shot[data-state="ondemand"] { background: linear-gradient(#fdfdfe, #dfe1e5 60%, #cfd2d7); color: var(--ink);
+.node .shot[data-state="on-demand"] { background: linear-gradient(#fdfdfe, #dfe1e5 60%, #cfd2d7); color: var(--ink);
   box-shadow: 0 0 0 .5px rgba(0, 0, 0, .38), inset 0 1px 0 #fff, inset 0 -1px 1px rgba(0, 0, 0, .12), 0 1.5px 2px rgba(0, 0, 0, .28); }
-.node .shot[data-state="ondemand"]::before { background: repeating-linear-gradient(135deg, #ffb340 0 3px, #fde9c4 3px 6px); }
-.node .capsule[data-state="ondemand"] { color: var(--ink); }
+.node .shot[data-state="on-demand"]::before { background: repeating-linear-gradient(135deg, #ffb340 0 3px, #fde9c4 3px 6px); }
+.node .capsule[data-state="on-demand"] { color: var(--ink); }
 /* links: a milled pocket */
 .node .endpoints { margin-top: 10px; border-radius: 6px; background: linear-gradient(#cfd2d7, #dadde1);
   box-shadow: inset 0 1.5px 2.5px rgba(0, 0, 0, .28), inset 0 0 0 .5px rgba(0, 0, 0, .16), 0 1px 0 rgba(255, 255, 255, .9); }

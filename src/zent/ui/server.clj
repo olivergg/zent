@@ -99,12 +99,12 @@
         ;; its own, so its wires end on it rather than on its host's plate
         lone? (fn [[_ c]] (boolean (when-let [h (:attached-to c)] (seq (disj (set (map host (:deps c))) h)))))
         ;; a host's card carries its other one-shots, as buttons - the preset's own, and any that ran
-        shown? (fn [[k c]] (or (nil? members) (members k) (not (#{:down :off} (:status c)))))
+        shown? (fn [[k c]] (or (nil? members) (members k) (not (#{:stopped :off} (:status c)))))
         shots (group-by (comp :attached-to val) (filter shown? (remove lone? (sort-by key components))))
         waited (set (mapcat :deps (vals components)))
-        settled? (comp #{:up :done :external :idle} :status)
-        ;; mid-apply: the first dependency a queued one still waits for
-        waits-for (fn [c] (when (and (= :pending (:status c)) (not (:preview? c)))
+        settled? (comp #{:up :done :external :warm} :status)
+        ;; mid-apply: the first dependency a waiting one still waits for
+        waits-for (fn [c] (when (and (= :waiting (:status c)) (not (:preview? c)))
                             (first (remove #(settled? (get components % {:status :up})) (:deps c)))))]
     (reduce-kv (fn [acc name c]
                  (assoc acc name (assoc c :lone (lone? [name c])
@@ -242,7 +242,7 @@
   (json-response (schema/describe-kinds)))
 
 ;; preview: a preset resolved as an apply would (pure) and rendered with the
-;; live cards, all :pending and :preview? - so no reload/stop buttons - plus
+;; live cards, all :waiting and :preview? - so no reload/stop buttons - plus
 ;; its :plan from what runs now.
 
 (defn- previewed

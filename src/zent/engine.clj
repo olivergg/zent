@@ -268,7 +268,7 @@
                   (::adopted cfg) (when-let [base (get-in catalog [:components name])]
                                     (merge (:defaults catalog) base {:mode :on})))]
       (if fresh
-        (merge fresh (select-keys cfg [::preset ::adopted ::idle]))
+        (merge fresh (select-keys cfg [::preset ::adopted ::warm]))
         cfg))
     (catch Exception e
       (println (format "[%s] keeping its config - the catalog doesn't resolve it: %s" name (ex-message e)))
@@ -278,7 +278,7 @@
   "The top-level keys `cfg` sets differently from `cur`, {key [was now]} - why a
   redeploy happens, said to whoever sees it."
   [cur cfg]
-  (let [cur (dissoc cur ::idle ::preset)]
+  (let [cur (dissoc cur ::warm ::preset)]
     (into (sorted-map)
           (keep (fn [k] (let [was (get cur k) now (get cfg k)] (when (not= was now) [k [was now]]))))
           (set/union (set (keys cur)) (set (keys cfg))))))
@@ -288,7 +288,7 @@
   :handles}) - pure: preview shows it, switch-preset! runs it. nil
   `preset-name` is stop-everything.
     :stop      unneeded, neither :permanent nor kept warm
-    :keep-warm unneeded :keep-warm ones, left running idle
+    :keep-warm unneeded :keep-warm ones, left running, warm
     :redeploy  {name changes}: running, configured differently, not adopted
                (what it runs is unknown)
     :restart   those of :redeploy that can't converge in place - a process
@@ -372,14 +372,14 @@
 (defn- switch-preset!
   "Runs plan: what the new preset doesn't need is torn down (permanent? ones
   excepted) - switching replaces, not stacks. A :keep-warm one is left
-  running instead, marked ::idle until a preset needs it again. nil
+  running instead, marked ::warm until a preset needs it again. nil
   `preset-name` is stop-everything, warm ones included.
   `stop!` (fn [name]) tears one down - serve!'s, the same a :stop uses."
   [catalog preset-name st session-path deploy-fn on-resolved stop! & [on-skipped]]
   (let [{:keys [stop keep-warm] :as p} (plan catalog preset-name @st)]
     (doseq [name keep-warm]
       (println (format "[%s] not needed by %s - kept warm" name preset-name))
-      (swap! st assoc-in [:active name ::idle] true))
+      (swap! st assoc-in [:active name ::warm] true))
     (doseq [name stop]
       (stop! name))
     (when (seq stop) (session/drop-components! session-path stop))
@@ -415,7 +415,7 @@
 
   Returns the adopted [name cfg handle] triples: adoption bypasses
   deploy-fn, so the caller reports them (:on-seeded), after on-resolved -
-  which would otherwise reset them to :pending."
+  which would otherwise reset them to :waiting."
   [{:keys [components defaults]} session-path st]
   (let [{:keys [handles written-at]} (session/read-session session-path)]
     (into []

@@ -244,14 +244,14 @@
     (with-redefs [lifecycle/down! (fn [_] nil)]
       (switch! :with-broker)
       (testing "given :broker :keep-warm, when switching to a preset without it, then
-                it keeps running, marked idle, while :app is stopped"
+                it keeps running, marked warm, while :app is stopped"
         (switch! :without)
         (is (= [:app] @stopped))
-        (is (true? (get-in @st [:active :broker :zent.engine/idle]))))
-      (testing "when switching back, then :broker isn't redeployed and is no longer idle"
+        (is (true? (get-in @st [:active :broker :zent.engine/warm]))))
+      (testing "when switching back, then :broker isn't redeployed and is no longer warm"
         (switch! :with-broker)
         (is (= [:broker :app :other :app] @calls))
-        (is (nil? (get-in @st [:active :broker :zent.engine/idle]))))
+        (is (nil? (get-in @st [:active :broker :zent.engine/warm]))))
       (testing "when stopping everything, then a warm component stops too"
         (switch! :without)
         (switch! nil)

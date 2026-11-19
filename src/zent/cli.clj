@@ -25,6 +25,7 @@
             [zent.shell :as shell]
             [zent.ui.bridge :as bridge]
             [zent.ui.render :as render]
+            [zent.ui.state :as state]
             [zent.ui.server :as server]))
 
 (def log-tail-lines 200)
@@ -240,16 +241,19 @@
 (defn- daemon! []
   (warn-if-stale! (or (live) (fail! "no zent serve running - `zent serve --detach`"))))
 
-(defn- print-change [n old new]
-  (println (format "  %-28s %s -> %s" (name n) (or old "-") new)))
+;; the dashboard's wording and rules (zent.ui.render, zent.ui.state), so the two never disagree
 
-(defn- print-view [{:keys [preset components]}]
+(defn- print-change [n kind old new]
+  (println (format "  %-28s %s -> %s" (name n) (if old (render/label-of kind old) "-") (render/label-of kind new))))
+
+(defn- print-view [{:keys [preset members components]}]
   (println "preset:" (or preset "none"))
-  (doseq [[n {:keys [kind status permanent error]}] (sort-by key components)]
-    (println (str/trimr (format "  %-28s %-17s %-10s %s%s" (name n) kind
-                                (render/label-of (keyword kind) (keyword status))
-                                (if permanent "permanent " "")
-                                (if (and error (= "failed" status)) error ""))))))
+  (let [comps (update-vals components #(-> % (update :kind keyword) (update :status keyword)))]
+    (doseq [[n {:keys [kind status permanent error]}]
+            (sort-by key (state/shown-components {:components comps :members (map keyword members)}))]
+      (println (str/trimr (format "  %-28s %-17s %-10s %s%s" (name n) (name kind) (render/label-of kind status)
+                                  (if permanent "permanent " "")
+                                  (if (and error (render/error-shown? status)) error "")))))))
 
 (defn- run-command!
   "POSTs `path`, waits for the daemon to process it, prints the result -

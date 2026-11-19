@@ -2,7 +2,7 @@
 
 One word per thing, the same in the CLI, the MCP server, the dashboard, the docs and the code. A name says what
 you get, not how zent does it. Words marked *under review* keep their current meaning until their rename lands
-(the renaming plan's steps 3 to 5).
+(the renaming plan's steps 4 and 5).
 
 ## Where code runs from
 
@@ -29,7 +29,8 @@ you get, not how zent does it. Words marked *under review* keep their current me
 | `:on-demand` | a one-shot an apply never runs: only a reload (the card's ▶) |
 | `:readiness` | what "ready" means for a component: the probe an apply waits on |
 | `:permanent` | never stopped implicitly (switching presets, `zent stop` without names, shutdown) |
-| `:keep-warm` | left running, idle, when a preset doesn't name it; stopped by a stop-all or a shutdown |
+| `:keep-warm` | left running, `warm`, when a preset doesn't name it; stopped by a stop-all or a shutdown |
+| **deploy** | start a component, whatever its kind: up a compose file, launch a process, run a one-shot's scripts |
 
 ## Presets
 
@@ -39,11 +40,30 @@ you get, not how zent does it. Words marked *under review* keep their current me
 | **your preset** | one saved with `zent preset save` (or the MCP server) in `~/.config/zent/presets/<catalog>/`: limited to picking components and their branch, ports, images… never what code runs | 
 | **apply** | switch the running stack to a preset: start what it names, stop what it doesn't (but `:permanent` and `:keep-warm`) |
 
-## Statuses *(under review)*
+## Statuses
 
-`pending` (queued) · `deploying` (starting; running for a one-shot) · `up` · `done` · `ready` (an on-demand one-shot
-not run) · `idle` (kept warm) · `stopping` · `down` (stopped; not run for a one-shot) · `off` · `failed` ·
-`unready` (alive, its readiness failing) · `skipped` (a dependency failed).
+A component's, the keyword in the code and the API; shown as its label, a one-shot's where it differs.
+
+| Status | Label (one-shot) | Means | Not |
+|---|---|---|---|
+| `waiting` | | in an apply, waiting for its dependencies (or a free slot, `:max-parallel`) | "pending", "queued" |
+| `deploying` | starting (running) | being deployed | |
+| `up` | | deployed, and its readiness passing if it has one | "ready" |
+| `done` | | a one-shot whose scripts all succeeded | |
+| `on-demand` | on demand | an `:on-demand` one-shot an apply left for you to run | "ready" |
+| `warm` | | running, kept by `:keep-warm` though the preset doesn't name it | "idle" |
+| `stopping` | | being stopped | |
+| `stopped` | (not run) | stopped by a stop | "down" |
+| `off` | (not run) | not part of this run (`:mode :off`) | |
+| `failed` | | its deploy failed, or it died | |
+| `unready` | | running, its readiness failing | |
+| `skipped` | | left out by an apply: a dependency failed | |
+| `external` | up | an `:external` one, its readiness passing | |
+
+A run as a whole (the dashboard's LED): `failed` if one is failed or unready, else `starting` or `stopping` while one
+is on its way, else `up`.
+
+"idle" means nothing is happening (a neutral LED, no preset applied), never a status.
 
 ## Verbs *(under review)*
 

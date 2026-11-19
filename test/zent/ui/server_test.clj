@@ -40,7 +40,7 @@
     (json/read-str body :key-fn keyword)))
 
 (deftest events-long-poll-test
-  (reset! state/view-state (assoc-in state/empty-state [:components :db] {:status :pending}))
+  (reset! state/view-state (assoc-in state/empty-state [:components :db] {:kind :docker-compose :status :waiting}))
   (testing "given nothing new, then it holds the request max-wait-ms, then returns no event"
     (with-redefs [server/max-wait-ms 100]
       (let [t0 (System/currentTimeMillis)
@@ -52,7 +52,7 @@
     (let [reply (future (get-events "since=0&id=99"))]
       (Thread/sleep 50)
       (state/observe-deploy-start! :db)
-      (is (= [{:seq 1 :component "db" :from "pending" :to "deploying"}]
+      (is (= [{:seq 1 :component "db" :kind "docker-compose" :from "waiting" :to "deploying"}]
              (mapv #(dissoc % :at) (:events @reply))))))
 
   (testing "given the command handled, then it returns at once, with no event to repeat"
@@ -222,11 +222,11 @@
   (state/set-catalog! catalog)
 
   (testing "resolves the preset without deploying anything - every component
-            reads :pending, and the card carries no reload/stop buttons"
+            reads :waiting, and the card carries no reload/stop buttons"
     (let [{:keys [status body]} (server/app {:request-method :get :uri "/api/preview/full"})
           {:keys [components]} (json/read-str body :key-fn keyword)]
       (is (= 200 status))
-      (is (= "pending" (get-in components [:db :status])))
+      (is (= "waiting" (get-in components [:db :status])))
       (is (not (str/includes? (get-in components [:db :card]) "act reload")))))
 
   (testing "an unknown preset is a clean 400, not a 500"
@@ -265,11 +265,11 @@
   (testing "given one-shots attached to a host, then they ride as buttons on its card - but one waiting for
             anything else, even one other component, is :lone, drawn on its own; mid-apply a queued card says
             what it waits for"
-    (let [shot (fn [deps] {:kind :one-shot :status :pending :attached-to :db :deps deps})
+    (let [shot (fn [deps] {:kind :one-shot :status :waiting :attached-to :db :deps deps})
           state (assoc state/empty-state :preset :full
                        :components {:db {:kind :process :status :up :deps []}
                                     :api {:kind :process :status :deploying :deps [:db]}
-                                    :web {:kind :process :status :pending :deps [:db :api]}
+                                    :web {:kind :process :status :waiting :deps [:db :api]}
                                     :seed (shot [:db])
                                     :reset (shot [:seed])
                                     :connect (shot [:db :api])

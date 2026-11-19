@@ -21,19 +21,17 @@
       (str/replace "\"" "&quot;")))
 
 (def ^:private state-label
-  "Display text per :status. :external reads \"up\" - the card already names
-  the kind."
-  {:pending "pending" :deploying "starting" :up "up"
-   :done "done" :idle "idle" :stopping "stopping" :failed "failed" :external "up" :off "off" :down "stopped"
-   :ready "ready" :unready "unready" :skipped "skipped"})
+  "Display text per :status, where it isn't the status's name. :external reads \"up\" - the card
+  already names the kind."
+  {:deploying "starting" :external "up" :on-demand "on demand"})
 
-(def ^:private error-shown?
+(def error-shown?
   "Statuses whose :error is shown - only while in them: a stale error must not linger after recovery."
   #{:failed :unready :skipped})
 
 (def ^:private one-shot-label
   "A job's own wording where a service's would mislead - nothing to stop."
-  {:off "not run" :down "not run" :pending "queued" :deploying "running" :ready "on demand"})
+  {:off "not run" :stopped "not run" :deploying "running"})
 
 (defn label-of
   "A :status as shown - the dashboard's wording, also the CLI's/MCP's."
@@ -54,7 +52,7 @@
   last start took."
   [{:keys [status since took]}]
   (cond
-    (and since (#{:pending :deploying :stopping} status))
+    (and since (#{:waiting :deploying :stopping} status))
     (str "<span class=\"clock\" data-since=\"" since "\" title=\"Time in this state\"></span>")
     took (str "<span class=\"clock\" title=\"Time its last start took\">" (duration took) "</span>")))
 
@@ -241,12 +239,12 @@
 
 
 (defn- can-reload? [status] (not (contains? #{:off :external :stopping} status)))
-(defn- can-stop? [status] (contains? #{:up :deploying :idle :unready} status))
+(defn- can-stop? [status] (contains? #{:up :deploying :warm :unready} status))
 (defn- links-visible? [status] (contains? #{:up :external :deploying} status))
 
 (defn- short-sha [sha] (when sha (subs sha 0 (min 7 (count sha)))))
 
-(def ^:private running? #{:up :unready :idle :done})
+(def ^:private running? #{:up :unready :warm :done})
 
 (defn git-chip
   "A card's git state: its :git (zent.source/checkout-git) plus what the preset wanted; nil before git
@@ -508,12 +506,12 @@
 
 (def ^:private shot-state
   "A one-shot's button, by :status: what its pip and its press say."
-  {:done "done" :deploying "running" :ready "ondemand" :failed "failed" :skipped "failed" :unready "failed"})
+  {:done "done" :deploying "running" :on-demand "on-demand" :failed "failed" :skipped "failed" :unready "failed"})
 
 (defn- shot-state-of
   "on demand until it runs: an apply never starts it."
   [{:keys [status on-demand]}]
-  (get shot-state status (if on-demand "ondemand" "idle")))
+  (get shot-state status (if on-demand "on-demand" "idle")))
 
 (defn- shot-buttons
   "A host's :attached-to one-shots (:shots, [name c] pairs), as buttons in a recess of its plate: the pip
@@ -530,7 +528,7 @@
                                       (when (and error (error-shown? status)) (str "\n" error))))
                             "\"><i></i><span>" (esc (name n)) "</span>"
                             (when (and (not preview?) (can-reload? status) (not= :deploying status))
-                              (str "<button type=\"button\" class=\"act run\" title=\"" (if (= :ready status) "Run" "Run again") "\" hx-post=\"/api/trigger/"
+                              (str "<button type=\"button\" class=\"act run\" title=\"" (if (= :on-demand status) "Run" "Run again") "\" hx-post=\"/api/trigger/"
                                    (esc (name n)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\""
                                    (when confirm (str " hx-confirm=\"" (esc confirm) "\"")) ">&#9654;</button>"))
                             "</span>"))
@@ -601,8 +599,8 @@
             (esc (str/join "\n" (remove nil? [description (when (seq scripts) (str "runs " (str/join " → " (map script-name scripts))))])))
             "\"><i></i><span class=\"name\">" (esc (name cname)) "</span>"
             "<span class=\"state\">"
-            ;; until it runs: what it is to the stack, rather than "queued"
-            (cond (not (#{:pending :down :off :ready} status)) (str (esc (label-of kind status)) (clock c))
+            ;; until it runs: what it is to the stack, rather than "waiting"
+            (cond (not (#{:waiting :stopped :off :on-demand} status)) (str (esc (label-of kind status)) (clock c))
                   (:terminus c) "the point of it"
                   (:on-demand c) "on demand"
                   :else (str (esc (label-of kind status)) (clock c)))
@@ -615,7 +613,7 @@
        ;; same trigger, but a one-shot has nothing loaded to reload: it runs its scripts
        (let [one-shot? (= :one-shot kind)]
          (str "<button type=\"button\" class=\"act reload\" title=\""
-              (cond (not one-shot?) "Reload now" (= status :ready) "Run" :else "Run again") "\" "
+              (cond (not one-shot?) "Reload now" (= status :on-demand) "Run" :else "Run again") "\" "
               "hx-post=\"/api/trigger/" (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\""
               ;; a destructive one asks first (htmx: nothing is posted on cancel)
               (when confirm (str " hx-confirm=\"" (esc confirm) "\""))
@@ -626,7 +624,9 @@
             "hx-post=\"/api/stop/" (esc (name cname)) "\" hx-swap=\"none\" hx-disabled-elt=\"this\">&#9632;</button>"))
      "</span>")))
 
-(def ^:private summary-order ["up" "done" "ready" "idle" "starting" "stopping" "pending" "unready" "skipped" "failed" "off" "stopped"])
+(def ^:private summary-order
+  "The tally's labels (label-of, by kind), in this order."
+  ["up" "done" "on demand" "warm" "starting" "running" "stopping" "waiting" "unready" "skipped" "failed" "off" "stopped" "not run"])
 
 (defn- git-summary
   "What the chips ask of you, one line each, with the components' names: not the preset's :branch,
@@ -669,19 +669,19 @@
   [components]
   (if (empty? components)
     "<div id=\"summary\" class=\"quiet\">Nothing running.</div>"
-    (let [tally (reduce (fn [acc [_ c]] (update acc (label-of (:status c)) (fnil inc 0))) {} components)
+    (let [tally (frequencies (map (fn [[_ c]] (label-of (:kind c) (:status c))) components))
           failed (keep (fn [[n c]] (when (= :failed (:status c)) n)) components)]
       (str "<div id=\"summary\">"
            "<div class=\"tally\">"
            (apply str (keep (fn [k] (when-let [n (get tally k)]
-                                       (str "<span class=\"t-" k "\"><b>" n "</b> " k "</span>")))
+                                       (str "<span class=\"t-" (str/replace k " " "-") "\"><b>" n "</b> " k "</span>")))
                              summary-order))
            "</div>"
            (usage-summary components)
            (git-summary components)
            (cond
              (seq failed) (str "<p class=\"blocked\">Blocked by " (esc (str/join ", " (map name failed))) ".</p>")
-             (get tally "starting") "<p class=\"quiet\">Still starting.</p>"
+             (some #(= :deploying (:status (val %))) components) "<p class=\"quiet\">Still starting.</p>"
              :else "")
            "</div>"))))
 
@@ -730,7 +730,7 @@
            "<div class=\"btns\">"
            ;; a preview: nothing is deployed, nothing to reload
            (when (and (can-reload? status) (not (:preview? c)))
-             (act (if (= :failed status) "primary" "") (cond (not= :one-shot kind) "Reload" (= :ready status) "Run" :else "Run again")
+             (act (if (= :failed status) "primary" "") (cond (not= :one-shot kind) "Reload" (= :on-demand status) "Run" :else "Run again")
                   "/api/trigger/" (:confirm c)))
            ;; its output lives in the Logs tab, opened on this component alone
            "<button type=\"button\" class=\"btn open-logs\" data-name=\"" (esc (name cname)) "\">Show log</button>"

@@ -68,7 +68,7 @@
     [:vector :keyword]]
    [:permanent {:optional true :description "Never stopped implicitly: a preset switch, a stop-everything or zent exiting leave it up; only a stop naming it does. For a shared dependency meant to outlive any one run."}
     :boolean]
-   [:keep-warm {:optional true :description "Left running, idle, by a preset switch that doesn't need it, for the next one that does; a stop-everything or zent exiting still stop it."}
+   [:keep-warm {:optional true :description "Left running, warm, by a preset switch that doesn't need it, for the next one that does; a stop-everything or zent exiting still stop it."}
     :boolean]
    ;; declared, never derived: a readiness URL is a health-check target, a :port alone says no path
    [:links {:optional true :description "URLs worth opening, each {:url :label}: the card's links."}

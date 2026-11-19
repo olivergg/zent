@@ -167,6 +167,6 @@
   [components]
   (apply merge-with into {}
          (for [[n {:keys [status source source-env]}] components
-               :when (not (#{:off :down} (keyword status)))
+               :when (not (#{:off :stopped} (keyword status)))
                path (keep :worktree (cons source (vals source-env)))]
            {path #{(keyword (str (name n) " (running)"))}})))

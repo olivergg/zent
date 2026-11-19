@@ -10,5 +10,6 @@
                 [kind key]))))
 
 (deftest reference-is-current-test
-  (is (= (str (reference/markdown) "\n") (slurp "docs/reference.md"))
+  ;; true? - a plain = would print both whole files
+  (is (true? (= (str (reference/markdown) "\n") (slurp "docs/reference.md")))
       "docs/reference.md is stale: jolt run -m zent.reference > docs/reference.md"))

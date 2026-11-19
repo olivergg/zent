@@ -59,3 +59,17 @@
            (try (#'cli/dispatch ctx "reload" [] #{}) (catch Exception e (ex-message e)))))
     (is (= "usage: zent preset save <name> <edn> | rm <name> - zent help preset"
            (try (#'cli/dispatch ctx "preset" ["save"] #{}) (catch Exception e (ex-message e)))))))
+
+(deftest print-view-like-the-dashboard-test
+  (let [out (with-out-str
+              (#'cli/print-view {:preset "p" :members ["api" "seed"]
+                                 :components {:api {:kind "process" :status "unready" :error "not ready"}
+                                              :seed {:kind "one-shot" :status "on-demand"}
+                                              :old {:kind "process" :status "stopped"}}}))]
+    (testing "given the daemon's JSON view, then the dashboard's components, labels and errors"
+      (is (str/includes? out "unready    not ready") "an unready one's error, not only a failed one's")
+      (is (str/includes? out "on demand"))
+      (is (not (str/includes? out "old")) "an earlier preset's stopped component is hidden")))
+  (testing "a transition reads in labels, a one-shot's own"
+    (is (= "  seed                         - -> running\n"
+           (with-out-str (#'cli/print-change :seed :one-shot nil :deploying))))))
