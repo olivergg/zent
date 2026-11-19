@@ -39,7 +39,7 @@
   (testing "given a queued command, await! returns once it's handled, reporting
             every status transition in the order it happened - even two that
             land back to back"
-    (let [queued (client/request d :post "/api/trigger/api")
+    (let [queued (client/request d :post "/api/reload/api")
           changes (atom [])
           engine (future (Thread/sleep 50)
                          (state/observe-deploy-start! :api)

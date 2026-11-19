@@ -270,20 +270,20 @@
     (testing "given the default branch, then refused"
       (is (re-find #"default branch" (:message (source/push! (cfg-of clone :branch "master" :from :main-worktree))))))))
 
-(deftest sync-clone-test
+(deftest fast-forward-test
   (let [clone (repos "g.txt")]
     (git! clone "checkout" "--quiet" "master")
     (git! clone "fetch" "--quiet" "origin")
     (testing "given the clone's branch behind origin's, then fast-forwarded, its undo told"
       (let [before (git! clone "rev-parse" "HEAD")
-            {:keys [ok undo]} (source/sync-clone! (cfg-of clone))]
+            {:keys [ok undo]} (source/fast-forward! (cfg-of clone))]
         (is ok)
         (is (= (git! clone "rev-parse" "origin/master") (git! clone "rev-parse" "HEAD")))
         (is (zero? (:exit (zent.shell/sh! undo))))
         (is (= before (git! clone "rev-parse" "HEAD")))))
     (testing "given a commit of its own, then refused, nothing moved"
       (spit (str clone "/x.txt") "x") (git! clone "add" ".") (git! clone "commit" "--quiet" "-m" "mine")
-      (is (re-find #"rebase it by hand" (:message (source/sync-clone! (cfg-of clone))))))))
+      (is (re-find #"rebase it by hand" (:message (source/fast-forward! (cfg-of clone))))))))
 
 (deftest checkout-refusal-test
   (let [st {:from :main-worktree :wanted-branch "feature/x" :branch "master" :dirty 0}]
@@ -357,19 +357,19 @@
       (branch/resolve-worktree clone "clone" "feature")
       (let [branches #(git! clone "for-each-ref" "--format=%(refname) %(objectname)" "refs/heads" "refs/remotes/origin/feature")
             before (branches)]
-        (testing "given a :origin-worktree worktree behind master, then a local test: its HEAD rebased, no branch moved"
+        (testing "given a :origin-worktree worktree behind master, then a trial rebase: its HEAD rebased, no branch moved"
           (let [{:keys [ok message]} (source/rebase! cfg)]
             (is ok message)
-            (is (re-find #"local test" message))
+            (is (re-find #"trial rebase" message))
             (is (= before (branches)))
-            (is (= (git! wt "rev-parse" "HEAD") (git! clone "rev-parse" (branch/test-ref "feature"))))
+            (is (= (git! wt "rev-parse" "HEAD") (git! clone "rev-parse" (branch/trial-ref "feature"))))
             (is (= (git! clone "rev-parse" "origin/master") (git! wt "merge-base" "HEAD" "origin/master")))
-            (is (:test? (source/checkout-git cfg)) "the chip tells")))
-        (testing "and the next sync resets it to origin/feature, dropping the test ref"
+            (is (:trial? (source/checkout-git cfg)) "the chip tells")))
+        (testing "and the next sync resets it to origin/feature, dropping the trial ref"
           (branch/resolve-worktree clone "clone" "feature")
           (is (= (git! clone "rev-parse" "origin/feature") (git! wt "rev-parse" "HEAD")))
-          (is (not (zero? (:exit (zent.shell/sh! ["git" "-C" clone "rev-parse" "--verify" "-q" (branch/test-ref "feature")])))))
-          (is (not (:test? (source/checkout-git cfg)))))))))
+          (is (not (zero? (:exit (zent.shell/sh! ["git" "-C" clone "rev-parse" "--verify" "-q" (branch/trial-ref "feature")])))))
+          (is (not (:trial? (source/checkout-git cfg)))))))))
 
 (deftest checkout-git-local-test
   (let [clone (repos "g.txt")
@@ -379,9 +379,9 @@
       (git! clone "push" "--quiet" "origin" "feature")
       (branch/resolve-worktree clone "clone" "feature" :local-worktree)
       (spit (str clone "/h.txt") "h") (git! clone "add" ".") (git! clone "commit" "--quiet" "-m" "local")
-      (testing "given a new commit on the local branch, then the worktree may pull it, and it's unpushed on feature"
-        (is (= {:from :local-worktree :pull 1 :unreachable 0 :local-ahead 1 :local-behind 0}
-               (select-keys (source/checkout-git cfg) [:from :pull :unreachable :local-ahead :local-behind]))))
+      (testing "given a new commit on the local branch, then the worktree may sync to it, and it's unpushed on feature"
+        (is (= {:from :local-worktree :unsynced 1 :unreachable 0 :local-ahead 1 :local-behind 0}
+               (select-keys (source/checkout-git cfg) [:from :unsynced :unreachable :local-ahead :local-behind]))))
       (testing "given a commit made in the worktree itself, then it's on no branch"
         (spit (str wt "/w.txt") "w") (git! wt "add" ".") (git! wt "commit" "--quiet" "-m" "in wt")
         (is (= 1 (:unreachable (source/checkout-git cfg))))))))

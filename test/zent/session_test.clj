@@ -71,7 +71,7 @@
 
       (testing "a run that touches none of the previous run's components merges
                 onto it rather than replacing it - those stay tracked for a
-                later `zent down` until something actually stops them"
+                later `zent teardown` until something actually stops them"
         (session/save! path :other-preset [[:ingestor nil]])
         (is (= [:broker :notifier] (mapv :component (:handles (session/read-session path))))
             "broker/notifier weren't touched by :other-preset, so they're still there")
@@ -139,7 +139,7 @@
       (testing "a :k8s handle is plain data already - kept as-is, plus its component"
         (is (= (assoc h :component :front) (session/describe :front h))))
 
-      (testing "and it survives the session file, so a later `zent down` can delete it"
+      (testing "and it survives the session file, so a later `zent teardown` can delete it"
         (session/save! path :k8s-preset [[:front h]])
         (is (= [(assoc h :component :front)] (:handles (session/read-session path)))))
       (finally (session/clear! path)))))

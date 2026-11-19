@@ -53,10 +53,10 @@
     :more ["Files in ~/.cache/zent/logs/. The dashboard's Logs tab interleaves them all."]}
    {:verb "reload" :group "Everyday" :args "<component>"
     :doc "redeploy one running component now"
-    :more ["reload-code is another verb: it reloads zent's own code."]
-    :see ["logs" "reload-code"]}
-   {:verb "pull" :group "Everyday" :args "<component>"
-    :doc "bring a :branch worktree to its ref (origin/<branch>, or your local one), then redeploy it"
+    :more ["reload-catalog-and-code is another verb: it re-reads the catalog and zent's own code."]
+    :see ["logs" "sync" "reload-catalog-and-code"]}
+   {:verb "sync" :group "Everyday" :args "<component>"
+    :doc "zent's worktree to its ref (origin/<branch>, or your local one), then redeploy"
     :more ["A reload restarts the commit already there; an apply syncs only what it (re)deploys."
            "Refused for a worktree with uncommitted files or commits on no branch (it says how to keep"
            "them), and for a component running your main worktree as it is (:from :main-worktree, no :branch)."]
@@ -69,17 +69,17 @@
            "                              (left in the stash if they conflict with the rebased branch)"
            "  :local-worktree             your local <branch>, in zent's worktree - refused while another"
            "                              checkout has it out (rebase it there), or with uncommitted files"
-           "  :origin-worktree            a local test: the worktree's commit rebased, no branch moved -"
-           "                              the next apply or pull reverts it ; refused with uncommitted files"
+           "  :origin-worktree            a trial rebase: the worktree's commit rebased, no branch moved -"
+           "                              the next sync reverts it; refused with uncommitted files"
            "zent never pushes: a rebased branch on origin needs your push --force-with-lease."]
-    :see ["reload" "pull"]}
+    :see ["reload" "sync"]}
    {:verb "worktrees" :group "Everyday" :args "[prune]"
     :doc "list zent's :branch worktrees; prune removes the unused, clean ones"
     :more ["Each with its repo, branch, commit, uncommitted files, commits on no branch, and the"
            "presets running it. prune keeps any of a repo not in this catalog, a preset uses, a component"
            "runs from or that holds work, saying why; it refuses to run when a preset doesn't resolve or no"
            "daemon answers for the session."]
-    :see ["pull"]}
+    :see ["sync"]}
    {:verb "stop" :group "Everyday" :args "[<component>...]"
     :doc "stop just these, or all but :permanent components"
     :see ["shutdown"]}
@@ -88,41 +88,39 @@
    {:verb "preview" :group "Before switching" :args "<preset>"
     :doc "what <preset> would run, and what applying it would stop, start or redeploy"
     :see ["apply"]}
-   {:verb "serve" :group "Daemon" :args "[--detach] [--ui]"
-    :doc "run the daemon here, or in the background; --ui opens the dashboard"
+   {:verb "serve" :group "Daemon" :args "[<preset>] [--detach] [--ui]"
+    :doc "run the daemon here, or in the background, <preset> applied at start; --ui opens the dashboard"
     :more ["--detach writes its output to ~/.cache/zent/serve.log (`zent attach`)."
            "Usually not needed: apply starts a daemon when none runs."]
     :see ["apply" "attach" "shutdown"]}
-   {:verb "watch" :group "Daemon" :args "<preset> [--ui]"
-    :doc "serve in this terminal, <preset> applied at start"}
    {:verb "attach" :group "Daemon"
     :doc "follow a detached daemon's output"}
    {:verb "shutdown" :group "Daemon"
     :doc "stop the daemon and what it runs, :permanent components excepted"
     :see ["stop"]}
-   {:verb "reload-code" :group "Daemon"
-    :doc "reload the daemon's zent code and catalog, keeping what runs"
+   {:verb "reload-catalog-and-code" :group "Daemon"
+    :doc "re-read the catalog and zent's own code, keeping what runs"
     :more ["What a running loop already holds isn't swapped: a change there needs"
            "`zent shutdown`, then `zent apply <preset>`."]
     :see ["reload"]}
    {:verb "version" :group "Daemon"
     :doc "this zent's version (brew: HEAD-<sha>; a clone: git describe)"}
-   {:verb "check" :group "Catalog"
+   {:verb "validate" :group "Catalog"
     :doc "every preset resolves and validates, checks included - a catalog's test"
     :see ["verify"]}
    {:verb "verify" :group "Catalog" :args "[<preset> [<check>...]] [--only=<test>,...]"
     :doc "run a preset's checks (the daemon's by default); fails unless all pass"
     :more ["A check that writes (:zent/writes) runs only when named."]
-    :see ["check"]}
-   {:verb "preset" :group "Catalog" :args "save <name> <edn> | rm <name>"
+    :see ["validate"]}
+   {:verb "preset" :group "Catalog" :args "save <name> <edn> | delete <name>"
     :doc "save or delete a preset of your own, registered with a running daemon"
     :more ["Saved in ~/.config/zent/presets/<catalog>/. It may pick components and set"
            "branch, image, port, context... never what code runs (:cmd, :env, :scripts)."
            "e.g. zent preset save mine '{:api {:mode :on :branch \"fix-x\"}}'"]}
    {:verb "mcp" :group "Advanced"
     :doc "MCP server on stdio: these verbs as tools, for an agent"}
-   {:verb "down" :group "Advanced"
-    :doc "no daemon: tear down everything the session lists"
+   {:verb "teardown" :group "Advanced"
+    :doc "no daemon: tear down everything the session lists, :permanent components included"
     :more ["It also stops the stacks you started yourself through zent, so don't use it to clean up."]}])
 
 (defn- verb-entry [verb] (some #(when (= verb (:verb %)) %) verbs))
@@ -221,12 +219,12 @@
   (System/exit 0))
 
 (defn detach!
-  "Starts `<bin> serve` in the background and waits for its card. nohup:
+  "Starts `<bin> serve [preset]` in the background and waits for its card. nohup:
   closing this terminal must not take the daemon with it."
-  [ctx ui?]
+  [ctx preset ui?]
   (refuse-if-running!)
   (daemon/reset-log! daemon/log-path)
-  (let [proc (shell/spawn! (cond-> ["nohup" (:bin ctx) "serve"] ui? (conj "--ui"))
+  (let [proc (shell/spawn! (cond-> ["nohup" (:bin ctx) "serve"] preset (conj (name preset)) ui? (conj "--ui"))
                            :log-file daemon/log-path)
         deadline (+ (System/currentTimeMillis) detach-timeout-ms)]
     (loop []
@@ -278,7 +276,7 @@
 
 (defn apply! [ctx preset]
   (check-preset! ctx preset)
-  (let [d (or (some-> (live) warn-if-stale!) (detach! ctx false))]
+  (let [d (or (some-> (live) warn-if-stale!) (detach! ctx nil false))]
     (run-command! d (str "/api/apply/" (name preset)))))
 
 (defn status! []
@@ -289,7 +287,7 @@
     (let [recorded (:handles (session/read-session session/default-path))]
       (println "no zent serve running")
       (when (seq recorded)
-        (println "session still lists (`zent serve` adopts them, `zent down` tears them down):"
+        (println "session still lists (`zent serve` adopts them, `zent teardown` tears them down):"
                  (str/join ", " (map (comp name :component) recorded)))))))
 
 (defn stop! [names]
@@ -305,12 +303,12 @@
 (defn reload! [component]
   (let [d (daemon!)]
     (check-components! d [component])
-    (run-command! d (str "/api/trigger/" (name component)))))
+    (run-command! d (str "/api/reload/" (name component)))))
 
-(defn pull! [component]
+(defn sync! [component]
   (let [d (daemon!)]
     (check-components! d [component])
-    (run-command! d (str "/api/pull/" (name component)))))
+    (run-command! d (str "/api/sync/" (name component)))))
 
 (defn rebase-message
   "What rebase command `id` (its key in `view`) did, or throws why not: done with neither message nor
@@ -363,9 +361,9 @@
                                    (or head "?") (or dirty "?") (or unreachable "?")
                                    (str (let [ps (presets e)] (if (seq ps) ps "-")) "  " path))))))))
 
-(defn reload-code! []
+(defn reload-catalog-and-code! []
   (let [d (daemon!)
-        view (client/await! d (client/request d :post "/api/reload-code") print-change)
+        view (client/await! d (client/request d :post "/api/reload-catalog-and-code") print-change)
         {:keys [reloaded failed error]} (:code-reload view)]
     (if failed
       (fail! (format "reloaded %d namespace(s), then %s failed: %s" reloaded failed error))
@@ -406,7 +404,7 @@
         (doseq [[what who] lines] (println (format "  %-10s %s" what who)))
         (println "  change nothing")))))
 
-(defn check!
+(defn validate!
   "Validates every preset as an apply would, and the presets' checks
   (zent.checks/problems); fails if any is refused."
   [ctx]
@@ -480,10 +478,10 @@
   (when-let [d (live)]
     (client/request d :post (str "/api/presets/" (name preset) "/delete"))))
 
-(defn- down! []
+(defn- teardown! []
   (when-let [{:keys [pid]} (live)]
     (fail! (format "zent serve (pid %d) owns the session - `zent stop` or `zent shutdown`" pid)))
-  (let [{:keys [stopped errors]} (engine/down!)]
+  (let [{:keys [stopped errors]} (engine/teardown!)]
     (println (format "stopped %d, %d error(s)" (count stopped) (count errors)))
     (doseq [{:keys [handle error]} errors]
       (println "  failed:" (pr-str handle) "-" (ex-message error)))))
@@ -521,28 +519,27 @@
         ui? (flags "--ui")
         need (fn [x] (or x (fail! (str (usage verb) " - zent help " verb))))]
     (case verb
-      "serve" (serve! ctx nil ui?)
-      "watch" (serve! ctx (keyword (need arg)) ui?)
+      "serve" (serve! ctx (some-> arg keyword) ui?)
       "apply" (apply! ctx (keyword (need arg)))
       "status" (status!)
       "stop" (stop! args)
       "reload" (reload! (need arg))
       "rebase" (rebase! (need arg))
-      "pull" (pull! (need arg))
+      "sync" (sync! (need arg))
       "worktrees" (case arg nil (worktrees! ctx false) "prune" (worktrees! ctx true) (need nil))
       "shutdown" (shutdown!)
-      "reload-code" (reload-code!)
+      "reload-catalog-and-code" (reload-catalog-and-code!)
       "presets" (presets! ctx)
       "preview" (preview! ctx (keyword (need arg)))
-      "check" (check! ctx)
+      "validate" (validate! ctx)
       "verify" (verify! ctx (some-> arg keyword) (rest args)
                         (checks/only (some #(when (str/starts-with? % "--only=") (subs % 7)) flags)))
       "preset" (case arg
                  "save" (save-preset! ctx (keyword (need arg2)) (need (nth args 2 nil)))
-                 "rm" (delete-preset! ctx (keyword (need arg2)))
+                 "delete" (delete-preset! ctx (keyword (need arg2)))
                  (need nil))
       "mcp" ((requiring-resolve 'zent.mcp/serve!) ctx)
-      "down" (down!)
+      "teardown" (teardown!)
       "logs" (logs! (need arg) log-tail-lines)
       (if (contains? (:presets (catalog ctx)) (keyword verb))
         (apply! ctx (keyword verb))
@@ -557,7 +554,7 @@
       (cond
         (or (nil? verb) (#{"help" "-h"} verb)) (print-help! ctx (first operands))
         (flags "--help") (print-help! ctx verb)
-        (and (= verb "serve") (flags "--detach")) (detach! ctx (flags "--ui"))
+        (and (= verb "serve") (flags "--detach")) (detach! ctx (some-> (first operands) keyword) (flags "--ui"))
         :else (dispatch ctx verb operands flags))
       ;; ex-info is how every verb reports a user-facing error (bad preset,
       ;; no daemon, refused config) - anything else is a bug, trace and all

@@ -362,7 +362,7 @@
   (swap-view! mark-status name :failed {:error (ex-message ex)}))
 
 (defn observe-code-reload!
-  "zent.reload/reload!'s result, for `zent reload-code` to report. The swap
+  "zent.reload/reload!'s result, for `zent reload-catalog-and-code` to report. The swap
   also re-pushes every card, rendered by the freshly loaded code."
   [result]
   (swap! view-state assoc :code-reload
@@ -405,13 +405,13 @@
 (defn request! [action name] (enqueue! {:action action :name (keyword name)}))
 (defn request-apply! [preset-name] (enqueue! {:action :apply :preset (keyword preset-name)}))
 (defn request-shutdown! [] (enqueue! {:action :shutdown}))
-(defn request-reload-code! [] (enqueue! {:action :reload-code}))
+(defn request-reload-catalog-and-code! [] (enqueue! {:action :reload-catalog-and-code}))
 
 (defn described-cfgs "{name cfg}: what the applied preset runs, as resolved." [] @described)
 
 (def git-ops
   "The git writes a component's checkout takes from the dashboard (zent.source)."
-  {:rebase #'source/rebase! :checkout #'source/checkout! :push #'source/push! :sync #'source/sync-clone!})
+  {:rebase #'source/rebase! :checkout #'source/checkout! :push #'source/push! :fast-forward #'source/fast-forward!})
 
 (defn request-git!
   "Queues `op` (a git-ops key) on `k`'s checkout as a job: git writes there, so never next to a deploy.

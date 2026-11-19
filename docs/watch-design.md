@@ -25,9 +25,9 @@ component** (watched paths derive from the component's declared sources), not fr
 ## Resident mode
 
 Watching needs a resident process that owns its children: the daemon (`zent serve`,
-`zent.engine/serve!`). `zent watch <preset>` is serve with that preset applied at start;
+`zent.engine/serve!`). `zent serve <preset>` applies that preset at start;
 every other verb is a client of it. The session file (`~/.cache/zent/session.edn`) stays
-current across stops and reloads, so a later daemon adopts what it lists and `zent down`
+current across stops and reloads, so a later daemon adopts what it lists and `zent teardown`
 can still stop it.
 
 ## The ordering invariant (this is the load-bearing part)
@@ -68,7 +68,7 @@ simply never watched.
 Most of our components already have a **better** watcher than zent could be, so scope is
 deliberately narrow:
 
-| component | today | zent watch would add |
+| component | today | zent's `:watch` would add |
 |---|---|---|
 | `front` | vite HMR | nothing - a full restart is *worse* than HMR |
 | quarkus apps | `java -jar` | `mvn package` + restart (~30 s), where `mvn quarkus:dev` does it natively in ~1 s |

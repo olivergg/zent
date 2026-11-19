@@ -25,7 +25,7 @@
   control queue (the HTTP API's writes), and an observer for every event
   (deploys, handled commands, stops, adopted components, liveness). The
   catalog lives in state/catalog, so a preset registered at runtime applies.
-  `zent reload-code` (zent.reload) reloads the :code-prefixes namespaces
+  `zent reload-catalog-and-code` (zent.reload) reloads the :code-prefixes namespaces
   (default zent.*); :catalog-fn, if given, is re-read after a clean reload.
   Callbacks default to vars, not fn values, so a code reload reaches them."
   [catalog & {:keys [deploy-fn control on-handled on-stopping on-stop on-skipped on-seeded on-check code-prefixes catalog-fn]
@@ -45,7 +45,7 @@
                        :catalog-ref state/catalog
                        :deploy-fn (reporting deploy-fn)
                        :on-resolved #'state/observe-preset-resolved!
-                       :reload-code #(let [result (reload/reload! code-prefixes)]
+                       :reload-catalog-and-code #(let [result (reload/reload! code-prefixes)]
                                        ;; always observed: the CLI reads this result
                                        (state/observe-code-reload!
                                         (try (when (and catalog-fn (not (:failed result)))

@@ -1,7 +1,7 @@
 (ns zent.session
   "What's running, persisted as EDN - handles die with the zent process
   while what they point at runs on, so a later daemon adopts them and
-  `zent down` can still stop them.
+  `zent teardown` can still stop them.
 
   A spawned process is recorded as its PID plus `ps` identity (start time +
   argv), re-checked before anything kills it: a recycled PID must never

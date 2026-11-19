@@ -545,8 +545,8 @@
       (queued id)
       (error-response 404 "nothing to undo there - already undone, or too old"))
 
-    (and (= (:request-method req) :post) (re-matches #"/api/(rebase|checkout|push|sync)/.*" (:uri req)))
-    (let [[_ op n] (re-matches #"/api/(rebase|checkout|push|sync)/(.*)" (:uri req))
+    (and (= (:request-method req) :post) (re-matches #"/api/(rebase|checkout|push|fast-forward)/.*" (:uri req)))
+    (let [[_ op n] (re-matches #"/api/(rebase|checkout|push|fast-forward)/(.*)" (:uri req))
           ;; from a preview: the component as that preset resolves it, not as the applied one does
           previewed (some-> (query-param req "preset") keyword)]
       (if-let [id (state/request-git! (keyword op) (keyword n)
@@ -554,11 +554,11 @@
         (queued id)
         (error-response 404 (str n ": no checkout in the preset"))))
 
-    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/trigger/"))
-    (component-command :reload (subs (:uri req) (count "/api/trigger/")))
+    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/reload/"))
+    (component-command :reload (subs (:uri req) (count "/api/reload/")))
 
-    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/pull/"))
-    (component-command :pull (subs (:uri req) (count "/api/pull/")))
+    (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/sync/"))
+    (component-command :sync (subs (:uri req) (count "/api/sync/")))
 
     (and (= (:request-method req) :post) (str/starts-with? (:uri req) "/api/stop/"))
     (component-command :stop (subs (:uri req) (count "/api/stop/")))
@@ -576,10 +576,10 @@
     (and (= (:request-method req) :post) (= (:uri req) "/api/shutdown"))
     (queued (state/request-shutdown!))
 
-    ;; POST /api/reload-code - reloads the daemon's code (zent.reload), keeping
-    ;; its state; the result lands in /api/view's :code-reload
-    (and (= (:request-method req) :post) (= (:uri req) "/api/reload-code"))
-    (queued (state/request-reload-code!))
+    ;; POST /api/reload-catalog-and-code - re-reads the catalog and the daemon's code (zent.reload),
+    ;; keeping its state; the result lands in /api/view's :code-reload
+    (and (= (:request-method req) :post) (= (:uri req) "/api/reload-catalog-and-code"))
+    (queued (state/request-reload-catalog-and-code!))
 
     ;; POST /api/presets/:name (body: EDN spec) registers a preset in the
     ;; running catalog, /api/presets/:name/delete drops it. Memory only: the

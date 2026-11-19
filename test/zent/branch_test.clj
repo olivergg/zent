@@ -75,7 +75,7 @@
           (binding [branch/*sync* false] (branch/resolve-worktree clone "repo" "master"))
           (is (= before (git! wt "rev-parse" "HEAD")))
           (branch/resolve-worktree clone "repo" "master")
-          (is (= (git! clone "rev-parse" "origin/master") (git! wt "rev-parse" "HEAD")) "an apply or a pull syncs it"))))))
+          (is (= (git! clone "rev-parse" "origin/master") (git! wt "rev-parse" "HEAD")) "an apply or a sync syncs it"))))))
 
 (defn- repos
   "A bare origin and `clone`, both with master and feature (one commit each), the clone on feature;
@@ -187,7 +187,7 @@
       (git! clone "branch" "--quiet" "a" "feature") (git! clone "branch" "--quiet" "b" "feature")
       (doseq [b ["a" "b" "feature"]] (branch/resolve-worktree clone "repo" b :local-worktree))
       (spit (str (branch/worktree-path "repo" "b") "/wip.txt") "wip")
-      (git! (branch/worktree-path "repo" "a") "update-ref" (branch/test-ref "a") "HEAD")
+      (git! (branch/worktree-path "repo" "a") "update-ref" (branch/trial-ref "a") "HEAD")
       (let [entries (branch/worktrees)
             used (branch/worktree-path "repo" "feature")]
         (testing "given three worktrees, then each with its clone, commit and what's at risk"
@@ -205,5 +205,5 @@
             (is (not (.exists (java.io.File. (branch/worktree-path "repo" "a")))))
             (is (.exists (java.io.File. (str (branch/worktree-path "repo" "b") "/wip.txt"))))
             (is (not (re-find #"repo-a\b" (git! clone "worktree" "list"))) "git forgot it too")
-            (is (not (zero? (:exit (zent.shell/sh! ["git" "-C" clone "rev-parse" "--verify" "--quiet" (branch/test-ref "a")]))))
-                "its local test's ref went with it")))))))
+            (is (not (zero? (:exit (zent.shell/sh! ["git" "-C" clone "rev-parse" "--verify" "--quiet" (branch/trial-ref "a")]))))
+                "its trial rebase's ref went with it")))))))

@@ -10,7 +10,7 @@ class Zent < Formula
 
   def install
     # sources, not a build: jolt runs them as is (a jolt binary embeds no
-    # resources, so the dashboard and reload-code would be lost)
+    # resources, so the dashboard and reload-catalog-and-code would be lost)
     libexec.install %w[bin deps.edn resources src]
     # what `zent version` prints - HEAD-<sha> for a --HEAD install
     (libexec/"VERSION").write "#{version}\n"
@@ -29,7 +29,7 @@ class Zent < Formula
     (testpath/"catalog.edn").write "{:name :t :components {:db {:kind :external}}}"
     (testpath/"presets").mkpath
     (testpath/"presets/p.edn").write "[:db]"
-    assert_match "1 preset(s) ok", shell_output("#{bin}/zent check")
+    assert_match "1 preset(s) ok", shell_output("#{bin}/zent validate")
     assert_match "zent #{version}", shell_output("#{bin}/zent version")
   end
 end

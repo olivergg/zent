@@ -16,11 +16,11 @@
   [repo-name branch]
   (str (worktrees-root) "/" repo-name "-" (str/replace branch "/" "_")))
 
-(defn test-ref
-  "The ref a :origin-worktree worktree's local test rebase (zent.source/rebase!) is kept under: the
+(defn trial-ref
+  "The ref a :origin-worktree worktree's trial rebase (zent.source/rebase!) is kept under: the
   unreachable check spares it, the next sync drops it."
   [branch]
-  (str "refs/zent/test/" branch))
+  (str "refs/zent/trial/" branch))
 
 ;; One lock per main clone: components deploy in parallel, and two git
 ;; commands writing one repo's refs at once fail on its lock files.
@@ -31,7 +31,7 @@
 
 (def ^:dynamic *sync*
   "Whether resolve-worktree brings an existing worktree to its ref: an apply does, a reload
-  restarts the commit already there (zent.engine binds it), a pull does again."
+  restarts the commit already there (zent.engine binds it), a sync does again."
   true)
 
 (defn git
@@ -118,11 +118,11 @@
            ;; would move it, and git would keep the main clone from checking it out
            (shell/sh-or-throw! ["git" "-C" worktree-dir "checkout" "--quiet" "--detach"])
            (cond
-             (not *sync*) (println (str "Keeping worktree " worktree-dir " at its commit (`zent pull` brings " shown ")"))
+             (not *sync*) (println (str "Keeping worktree " worktree-dir " at its commit (`zent sync` brings " shown ")"))
              fetched? (do (refuse-if-at-risk! worktree-dir branch)
                           (println (str "Syncing worktree " worktree-dir " to " shown))
                           (shell/sh-or-throw! ["git" "-C" worktree-dir "reset" "--quiet" "--hard" ref])
-                          (shell/sh! ["git" "-C" worktree-dir "update-ref" "-d" (test-ref branch)]))
+                          (shell/sh! ["git" "-C" worktree-dir "update-ref" "-d" (trial-ref branch)]))
              :else (println (str "fetch of " ref " failed, keeping " worktree-dir " as is"))))
          (do (println (str "Creating worktree for " repo-name "@" branch " -> " worktree-dir " (detached at " shown ")"))
              (shell/sh-or-throw! ["git" "-C" main-clone-dir "worktree" "add" "--detach" worktree-dir ref])))
@@ -149,7 +149,7 @@
 (defn prune!
   "Removes the `entries` (worktrees') of `repos` - the root is the machine's, another catalog's stay -
   no preset uses - `users`: {path #{preset}} - and that hold nothing at-risk would lose, through the
-  main clone's `git worktree remove`, then `worktree prune`; a local test's ref (test-ref) at its HEAD
+  main clone's `git worktree remove`, then `worktree prune`; a trial rebase's ref (trial-ref) at its HEAD
   goes with it. {:removed [entry] :kept [[entry why]]}."
   [entries users repos]
   (reduce (fn [acc {:keys [path clone repo dirty unreachable] :as e}]
@@ -161,12 +161,12 @@
                             (pos? unreachable) (str unreachable " commit(s) on no branch"))
                   removed (when-not why
                             (locking (repo-lock clone)
-                              (let [test-refs (some-> (git path "for-each-ref" "--format=%(refname)" "--points-at" "HEAD" "refs/zent/test/")
+                              (let [trial-refs (some-> (git path "for-each-ref" "--format=%(refname)" "--points-at" "HEAD" "refs/zent/trial/")
                                                       lines)
                                     {:keys [exit err]} (shell/sh! ["git" "-C" clone "worktree" "remove" path])]
                                 (shell/sh! ["git" "-C" clone "worktree" "prune"])
                                 (if (zero? exit)
-                                  (do (doseq [r test-refs] (shell/sh! ["git" "-C" clone "update-ref" "-d" r]))
+                                  (do (doseq [r trial-refs] (shell/sh! ["git" "-C" clone "update-ref" "-d" r]))
                                       :ok)
                                   (str "git worktree remove failed: " (str/trim (str err)))))))]
               (if (= :ok removed)

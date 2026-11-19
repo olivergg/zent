@@ -312,9 +312,9 @@ function renderVerdict() {
     }
     if (want && g.behind > 0) {
       looks.push(`${at} is ${g.behind} commit${g.behind > 1 ? "s" : ""} behind <code>${escHtml(g.base)}</code>` +
-        ((g.dirty || want === g.base) && from !== "main-worktree" ? "" : act("rebase", n, from === "origin-worktree" ? "Test on " + escHtml(g.base) : "Rebase")));
+        ((g.dirty || want === g.base) && from !== "main-worktree" ? "" : act("rebase", n, from === "origin-worktree" ? "Trial rebase onto " + escHtml(g.base) : "Rebase")));
     }
-    if (g.pull > 0) looks.push(`${at}: origin has ${g.pull} new commit(s) - the apply resets its worktree to them`);
+    if (g.unsynced > 0) looks.push(`${at}: origin has ${g.unsynced} new commit(s) - the apply resets its worktree to them`);
     if (!want && g.dirty) looks.push(`${at} runs your main worktree as it is, with ${g.dirty} uncommitted file(s)`);
   }
   const steps = Object.entries(comps).filter(([, c]) => c.kind === "one-shot");
@@ -356,7 +356,7 @@ function renderRun() {
         '<button type="button" class="show-stopped-link">show them</button>.</p></div>'
       : '<div class="empty-loom"><h2>The loom is empty</h2>' +
         "<p>Pick a preset from the panel on the right, or bring one up from a terminal with " +
-        "<code>zent &lt;preset&gt;</code> / <code>zent watch &lt;preset&gt;</code>. " +
+        "<code>zent apply &lt;preset&gt;</code>. " +
         "Components appear here in dependency order as they start.</p></div>";
     const showLink = host.querySelector(".show-stopped-link");
     if (showLink) showLink.onclick = () => setShowStopped(true);
@@ -1333,7 +1333,7 @@ function brStates(p) {
     const ahead = minus(reach(p, [L.sha]), reach(p, [R.sha])), behind = minus(reach(p, [R.sha]), reach(p, [L.sha]));
     // :origin-worktree runs what's pushed: your local commits on the same branch don't run until pushed
     const pushNote = (L.behind > 0 ? `replaces ${plural(L.behind, "commit")} on ${theirs} (force-with-lease)` : `sends ${plural(L.ahead, "commit")} to ${theirs}`)
-      + (from === "origin-worktree" ? ", then Pull to run them" : "");
+      + (from === "origin-worktree" ? ", then Sync to run them" : "");
     const notRunning = from === "origin-worktree" ? ` - they don't run: zent runs ${theirs}` : "";
     if (L.ahead > 0 && L.behind > 0)
       out.push([`${mine} and ${theirs} diverged: ↑${L.ahead} ↓${L.behind}${notRunning}`, "bad", ["push", "Push", pushNote, true], new Set([...ahead, ...behind])]);
@@ -1341,8 +1341,8 @@ function brStates(p) {
       out.push([`${plural(L.ahead, "commit")} on ${mine} not pushed${notRunning}`, from === "origin-worktree" ? "bad" : "warn", ["push", "Push", pushNote, true], ahead]);
     else if (L.behind > 0)
       out.push([`${mine} is ${L.behind} behind ${theirs}`, "bad",
-                ["sync", "Sync", `fast-forwards ${mine} to ${theirs}: nothing of yours is lost`, false,
-                 p.head.branch === target ? null : `your main worktree has ${p.head.branch || "no branch"} checked out: sync ${target} there`], behind]);
+                ["fast-forward", "Fast-forward", `fast-forwards ${mine} to ${theirs}: nothing of yours is lost`, false,
+                 p.head.branch === target ? null : `your main worktree has ${p.head.branch || "no branch"} checked out: fast-forward ${target} there`], behind]);
   } else if (L && !R && target !== base && L.ahead !== 0) {
     out.push([`${mine} isn't on origin`, "warn", ["push", "Push", `creates ${theirs}`, true], reach(p, [L.sha])]);
   }
@@ -1350,9 +1350,9 @@ function brStates(p) {
   const M = ref(base), MR = ref("origin/" + base);
   if (M && MR && M.ahead > 0)
     out.push([`${plural(M.ahead, "commit")} on ${bn("local", base, { shown: base })} not pushed`, "warn", null, minus(reach(p, [M.sha]), reach(p, [MR.sha]))]);
-  if (wt && g.pull > 0)
-    out.push([`zent's worktree is ${g.pull} behind ${from === "local-worktree" ? mine : theirs}`, "bad",
-              ["pull", "Pull", `moves the worktree ${plural(g.pull, "commit")} ahead, then redeploys`, false, dirty.length ? "files edited by hand in zent's worktree" : null],
+  if (wt && g.unsynced > 0)
+    out.push([`zent's worktree is ${g.unsynced} behind ${from === "local-worktree" ? mine : theirs}`, "bad",
+              ["sync", "Sync", `moves the worktree ${plural(g.unsynced, "commit")} ahead, then redeploys`, false, dirty.length ? "files edited by hand in zent's worktree" : null],
               minus(reach(p, [from === "local-worktree" ? L?.sha : R?.sha]), reach(p, [runSha]))]);
   if (deployed && runSha && deployed !== runSha)
     out.push([`Changed since it started: runs <code class="sha">${shortSha(deployed)}</code>, the disk has <code class="sha">${shortSha(runSha)}</code>`, "warn",
@@ -1364,7 +1364,7 @@ function brStates(p) {
       : wt && dirty.length ? "uncommitted files: commit or stash them first"
       : g["held-at"] ? `${target} is checked out in ${g["held-at"]}` : c?.length ? "it conflicts: rebase it by hand" : null;
     out.push([`${originBase} is ${g.behind} ahead`, "warn",
-              ["rebase", from === "origin-worktree" ? `Test on ${base}` : "Rebase",
+              ["rebase", from === "origin-worktree" ? `Trial rebase onto ${base}` : "Rebase",
                (from === "origin-worktree" ? `runs ${theirs} rebased onto ${originBase}, locally in its worktree` : `rebases ${mine} onto ${originBase}`) + ` - ${note}` +
                (!wt && dirty.length ? `, ${plural(dirty.length, "uncommitted file")} autostashed` : ""), true, why],
               minus(reach(p, [ref("origin/" + base)?.sha]), reach(p, [runSha]))]);
@@ -1418,9 +1418,9 @@ function brLabels(p) {
     }
   }
   if (wt && p.worktree)
-    add(p.worktree.sha, bn("wt", p.worktree.path, { shown: "worktree", cls: "wt", extra: p.git?.pull > 0 ? `<b class="ab">↓${p.git.pull}</b>` : "",
+    add(p.worktree.sha, bn("wt", p.worktree.path, { shown: "worktree", cls: "wt", extra: p.git?.unsynced > 0 ? `<b class="ab">↓${p.git.unsynced}</b>` : "",
                                                     tip: `${p.worktree.path}\nzent's worktree, what runs: detached on this commit` +
-                                                         (p.git?.pull > 0 ? `, ${plural(p.git.pull, "commit")} behind - Pull to run them` : "") }));
+                                                         (p.git?.unsynced > 0 ? `, ${plural(p.git.unsynced, "commit")} behind - Sync to run them` : "") }));
   for (const o of p.others || []) add(o.sha, bn("wt", o.path, { shown: "worktree", cls: "wt idle", tip: `${o.path}\nAnother zent worktree of this repo` }));
   return labels;
 }
@@ -1504,8 +1504,7 @@ function brCell(p) {
 }
 
 function brPath(verb, comp) {
-  const api = { reload: "trigger" }[verb] || verb;
-  return `/api/${api}/${encodeURIComponent(comp)}` + (["rebase", "checkout", "push", "sync"].includes(verb) ? previewQuery() : "");
+  return `/api/${verb}/${encodeURIComponent(comp)}` + (["rebase", "checkout", "push", "fast-forward"].includes(verb) ? previewQuery() : "");
 }
 
 function renderBranches() {
@@ -1630,8 +1629,8 @@ async function gitPost(verb, name, path) {
   } catch { reply = { error: "the daemon didn't answer" }; }
   if (Number.isInteger(reply.id)) {
     pending.set(path, reply.id);
-    // a reload or a pull isn't a git job: its outcome shows on the board, no message to toast
-    if (!["reload", "pull"].includes(verb)) gitJobs.set(reply.id, [gitDone[verb] || verb, name]);
+    // a reload or a sync isn't a git job: its outcome shows on the board, no message to toast
+    if (!["reload", "sync"].includes(verb)) gitJobs.set(reply.id, [gitDone[verb] || verb, name]);
   }
   else { pending.delete(path); toast("failed", "not " + (gitDone[verb] || verb) + ": " + name, reply.error, name); }
   markBusy();
@@ -1681,7 +1680,7 @@ document.body.addEventListener("htmx:confirm", (e) => {
   e.preventDefault();
   const [, , verb, rest = ""] = e.detail.path.split("/");
   const name = decodeURIComponent(rest.split("?")[0]), c = view.components[name] || {};
-  const action = { trigger: c.kind === "one-shot" ? "run" : "reload", checkout: "check out" }[verb] || verb;
+  const action = { reload: c.kind === "one-shot" ? "run" : "reload", checkout: "check out" }[verb] || verb;
   // the board redraws on every push: by the time it's confirmed, its button may be a new one,
   // and htmx silently drops a request from a detached element
   askConfirm({ name, question: e.detail.question, action, anchor: e.detail.elt })
@@ -1700,7 +1699,7 @@ document.body.addEventListener("htmx:confirm", (e) => {
    is still in flight (no id yet). */
 const pending = new Map();
 // a git write's past participle, by its /api/<verb>/<component> path
-const gitDone = { rebase: "rebased", checkout: "checked out", push: "pushed", sync: "synced", pull: "pulled", reload: "reloaded", undo: "undone" };
+const gitDone = { rebase: "rebased", checkout: "checked out", push: "pushed", "fast-forward": "fast-forwarded", sync: "synced", reload: "reloaded", undo: "undone" };
 // queued git writes, id -> [done, component]: once handled, say what happened, the undo command included
 const gitJobs = new Map();
 

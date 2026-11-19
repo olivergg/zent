@@ -89,7 +89,7 @@
             [(keyword (demunge (.getName pdir))) checks]))))
 
 (defn problems
-  "What `zent check` reports about `catalog`'s checks: a dir no preset owns,
+  "What `zent validate` reports about `catalog`'s checks: a dir no preset owns,
   an unreadable check, an observed component the preset doesn't run."
   [{:keys [checks presets]}]
   (for [[preset cs] (sort-by key checks)

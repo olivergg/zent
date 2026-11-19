@@ -101,9 +101,9 @@ credentials its catalog entry points at, if it declares any.")
     :call (fn [args] (cli/verify! ctx (some-> (arg args :preset :optional? true) keyword)
                                   (arg args :checks :type :strings :optional? true)
                                   (arg args :tests :type :strings :optional? true)))}
-   {:name "reload_code"
-    :description "Reload the daemon's own code (after editing zent), keeping everything it runs."
-    :call (fn [_] (cli/reload-code!))}
+   {:name "reload_catalog_and_code"
+    :description "Re-read the catalog (after editing catalog.edn or presets/) and zent's own code, keeping everything the daemon runs."
+    :call (fn [_] (cli/reload-catalog-and-code!))}
    {:name "logs" :description "The tail of a component's output (secret values zent read for it are masked)."
     :props {:component (prop "string" "component name")
             :lines (prop "integer" "how many lines (default 200, at most 500)")}

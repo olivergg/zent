@@ -755,8 +755,8 @@
           (is (= {} (#'engine/watch-targets {:a svc :b (assoc svc :from :local-worktree)})))
           (is (= #{:c} (set (keys (#'engine/watch-targets {:c (assoc svc :from :main-worktree)}))))))))))
 
-(deftest serve-pull-refused-for-a-clone-test
-  (testing "given a component running a main worktree as it is, then a :pull is refused, saying why - nothing
+(deftest serve-sync-refused-for-a-main-worktree-test
+  (testing "given a component running a main worktree as it is, then a :sync is refused, saying why - nothing
             redeployed"
     (let [catalog {:components {:svc {:kind :process :cmd "run" :repo "svc" :branch "x" :from :main-worktree}
                                 :plain {:kind :process :cmd "run" :repo "svc"}}
@@ -767,14 +767,14 @@
           serving (future
                     (with-redefs [lifecycle/down! (fn [hs] {:stopped hs :errors []})]
                       (engine/serve! catalog :initial-preset :p :poll-ms 5 :control control
-                                     :session-path (str (System/getProperty "java.io.tmpdir") "/zent-serve-pull-clone-test.edn")
+                                     :session-path (str (System/getProperty "java.io.tmpdir") "/zent-serve-sync-main-worktree-test.edn")
                                      :deploy-fn (fn [n _] (swap! deploys inc) {:kind :external :component n})
                                      :on-handled #(swap! handled into %))))]
       (try
         (loop [i 0] (when (and (< @deploys 2) (< i 300)) (Thread/sleep 10) (recur (inc i))))
-        (swap! control conj {:action :pull :name :svc :id 1} {:action :pull :name :plain :id 2})
+        (swap! control conj {:action :sync :name :svc :id 1} {:action :sync :name :plain :id 2})
         (loop [i 0] (when (and (< (count @handled) 2) (< i 300)) (Thread/sleep 10) (recur (inc i))))
-        (is (re-find #"^svc: it runs .*/svc as it is \(:from :main-worktree\): nothing to pull" (str (:error (first (filter #(= 1 (:id %)) @handled))))))
+        (is (re-find #"^svc: it runs .*/svc as it is \(:from :main-worktree\): nothing to sync" (str (:error (first (filter #(= 1 (:id %)) @handled))))))
         (is (re-find #"\(no :branch\)" (str (:error (first (filter #(= 2 (:id %)) @handled))))))
         (is (= 2 @deploys))
         (finally (swap! control conj {:action :shutdown :id 99}) (deref serving 3000 nil))))))
@@ -917,7 +917,7 @@
       (is (= "new" (:branch (#'engine/current-cfg edited :svc {:kind :external :mode :on :zent.engine/adopted true})))))))
 
 (deftest serve-reload-runs-the-current-catalog-test
-  (testing "given the catalog edited while serving (reload-code), when a component
+  (testing "given the catalog edited while serving (reload-catalog-and-code), when a component
             is reloaded, then it's deployed as the catalog now says - not as applied"
     (let [catalog {:components {:svc {:kind :external :branch "old"}}
                    :presets {:p {:svc {:mode :on}}}}
@@ -934,17 +934,17 @@
                        :deploy-fn (fn [_ cfg] (swap! deployed conj (:branch cfg)) {:kind :external})))
       (is (= ["old" "new"] @deployed)))))
 
-(deftest serve-reload-code-test
-  (testing "given a queued :reload-code, then serve! runs :reload-code, and a
+(deftest serve-reload-catalog-and-code-test
+  (testing "given a queued :reload-catalog-and-code, then serve! runs it, and a
             throwing one leaves the loop alive for the next command"
-    (let [control (atom [{:action :reload-code :id 1}])
+    (let [control (atom [{:action :reload-catalog-and-code :id 1}])
           calls (atom 0)
           handled (atom [])]
       (engine/serve! {:components {} :presets {}} :poll-ms 5
-                     :session-path (str (System/getProperty "java.io.tmpdir") "/zent-serve-reload-code-test.edn")
+                     :session-path (str (System/getProperty "java.io.tmpdir") "/zent-serve-reload-catalog-and-code-test.edn")
                      :control control
                      :on-handled #(swap! handled into (map :id %))
-                     :reload-code (fn []
+                     :reload-catalog-and-code (fn []
                                     (swap! calls inc)
                                     (swap! control conj {:action :shutdown :id 2})
                                     (throw (ex-info "boom" {}))))

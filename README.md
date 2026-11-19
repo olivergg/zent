@@ -71,7 +71,7 @@ zent apply <preset>                                      # and bring your preset
 Then, from anywhere inside a catalog repo:
 
 ```
-zent check                     # every preset validates
+zent validate                  # every preset validates
 zent presets                   # what you can run
 zent apply <preset>            # start it, wait until it settled
 zent version                   # the installed zent (brew: HEAD-<sha>)
@@ -93,7 +93,7 @@ checks/          optional: deps.edn ({:paths ["." "lib"] ...}) + <preset>/<check
 ```
 
 A catalog repo is data: no dependencies, no build. `zent` finds it like git finds `.git` (the
-first parent with a `catalog.edn`, or `$ZENT_CATALOG`). `zent check` validates every preset; it's
+first parent with a `catalog.edn`, or `$ZENT_CATALOG`). `zent validate` validates every preset; it's
 the catalog's test.
 
 ### Checks
@@ -125,7 +125,7 @@ since checks talk to JVM services. Its directory is the preset's name, munged li
 
 A result is `:pass`, `:fail` or `:unknown` (couldn't judge: an exception, nothing run).
 `zent verify [<preset> [<check>...]] [--only=<test>,...]`, the MCP `verify` tool and the Checks tab
-run them; results and history live in `~/.cache/zent/checks/`. `zent check` refuses a check whose
+run them; results and history live in `~/.cache/zent/checks/`. `zent validate` refuses a check whose
 preset is gone or that observes a component its preset doesn't run.
 
 ## Running it
@@ -137,14 +137,14 @@ preset is gone or that observes a component its preset doesn't run.
 | pick a stack | `zent presets`, `zent preview <preset>`, `zent apply <preset>` | `list_presets`, `preview`, `apply` |
 | see what runs | `zent status` (dashboard: `zent serve --detach --ui`) | `status` |
 | iterate on a component | `zent reload <c>`, then `zent logs [-f] <c>` | `reload`, `logs` |
-| run what's new on a `:branch` | `zent pull <c>`, or the card's `pull` | - |
+| run what's new on a `:branch` | `zent sync <c>`, or the card's `sync` | - |
 | rebase a branch onto origin's default one | `zent rebase <c>`, then `zent reload <c>` | - |
-| put a `:from :main-worktree` clone on the preset's `:branch` | the card's `checkout`, also in a preview | - |
+| put a `:from :main-worktree` main worktree on the preset's `:branch` | the card's `checkout`, also in a preview | - |
 | list or clean up the `:branch` worktrees | `zent worktrees`, `zent worktrees prune` | - |
 | stop some, or all but `:permanent` | `zent stop <c>...`, `zent stop` | `stop` |
 | judge the running stack | `zent verify [<preset> [<check>...]]` | `verify` |
-| test a catalog edit | `zent check` | - |
-| try an engine edit | `zent reload-code` (for a loop change, `zent shutdown`, then `zent apply <preset>`) | `reload_code` |
+| test a catalog edit | `zent validate` | - |
+| run a catalog or engine edit | `zent reload-catalog-and-code` (for a loop change, `zent shutdown`, then `zent apply <preset>`) | `reload_catalog_and_code` |
 | run a branch of your own | `zent preset save mine '{:api {:mode :on :branch "fix-x"}}'`, then `zent mine` | `save_preset`, `apply` |
 | end the day | `zent shutdown` (`:permanent` components stay up) | - |
 
@@ -155,12 +155,13 @@ warnings, errors) live in the URL.
 
 The **Branches** tab (`/#branches`) draws each repo the preset runs as a git graph (your branches
 and origin's, your HEAD, zent's worktree, the commit running) and lists first what needs doing,
-with its action: push, fast-forward, pull, rebase, checkout, reload. A hover says what an action
+with its action: push, fast-forward, sync, rebase (a trial rebase on an `:origin-worktree`), checkout,
+reload. A hover says what an action
 does; a toast offers its undo. Only its Fetch button reaches origin, without pruning or moving a
 local branch.
 
 Use `127.0.0.1`, not `localhost`, for the dashboard: IPv6-first resolution hangs the websocket.
-Don't run a bare `zent down` to clean up: the session also tracks stacks you started yourself.
+Don't run a bare `zent teardown` to clean up: the session also tracks stacks you started yourself.
 
 ## For Java/Python developers
 
@@ -234,7 +235,7 @@ A `:branch` in a preset is the branch it wants for that component; `:from` says 
 it, in git's words (`docs/glossary.md`): your clone is git's **main worktree**, zent's are worktrees
 linked to it. Without a `:branch`, your main worktree runs as it is, on whatever branch it has out:
 
-| `:from` | runs | a sync (an apply that (re)deploys it, or `zent pull <c>`) |
+| `:from` | runs | a sync (an apply that (re)deploys it, or `zent sync <c>`) |
 |---|---|---|
 | `:origin-worktree` (default) | zent's worktree, detached at `origin/<branch>`: what's pushed | fetches, then resets the worktree to `origin/<branch>` |
 | `:local-worktree` | the same worktree, detached at your local `<branch>`: what's committed, pushed or not | resets the worktree to `<branch>`, no fetch |

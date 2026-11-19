@@ -40,7 +40,7 @@
   (testing "given a verb, then `help <verb>` and `<verb> --help` both show its usage and details"
     (is (= (run "help" "reload") (run "reload" "--help")))
     (is (str/starts-with? (run "help" "reload") "usage: zent reload <component>\n"))
-    (is (str/includes? (run "help" "reload") "see also: logs, reload-code")))
+    (is (str/includes? (run "help" "reload") "see also: logs, sync, reload-catalog-and-code")))
 
   (testing "given color, then styles are added and the columns stay aligned on the plain text"
     (let [colored (cli/help-text nil ["full"] :color? true)]
@@ -57,7 +57,7 @@
   (testing "given a verb missing its operand, then the error is its usage from `verbs`"
     (is (= "usage: zent reload <component> - zent help reload"
            (try (#'cli/dispatch ctx "reload" [] #{}) (catch Exception e (ex-message e)))))
-    (is (= "usage: zent preset save <name> <edn> | rm <name> - zent help preset"
+    (is (= "usage: zent preset save <name> <edn> | delete <name> - zent help preset"
            (try (#'cli/dispatch ctx "preset" ["save"] #{}) (catch Exception e (ex-message e)))))))
 
 (deftest print-view-like-the-dashboard-test

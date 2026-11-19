@@ -77,12 +77,13 @@
     (branch/worktree-path repo branch)
     (main-clone-dir repo workspace-dir)))
 
-(defn pull-refusal
-  "Why a pull (sync, then redeploy) means nothing for `cfg` - nil when it runs from a worktree."
+(defn sync-refusal
+  "Why a sync (zent's worktree to its ref, then redeploy) means nothing for `cfg` - nil when it runs
+  from a worktree."
   [cfg]
   (when-not (worktree? cfg)
     (str "it runs " (checkout-dir cfg) " as it is (" (if (:branch cfg) ":from :main-worktree" "no :branch")
-         "): nothing to pull - reload it")))
+         "): nothing to sync - reload it")))
 
 (defn parse-status
   "`git status --porcelain=v2 --branch` -> {:sha :branch :dirty}: :branch nil
@@ -142,10 +143,10 @@
   (some #(when (= ref (:ref %)) (:path %)) (branch/checkouts dir)))
 
 (defn checkout-git
-  "git-status of the dir `cfg` runs from, with :from (zent.source/from). For a worktree, also :pull -
+  "git-status of the dir `cfg` runs from, with :from (zent.source/from). For a worktree, also :unsynced -
   commits its ref (origin/<branch> as of the last fetch, or the local branch) has that it doesn't -
   and :unreachable - commits on no branch, which block its next sync (zent.branch/at-risk); for
-  :origin-worktree, :test? when it runs a local test rebase (rebase!); for :local-worktree, :local-ahead and
+  :origin-worktree, :trial? when it runs a trial rebase (rebase!); for :local-worktree, :local-ahead and
   :local-behind - the local branch against origin/<branch>, when that exists - and :held-at, the
   checkout that has it checked out, if any."
   [{:keys [branch] :as cfg}]
@@ -154,9 +155,9 @@
     (when-let [st (git-status dir)]
       (cond-> st
         mode (assoc :from mode)
-        (worktree? cfg) (assoc :pull (rev-count dir (str "HEAD.." (sync-ref mode branch)))
+        (worktree? cfg) (assoc :unsynced (rev-count dir (str "HEAD.." (sync-ref mode branch)))
                                :unreachable (apply rev-count dir branch/unreachable-revs))
-        (= :origin-worktree mode) (assoc :test? (boolean (and (:sha st) (= (:sha st) (git dir "rev-parse" "--verify" "--quiet" (branch/test-ref branch)))
+        (= :origin-worktree mode) (assoc :trial? (boolean (and (:sha st) (= (:sha st) (git dir "rev-parse" "--verify" "--quiet" (branch/trial-ref branch)))
                                                       (not= (:sha st) (git dir "rev-parse" "--verify" "--quiet" (str "origin/" branch))))))
         (= :local-worktree mode) (merge (when-let [ahead (rev-count dir (str "origin/" branch "..refs/heads/" branch))]
                                  {:local-ahead ahead :local-behind (rev-count dir (str "refs/heads/" branch "..origin/" branch))})
@@ -210,8 +211,8 @@
     no :branch, :main-worktree  the main worktree's branch, its uncommitted files autostashed
     :local-worktree             the local <branch>, checked out in zent's worktree for the rebase (refused
                                 when another checkout holds it), the worktree detached again after
-    :origin-worktree            a local test: the worktree's detached HEAD, no branch moved, kept under
-                                zent.branch/test-ref until the next sync drops it
+    :origin-worktree            a trial rebase: the worktree's detached HEAD, no branch moved, kept under
+                                zent.branch/trial-ref until the next sync drops it
 
   A rebase that stops anyway is aborted. {:ok true :message} or {:ok false :message}: what
   happened, the undo included, or why not. Never pushes."
@@ -259,10 +260,10 @@
       (= :origin-worktree mode)
       (if-let [failed (:failed (run-rebase! dir onto (str "origin/" branch)))]
         {:ok false :message failed}
-        (do (shell/sh-or-throw! ["git" "-C" dir "update-ref" (branch/test-ref branch) "HEAD"])
+        (do (shell/sh-or-throw! ["git" "-C" dir "update-ref" (branch/trial-ref branch) "HEAD"])
             {:ok true
-             :message (str "testing origin/" branch " rebased" done " in its worktree: a local test, no branch moved"
-                           " - the next apply or pull reverts it")}))
+             :message (str "running origin/" branch " rebased" done " in its worktree: a trial rebase, no branch moved"
+                           " - the next sync reverts it")}))
 
       :else
       (let [own (rev-count dir (str onto "..HEAD"))
@@ -358,8 +359,8 @@
                                   (when force? (str ", replacing " behind " on origin (force-with-lease)")))}
           {:ok false :message (str "the push failed: " (str/trim (str err)))})))))
 
-(defn sync-clone!
-  "Fast-forwards the branch `cfg`'s main clone has out to origin/<it>: refused when detached, when it has
+(defn fast-forward!
+  "Fast-forwards the branch `cfg`'s main worktree has out to origin/<it>: refused when detached, when it has
   commits origin doesn't (rebase it by hand), or when there's nothing to take. {:ok :message :undo}."
   [cfg]
   (let [dir (main-clone-dir (:repo cfg) (:workspace-dir cfg))
@@ -367,8 +368,8 @@
         theirs (when branch (git dir "rev-parse" "--verify" "--quiet" (str "refs/remotes/origin/" branch)))
         behind (when theirs (rev-count dir (str "HEAD.." theirs)))
         ahead (when theirs (rev-count dir (str theirs "..HEAD")))
-        why (cond (not branch) "detached HEAD: nothing to sync"
-                  (not theirs) (str "no origin/" branch " to sync with")
+        why (cond (not branch) "detached HEAD: nothing to fast-forward"
+                  (not theirs) (str "no origin/" branch " to fast-forward to")
                   (pos? ahead) (str branch " has " ahead " commit(s) origin doesn't: rebase it by hand")
                   (not (pos? behind)) (str branch " is already on origin/" branch))]
     (if why

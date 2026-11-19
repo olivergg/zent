@@ -15,7 +15,7 @@ smaller change.
    calling a JVM API missing; a new dep needs a need nothing there serves.
 3. **Values, not objects.** Catalog, preset, resolved cfg and handle are plain EDN. A preset
    is an overlay map, never an expression. A handle is persisted as is
-   (`zent.session/describe`), so a later daemon adopts it and `zent down` still stops it.
+   (`zent.session/describe`), so a later daemon adopts it and `zent teardown` still stops it.
 4. **A kind is multimethods on `:kind`:** `deploy-kind!`, plus `build-kind!`, `already-running?`,
    `follow-logs!` and `zent.lifecycle/stop!` when it has something to build, check, follow or
    tear down, plus its schema
@@ -123,10 +123,10 @@ What a catalog's components themselves need is listed in that catalog's repo.
 
 ## Working on the engine
 
-- Symlink this clone's `bin/zent` onto PATH (README "Quickstart"), then `zent reload-code` from
-  a catalog repo picks an edit up.
+- Symlink this clone's `bin/zent` onto PATH (README "Quickstart"), then `zent reload-catalog-and-code`
+  from a catalog repo picks an edit up.
 - `zent mcp` is a process its client spawned and keeps: an engine change reaches it only
-  once the client restarts it (`/mcp` reconnect in Claude Code), whatever `reload-code` did
+  once the client restarts it (`/mcp` reconnect in Claude Code), whatever `reload-catalog-and-code` did
   to the daemon. Its stdout is the protocol - code it runs must not print outside a tool
   call (zent.mcp captures per call, the rest goes to stderr).
 - Kinds and their keys: `docs/reference.md`, generated from `src/zent/schema.clj` - a new key gets
@@ -144,9 +144,9 @@ What a catalog's components themselves need is listed in that catalog's repo.
 - Jolt lacks some JVM APIs (`Semaphore`, `FileChannel.lock`, `RandomAccessFile`), and its
   `Files/move` isn't atomic (`.renameTo` is). Try an API in a scratch `jolt` script before
   building on it.
-- `reload-code` swaps namespaces, not what a running `serve!` already holds (its loop, deploy
-  worker, push thread): a change there needs `zent shutdown` then `zent apply <preset>`. A
-  running daemon re-reads its catalog on `reload-code`; CLI verbs read it on every call.
+- `reload-catalog-and-code` swaps namespaces, not what a running `serve!` already holds (its loop,
+  deploy worker, push thread): a change there needs `zent shutdown` then `zent apply <preset>`. A
+  running daemon re-reads its catalog on `reload-catalog-and-code`; CLI verbs read it on every call.
 - Checking the dashboard without a browser: Chrome headless (`--headless --timeout=5000
   --screenshot=out.png http://127.0.0.1:8765/`) shows the layout, but may shoot before
   streamed content arrives (the Logs tab looks empty). For that, start Chrome with
@@ -157,12 +157,12 @@ What a catalog's components themselves need is listed in that catalog's repo.
   `<branch>` (`:local-worktree`: committed code, no fetch), or the main worktree - the user's clone -
   as it is (`:main-worktree`, refused unless it has `<branch>` checked out - the card's `checkout`
   does it, on a main worktree with nothing uncommitted). A worktree is synced (reset --hard) by an apply that
-  (re)deploys it or a `zent pull` - a reload keeps its commit - and the sync refuses one holding
+  (re)deploys it or a `zent sync` - a reload keeps its commit - and the sync refuses one holding
   uncommitted files or commits on no branch (`zent.branch/at-risk`). No sync moves or holds a
   local branch; only `zent rebase` of a `:local-worktree` one moves it. `zent worktrees [prune]` lists /
   removes them.
 - State: `~/.cache/zent/` (session, logs, `serve.log`, worktrees), user presets in
   `~/.config/zent/presets/`.
-- Never run a bare `zent down` to clean up: the session also tracks stacks you started.
+- Never run a bare `zent teardown` to clean up: the session also tracks stacks you started.
 - Use `127.0.0.1`, not `localhost`, for the dashboard (IPv6-first resolution hangs the websocket).
 - Commit on `main`, and only when asked.

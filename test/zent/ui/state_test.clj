@@ -33,8 +33,8 @@
             ((:run (last @state/control)) id)
             (is (= "checked out x" (get-in @state/view-state [:command-messages id]))))))
       (testing "given a job leaving an undo, then it's kept, and queued once as a job of its own"
-        (with-redefs [zent.source/sync-clone! (constantly {:ok true :message "synced" :undo ["true"]})]
-          (let [id (state/request-git! :sync :svc cfg)]
+        (with-redefs [zent.source/fast-forward! (constantly {:ok true :message "fast-forwarded" :undo ["true"]})]
+          (let [id (state/request-git! :fast-forward :svc cfg)]
             ((:run (last @state/control)) id)
             (is (= {:name :svc :argv ["true"]} (get-in @state/view-state [:command-undo id])))
             (let [undo-id (state/request-undo! id)]

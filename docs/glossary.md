@@ -2,7 +2,7 @@
 
 One word per thing, the same in the CLI, the MCP server, the dashboard, the docs and the code. A name says what
 you get, not how zent does it. Words marked *under review* keep their current meaning until their rename lands
-(the renaming plan's steps 4 and 5).
+(the renaming plan's step 5).
 
 ## Where code runs from
 
@@ -16,8 +16,9 @@ you get, not how zent does it. Words marked *under review* keep their current me
 | `:from :local-worktree` | the same worktree at your local `<branch>`: what's committed, pushed or not, while your main worktree stays free for another branch | - |
 | `:from :main-worktree` | your main worktree as it is, checked to be on `:branch` (refused otherwise; the dashboard offers a checkout) | - |
 | no `:branch` | your main worktree as it is, on whatever branch it is: nothing checked | - |
-| **sync** *(under review)* | bring zent's worktree back to its ref (fetch + reset for `:origin-worktree`), then redeploy: `zent pull <c>`, an apply that redeploys it | a `git pull`; the dashboard's "Sync" (a fast-forward of the main worktree's branch) |
-| **trial rebase** *(under review)* | `zent rebase` on an `:origin-worktree`: its detached HEAD rebased, no branch moved, kept under `refs/zent/test/` until the next sync | "local test", "Test on <base>" |
+| **sync** | bring zent's worktree back to its ref (fetch + reset for `:origin-worktree`), then redeploy: `zent sync <c>`, the card's `sync`, an apply that redeploys it | "pull" (git's pull merges into a branch; a sync resets a detached worktree) |
+| **fast-forward** | move your main worktree's branch up to `origin/<branch>`, nothing of yours lost (`git merge --ff-only`): the Branches tab | "sync" |
+| **trial rebase** | `zent rebase` on an `:origin-worktree`: its detached HEAD rebased, no branch moved, kept under `refs/zent/trial/` until the next sync | "local test", "test on <base>" (a test is a check's) |
 
 ## Components
 
@@ -65,12 +66,32 @@ is on its way, else `up`.
 
 "idle" means nothing is happening (a neutral LED, no preset applied), never a status.
 
-## Verbs *(under review)*
+## Verbs
 
-`apply` · `status` · `logs` · `reload` (redeploy one component) · `pull` (sync a worktree) · `rebase` ·
-`worktrees` · `stop` · `preview` · `serve` · `watch` · `attach` · `shutdown` (the daemon) · `reload-code` ·
-`check` (validate the catalog) · `verify` (run a preset's checks) · `preset save|rm` · `mcp` · `down`
-(tear down what the session lists, no daemon).
+The CLI's (`zent help`); an MCP tool, a route (`/api/<verb>/`) or a dashboard button for the same gesture uses the
+same word.
+
+| Verb | Does | Not |
+|---|---|---|
+| `presets` | list them | |
+| `apply` | switch to a preset | |
+| `preview` | what an apply would do, without doing it | |
+| `status` | what runs, per component - as the dashboard shows it | |
+| `logs` | a component's output | |
+| `reload` | redeploy one component on the commit it has (a one-shot: run it again) | "trigger" |
+| `sync` | zent's worktree to its ref, then redeploy | "pull" |
+| `rebase` | rebase onto origin's default branch (a trial rebase on an `:origin-worktree`) | |
+| `worktrees [prune]` | list zent's worktrees, remove the unused ones | |
+| `stop` | stop components, or all but `:permanent` ones | |
+| `serve [<preset>]` | run the daemon, a preset applied at start | "watch" (that's `:watch`) |
+| `attach` | follow a detached daemon's output | |
+| `shutdown` | stop the daemon and what it runs, `:permanent` ones excepted | |
+| `teardown` | no daemon: tear down what the session lists, `:permanent` ones included | "down" |
+| `reload-catalog-and-code` | the daemon re-reads the catalog and zent's own code, keeping what runs | "reload-code" |
+| `validate` | every preset resolves and validates, checks included: a catalog's test | "check" (a check is a namespace of tests) |
+| `verify` | run a preset's checks | |
+| `preset save` / `preset delete` | your own presets | "rm" |
+| `mcp`, `version` | | |
 
 ## Checks
 

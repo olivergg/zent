@@ -7,7 +7,7 @@
 (defn -main [& args]
   (let [dir (or (System/getenv "ZENT_CATALOG") (System/getProperty "user.dir"))]
     ;; a fn, re-read on each use: CLI verbs see an edited catalog.edn at once,
-    ;; a running daemon on its next reload-code
+    ;; a running daemon on its next reload-catalog-and-code
     (cli/main {:catalog #(catalog/load-dir dir)
                :name (:name (catalog/load-dir dir))
                ;; set by bin/zent; else whatever `zent` is on PATH

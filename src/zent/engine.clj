@@ -259,7 +259,7 @@
 (defn- current-cfg
   "`name`'s cfg as `catalog` resolves it now - from the preset it came from
   (::preset), or the registry for an adopted one - so a reload after a
-  catalog change (reload-code) runs the change, not what the apply resolved
+  catalog change (reload-catalog-and-code) runs the change, not what the apply resolved
   back then. The recorded `cfg` when that's gone or no longer resolves."
   [catalog name cfg]
   (try
@@ -498,7 +498,7 @@
   interrupted or told to :shutdown. Keeps the session file current
   throughout; on exit tears down all but permanent? components.
 
-  Deploys (an :apply, a :reload, a watched change, a :reload-code) run as
+  Deploys (an :apply, a :reload, a watched change, a :reload-catalog-and-code) run as
   jobs on one worker thread, in order, so the loop itself never waits on a
   build: a :stop, liveness and the watch go on meanwhile. A :stop of a
   component a job is deploying waits for that job.
@@ -517,9 +517,9 @@
                         :reload {:name kw} - re-applies now, regardless of
                                  :watch/due?; restarts one stopped earlier. A
                                  :branch worktree stays at its commit.
-                        :pull   {:name kw} - a :reload that first syncs its
+                        :sync   {:name kw} - a :reload that first syncs its
                                  worktree to its ref (zent.branch); refused
-                                 for one running a main clone as it is.
+                                 for one running a main worktree as it is.
                         :job    {:name kw :run (fn [id])} - runs it as a job
                                  over that component, one at a time with the
                                  deploys; what it throws is the :error.
@@ -550,8 +550,9 @@
     :on-ready       - (fn []) once adoption is done, before :initial-preset -
                       so nobody it announces the run to sees a half-adopted
                       stack.
-    :reload-code    - (fn []) run for a queued {:action :reload-code}, as a
-                      job so never mid-deploy; without it the command is ignored.
+    :reload-catalog-and-code
+                    - (fn []) run for a queued {:action :reload-catalog-and-code},
+                      as a job so never mid-deploy; without it the command is ignored.
     :planner        - atom, set to (fn [preset-name]) -> plan-summary from the
                       current state: what an :apply would do, for preview.
     :on-refresh     - (fn [handles]) every :refresh-ms (default 5s) in the loop,
@@ -559,7 +560,7 @@
                       checked out on disk or sample CPU/memory; errors logged."
   [catalog & {:keys [poll-ms quiet-ms max-ms session-path deploy-fn on-resolved
                      control on-handled on-stopping on-stop on-skipped on-seeded on-check initial-preset
-                     catalog-ref on-ready reload-code liveness-ms planner on-refresh refresh-ms]
+                     catalog-ref on-ready reload-catalog-and-code liveness-ms planner on-refresh refresh-ms]
              :or {poll-ms watch/default-poll-ms quiet-ms 200 max-ms 10000 liveness-ms 30000 refresh-ms 5000
                   session-path session/default-path
                   deploy-fn deploy-component!
@@ -588,10 +589,10 @@
         _ (some-> planner (reset! #(plan-summary (plan @catalog-ref % @st))))
         persist! (fn [] (session/save! session-path (or initial-preset :serve) (seq (:handles @st))))
         ;; a reload runs the catalog as it is now (current-cfg), not as applied
-        ;; a reload restarts what's on disk; only a pull (sync? true) brings a worktree to its ref
+        ;; a reload restarts what's on disk; only a sync (sync? true) brings a worktree to its ref
         reload-one! (fn [name & [sync?]]
                       (when-let [why (and sync? (some-> (or (get-in @st [:active name]) (get-in @st [:parked name]))
-                                                        source/pull-refusal))]
+                                                        source/sync-refusal))]
                         (throw (ex-info (format "%s: %s" (clojure.core/name name) why) {})))
                       (binding [branch/*sync* (boolean sync?)]
                         (if-let [cfg (and (not (get-in @st [:active name])) (get-in @st [:parked name]))]
@@ -676,13 +677,13 @@
                                                   (concat (first (reset-vals! deferred [])) (:stop by-action)))
                                _ (reset! deferred (vec later))
                                stops (set (map :name now-stops))]
-                           (when (and reload-code (seq (:reload-code by-action)))
-                             (submit! #{} (:reload-code by-action) reload-code))
+                           (when (and reload-catalog-and-code (seq (:reload-catalog-and-code by-action)))
+                             (submit! #{} (:reload-catalog-and-code by-action) reload-catalog-and-code))
                            (doseq [{:keys [preset] :as c} (:apply by-action)]
                              (submit! #{::all} [c] #(apply! preset)))
                            (doseq [{:keys [name] :as c} (:reload by-action)]
                              (submit! #{name} [c] #(reload-one! name)))
-                           (doseq [{:keys [name] :as c} (:pull by-action)]
+                           (doseq [{:keys [name] :as c} (:sync by-action)]
                              (submit! #{name} [c] #(reload-one! name true)))
                            (doseq [{:keys [name run id] :as c} (:job by-action)]
                              (submit! #{name} [c] #(run id)))
@@ -728,7 +729,7 @@
                                                         (assoc acc name t)))
                                                     {} rescanned)]
                              ;; done here and now: stops, and anything else not a job's
-                             (when-let [inline (seq (remove (comp (cond-> #{:apply :reload :pull :job} reload-code (conj :reload-code))
+                             (when-let [inline (seq (remove (comp (cond-> #{:apply :reload :sync :job} reload-catalog-and-code (conj :reload-catalog-and-code))
                                                                   :action)
                                                             (concat now-stops (remove #(= :stop (:action %)) commands))))]
                                (on-handled (vec inline)))
@@ -739,11 +740,11 @@
                        [targets known-keys]))]
           (recur next-state))))))
 
-(defn down!
+(defn teardown!
   "Tears down `handles` - or, with none, everything the session file lists
-  (`zent down`, with no daemon running) - and drops what it stopped from the
+  (`zent teardown`, with no daemon running) - and drops what it stopped from the
   session file: what failed to stop stays listed, so a retry can find it."
-  ([] (down! nil))
+  ([] (teardown! nil))
   ([handles & {:keys [session-path] :or {session-path session/default-path}}]
    (let [targets (or (seq handles) (:handles (session/read-session session-path)))
          {:keys [errors] :as result} (lifecycle/down! targets)]

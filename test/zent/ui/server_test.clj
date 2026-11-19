@@ -89,23 +89,23 @@
 
 (deftest post-without-token-is-rejected-test
   (testing "no header at all: rejected before the endpoint's own logic ever runs"
-    (let [[status body] (post-json "/api/trigger/notifier")]
+    (let [[status body] (post-json "/api/reload/notifier")]
       (is (= 403 status))
       (is (:error body)))))
 
 (deftest post-with-wrong-token-is-rejected-test
-  (let [[status _] (post-json "/api/trigger/notifier" :token "not-it")]
+  (let [[status _] (post-json "/api/reload/notifier" :token "not-it")]
     (is (= 403 status))))
 
 (deftest post-with-correct-token-passes-the-guard-test
   (testing "right token, same-origin implied (no Origin header) - reaches the
             endpoint, which queues the request and reports success"
     (swap! state/view-state assoc-in [:components :notifier] {:status :up})
-    (let [[status body] (post-json "/api/trigger/notifier" :token "test-token")]
+    (let [[status body] (post-json "/api/reload/notifier" :token "test-token")]
       (is (= 200 status))
       (is (true? (:ok body))))
     (testing "an unknown component is refused before reaching the engine"
-      (is (= 404 (first (post-json "/api/trigger/typo" :token "test-token")))))))
+      (is (= 404 (first (post-json "/api/reload/typo" :token "test-token")))))))
 
 (deftest post-rebase-queues-test
   (testing "a rebase is queued like any write, not run in the request; no checkout there: refused"
@@ -116,10 +116,10 @@
       (is (= 8 (:id (second (post-json "/api/checkout/svc" :token "test-token")))) "a checkout too")
       (is (= 404 (first (post-json "/api/rebase/none" :token "test-token"))))))
   (testing "a push and a sync too; an undo once, by the id of the job that left it"
-    (with-redefs [state/request-git! (fn [op k _] (when (= :svc k) ({:push 9 :sync 10} op)))
+    (with-redefs [state/request-git! (fn [op k _] (when (= :svc k) ({:push 9 :fast-forward 10} op)))
                   state/request-undo! (fn [id] (when (= 10 id) 11))]
       (is (= 9 (:id (second (post-json "/api/push/svc" :token "test-token")))))
-      (is (= 10 (:id (second (post-json "/api/sync/svc" :token "test-token")))))
+      (is (= 10 (:id (second (post-json "/api/fast-forward/svc" :token "test-token")))))
       (is (= 11 (:id (second (post-json "/api/undo/10" :token "test-token")))))
       (is (= 404 (first (post-json "/api/undo/12" :token "test-token")))))))
 
@@ -156,7 +156,7 @@
   (testing "belt-and-suspenders: a correct token from a non-localhost Origin still fails -
             this only matters if a token ever leaked, the token check alone already stops
             the real attack (a page that never had the token to begin with)"
-    (let [[status _] (post-json "/api/trigger/notifier"
+    (let [[status _] (post-json "/api/reload/notifier"
                                 :token "test-token" :origin "https://evil.example")]
       (is (= 403 status)))))
 
@@ -164,7 +164,7 @@
   (testing "before start! has ever run (no token generated yet), every write is refused,
             not silently allowed through"
     (reset! server/csrf-token nil)
-    (let [[status _] (post-json "/api/trigger/notifier" :token "anything")]
+    (let [[status _] (post-json "/api/reload/notifier" :token "anything")]
       (is (= 403 status)))))
 
 (deftest catalog-endpoint-without-a-catalog-test

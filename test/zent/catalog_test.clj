@@ -30,10 +30,10 @@
 (deftest check-test
   (let [ctx {:catalog #(catalog/load-dir "test/fixtures/catalog") :preset-dir no-user-presets}]
     (testing "given valid presets, check passes"
-      (is (re-find #"2 preset\(s\) ok" (with-out-str (cli/check! ctx)))))
+      (is (re-find #"2 preset\(s\) ok" (with-out-str (cli/validate! ctx)))))
     (testing "given a preset naming an unknown component, check fails and names it"
       (let [ctx (update ctx :catalog (fn [f] #(assoc-in (f) [:presets :broken] {:nope {:mode :on}})))
             out (java.io.StringWriter.)]
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"1 of 3 preset\(s\) refused"
-                              (binding [*out* out] (cli/check! ctx))))
+                              (binding [*out* out] (cli/validate! ctx))))
         (is (re-find #"broken: .*unknown component" (str out)))))))

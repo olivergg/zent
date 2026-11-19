@@ -105,10 +105,10 @@
       (state/observe-liveness-check! :db compose-cfg true)
       (is (= :up (get-in @state/view-state [:components :db :status]))))))
 
-(deftest reload-code-refreshes-the-catalog-test
-  (testing "given :code-prefixes and :catalog-fn, when :reload-code is handled,
+(deftest reload-catalog-and-code-test
+  (testing "given :code-prefixes and :catalog-fn, when :reload-catalog-and-code is handled,
             then the reload is reported and the catalog re-read"
-    (let [control (atom [{:action :reload-code :id 1}])
+    (let [control (atom [{:action :reload-catalog-and-code :id 1}])
           fresh {:components {:new {:kind :one-shot}} :presets {}}]
       (bridge/serve! {:components {} :presets {}} :poll-ms 5 :control control
                      :session-path session-path
