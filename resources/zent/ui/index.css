@@ -1162,8 +1162,8 @@ body:not([data-tab="branches"]) .branches-view { display: none; }
 .st-unknown { --c: #a5a5ab; } .st-run { --c: #0a84ff; }
 .st-run .chk-dot { animation: chk-run 1s ease-in-out infinite alternate; }
 @keyframes chk-run { to { opacity: .35; } }
-/* what kind of oracle a test is (:zent/kind) */
-.chk .kind { font: 500 9.5px var(--mono); padding: 1px 6px; border-radius: 9px; background: rgba(0, 0, 0, .05); color: var(--muted); white-space: nowrap; }
+/* a badge: a test's oracle (:zent/oracle), a check that writes */
+.chk .badge { font: 500 9.5px var(--mono); padding: 1px 6px; border-radius: 9px; background: rgba(0, 0, 0, .05); color: var(--muted); white-space: nowrap; }
 .chk .writes { color: var(--red-ink); background: rgba(229, 70, 59, .1); }
 
 /* the detail: the outcome in a sentence, then what was judged, then the gaps, grouped */

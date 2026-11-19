@@ -111,19 +111,20 @@ since checks talk to JVM services. Its directory is the preset's name, munged li
 
 ```clojure
 (ns my_preset.orders
-  {:zent/observes [:api :db] :zent/description "every order reaches the db"}
+  {:zent/observes [:api :db] :zent/title "every order reaches the db"}
   (:require [clojure.test :refer [deftest is]]))
 ```
 
-- A check only reads. One that acts first (a scenario) says `:zent/writes true` and runs only
-  when named (`zent verify <preset> <check>`, or once the dashboard asks).
-- A deftest's `:zent/kind` (`:invariant`, `:pseudo-oracle`, `:metamorphic`, `:heuristic`...)
-  names its kind of oracle; zent only displays it.
+- A check only reads. One that writes says `:zent/writes true` and runs only when named
+  (`zent verify <preset> <check>`, or once the dashboard asks).
+- A deftest's `:zent/oracle` (`:invariant`, `:pseudo-oracle`, `:metamorphic`, `:heuristic`...)
+  names what it judges against; zent only displays it. `:zent/title`, on a deftest or a check's
+  ns, is shown instead of its name.
 - `(clojure.test/do-report {:type :zent/note :note "63 plug-ins, largest gap 1 min"})` records
   what a test judged, shown under it, passing or not.
 - Shared code goes in `checks/lib/`, on the `:paths` (`lib/acme/db.clj` is `acme.db`).
 
-A result is `:pass`, `:fail` or `:unknown` (couldn't judge: an exception, nothing run).
+A result is `:pass`, `:fail` or `:unknown` ("not judged": an exception, nothing run).
 `zent verify [<preset> [<check>...]] [--only=<test>,...]`, the MCP `verify` tool and the Checks tab
 run them; results and history live in `~/.cache/zent/checks/`. `zent validate` refuses a check whose
 preset is gone or that observes a component its preset doesn't run.

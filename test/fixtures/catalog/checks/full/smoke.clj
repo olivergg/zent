@@ -1,11 +1,11 @@
 (ns full.smoke
   "A check of the fixture preset :full - zent.checks-test runs it for real
   when ZENT_TEST_CLOJURE is set."
-  {:zent/observes [:db :api] :zent/description "fixture check"}
+  {:zent/observes [:db :api] :zent/title "fixture check"}
   (:require [clojure.test :refer [deftest is testing]]
             [fixture.helpers :as h]))
 
-(deftest ^{:doc "One equals one." :zent/kind :invariant} passes
+(deftest ^{:doc "One equals one." :zent/oracle :invariant} passes
   (is (= (h/one) 1)) (is true)
   (clojure.test/do-report {:type :zent/note :note "2 assertions"}))
 

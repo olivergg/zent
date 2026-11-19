@@ -94,7 +94,7 @@ credentials its catalog entry points at, if it declares any.")
     :props {:component (prop "string" "component name")} :required ["component"]
     :call (fn [args] (cli/reload! (arg args :component)))}
    {:name "verify"
-    :description "Run a preset's checks (clojure.test assertions on its running stack) and report each test, with every failure's message and expected/actual. Fails unless all pass; ? = couldn't judge (an exception, nothing run). A check that writes (a scenario) runs only when named in checks."
+    :description "Run a preset's checks (clojure.test assertions on its running stack) and report each test, with every failure's message and expected/actual. Fails unless all pass; ? = not judged (an exception, nothing run). A check that writes runs only when named in checks."
     :props {:preset (prop "string" "preset name; omit for the daemon's")
             :checks {:type "array" :items {:type "string"} :description "check names; omit for all the read-only ones"}
             :tests {:type "array" :items {:type "string"} :description "only these deftests (e.g. the failing ones)"}}

@@ -754,5 +754,5 @@
                     (row "Waited for by" (names (:waited-by c))))
            (apply section "Checks"
                   (for [{check :name verdict :status} (:checks c)]
-                    (row (esc (name check)) (case verdict :pass "Passed" :fail "Failed" "Can't tell") (name (or verdict :unknown)))))
+                    (row (esc (name check)) (case verdict :pass "Passed" :fail "Failed" "Not judged") (name (or verdict :unknown)))))
            "</div>"))))

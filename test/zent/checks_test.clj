@@ -18,7 +18,7 @@
 ;; what the fixture's run printed (zent.checks/run-cmd), around unrelated output
 (def ^:private real-run
   ["Reflection warning, ignore me"
-   "#zent/check {:event :begin, :test \"passes\", :doc \"One equals one.\", :kind :invariant}"
+   "#zent/check {:event :begin, :test \"passes\", :doc \"One equals one.\", :oracle :invariant}"
    "#zent/check {:event :pass, :test \"passes\"}"
    "#zent/check {:event :pass, :test \"passes\"}"
    "#zent/check {:event :end, :test \"passes\"}"
@@ -37,7 +37,7 @@
 (deftest discover-test
   (testing "given checks/<preset>/<check>.clj, its ns attr-map gives what it observes"
     (is (= {:full [{:name :smoke :ns 'full.smoke :root (str fixture "/checks")
-                    :observes [:db :api] :description "fixture check"}]}
+                    :observes [:db :api] :title "fixture check"}]}
            (checks/discover fixture))))
   (testing "given a dir without checks/, no checks"
     (is (= {} (checks/discover "test/fixtures/k8s"))))
@@ -95,7 +95,7 @@
       (is (= [["passes" :pass 2] ["fails" :fail 1] ["throws" :error 0]]
              (map (juxt :name :status :assertions) tests)))
       (is (= ["One equals one." "One equals two,\n  on two lines." nil] (map :doc tests)) "a deftest's docstring")
-      (is (= [:invariant nil nil] (map :kind tests)) "a deftest's :zent/kind")
+      (is (= [:invariant nil nil] (map :oracle tests)) "a deftest's :zent/oracle")
       (is (= {:message "[:label \"x\"]" :expected "(= 1 2)" :actual "(not (= 1 2))"
               :file "smoke.clj" :line 9 :context "ctx"}
              (first (:failures (second tests)))))
@@ -152,7 +152,7 @@
     (is (= :pass (:status (checks/parse (done (take 5 real-run)) 0)))))
   (testing "given passes but no :done, :unknown - the output was cut, whatever the exit"
     (is (= [:unknown true] ((juxt :status :incomplete) (checks/parse (take 5 real-run) 0)))))
-  (testing "given an error and no failure, :unknown - it couldn't judge"
+  (testing "given an error and no failure, :unknown - not judged"
     (is (= :unknown (:status (checks/parse (concat (take 5 real-run) (drop 8 real-run)) 0)))))
   (testing "given a test begun but never ended, it errored: the run died in it"
     (is (= [:pass :error] (map :status (:tests (checks/parse (take 6 real-run) 1)))))
@@ -206,10 +206,10 @@
             "      · on two lines"]
            (checks/report {:preset :full :check :smoke :status :pass
                            :counts {:tests 1 :assertions 1 :failed 0 :errors 0}
-                           :tests [{:name "passes" :status :pass :assertions 1 :kind :invariant :doc "One."
+                           :tests [{:name "passes" :status :pass :assertions 1 :oracle :invariant :doc "One."
                                     :failures [] :notes ["63 plug-ins" "largest gap 1 min\non two lines"]}]}))))
   (testing "given a run that couldn't start, its stderr and the tests it was limited to"
-    (is (= ["? full/smoke  unknown - 0 test(s), 0 assertion(s), 0.0 s" "  only: fails" "  | Syntax error"]
+    (is (= ["? full/smoke  not judged - 0 test(s), 0 assertion(s), 0.0 s" "  only: fails" "  | Syntax error"]
            (checks/report (assoc (checks/parse [] 1) :preset :full :check :smoke :only ["fails"]
                                  :error "Syntax error"))))))
 
@@ -252,7 +252,7 @@
           r (binding [checks/*dir* (tmp-dir)] (checks/run! :full chk nil))]
       (is (= [["passes" :pass "One equals one." :invariant] ["fails" :fail "One equals two,\n  on two lines." nil]
               ["throws" :error nil nil] ["described" :fail nil nil] ["known" :accepted nil nil]]
-             (map (juxt :name :status :doc :kind) (:tests r))))
+             (map (juxt :name :status :doc :oracle) (:tests r))))
       (is (= "clojure.lang.ExceptionInfo: kaput" (-> r :tests (nth 2) :failures first :actual)))
       (is (= [["2 assertions"] nil nil nil nil] (map :notes (:tests r))) "a :zent/note reported by the test")
       (testing "the (= 1 2) failing is diffed; a failure on values keeps its group, context and sides"

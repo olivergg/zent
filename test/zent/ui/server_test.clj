@@ -379,7 +379,7 @@
         (.mkdirs (.getParentFile f))
         (spit f (pr-str (result at only status)))))
     (reset! state/catalog (assoc catalog :checks {:full [{:name :smoke :ns 'full.smoke :root "checks"
-                                                          :observes [:db] :description "smoke"}]}))
+                                                          :observes [:db] :title "smoke"}]}))
     (swap! state/view-state assoc :preset :full)
     (binding [zent.checks/*dir* dir]
       (testing "GET /api/checks: the active preset's checks, their runs and each test's latest result"

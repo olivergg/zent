@@ -1,8 +1,7 @@
 # Glossary
 
 One word per thing, the same in the CLI, the MCP server, the dashboard, the docs and the code. A name says what
-you get, not how zent does it. Words marked *under review* keep their current meaning until their rename lands
-(the renaming plan's step 5).
+you get, not how zent does it.
 
 ## Where code runs from
 
@@ -100,4 +99,8 @@ same word.
 | **check** | a namespace of tests about a preset's running stack, `checks/<preset_munged>/<check>.clj` |
 | **test** | one of its `deftest`s |
 | **verify** | run a preset's checks: `zent verify`, the MCP's `verify`, the dashboard's Checks tab |
-| `:zent/kind` *(under review)* | the oracle a test relies on: `:invariant`, `:pseudo-oracle`, `:metamorphic`, `:business-rule`, `:heuristic` |
+| `:zent/oracle` | what a test judges against: `:invariant`, `:pseudo-oracle`, `:metamorphic`, `:business-rule`, `:heuristic` (not "kind": that's a component's) |
+| `:zent/title` | the line shown instead of a test's or a check's name (not `:zent/description`) |
+| **check that writes** | `:zent/writes true`: runs only when named (not "scenario": that's a preset) |
+| **gap** | one thing a test judged wrong - where, expected, actual - grouped and explained; an **accepted** gap is decided acceptable, its reason shown |
+| **pass / fail / not judged** | a result's `:status` (`:pass`, `:fail`, `:unknown`); not judged: an exception, nothing run |

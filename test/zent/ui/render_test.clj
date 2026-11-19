@@ -262,7 +262,7 @@
       (is (str/includes? html "<h3>Ports</h3><div class=\"rows\"><div class=\"row\"><span>localhost:9091</span><span class=\"ok\">Listening</span>"))
       (is (str/includes? html "<span>Waited for by</span><span>replay</span>"))
       (is (str/includes? html "<span>events</span><span class=\"fail\">Failed</span>"))
-      (is (str/includes? html "<span>chain</span><span class=\"unknown\">Can't tell</span>"))
+      (is (str/includes? html "<span>chain</span><span class=\"unknown\">Not judged</span>"))
       (is (str/includes? html "class=\"btn danger\" hx-post=\"/api/stop/svc\""))))
 
   (testing "selected in a preview: nothing is deployed, so nothing to reload or stop"

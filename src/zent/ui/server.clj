@@ -320,7 +320,7 @@
      {:preset preset
       :checks (for [{cname :name :as c} checks
                     :let [runs (checks/history preset cname check-history)]]
-                (assoc (select-keys c [:name :description :observes :problem :writes])
+                (assoc (select-keys c [:name :title :observes :problem :writes])
                        :runs runs
                        :current (checks/current runs)
                        :running (contains? @running-checks [preset cname])

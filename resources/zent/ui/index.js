@@ -1073,7 +1073,7 @@ const diffInline = ({ segments, keys }) => keys
   : `${diffSide(segments, "del")} → ${diffSide(segments, "add")}`;
 
 const num = (v) => /^-?\d+(\.\d+)?$/.test(String(v)) ? Number(v).toLocaleString() : String(v);
-const KIND_LABEL = { "pseudo-oracle": "oracle", "business-rule": "business rule" };
+const ORACLE_LABEL = { "business-rule": "business rule" };
 const capitalized = (s) => s[0].toUpperCase() + s.slice(1);
 // a test as a reader sees it: its :zent/title, else its name spelled out
 const titleOf = (t) => t.title || capitalized(t.name).replace(/-/g, " ");
@@ -1109,9 +1109,9 @@ function groupHtml(g, err) {
 }
 
 async function runCheck(c, only) {
-  // a check that writes (a scenario) runs only when asked for, like a :confirm one-shot
+  // a check that writes runs only when asked for, like a :confirm one-shot
   if (c.writes && !(await askConfirm({ name: c.name, action: "run",
-                                       question: "It writes to the running stack (a scenario). Run it?" }))) return;
+                                       question: "It writes to the running stack. Run it?" }))) return;
   const q = new URLSearchParams({ check: c.name });
   if (only?.length) q.set("only", only.join(","));
   const res = await fetch("/api/checks/run?" + q, {
@@ -1161,14 +1161,14 @@ function renderChecks() {
   tree.innerHTML = failingFirst.map((c) => {
     const r = shownCheckRun(c), k = (r?.tests || []).filter(bad).length;
     return `<div class="chk" data-check="${escHtml(c.name)}">
-      <div class="h" title="${escHtml(c.description || "")}">${escHtml(capitalized(c.description ? c.description.split(":")[0] : c.name))}
-        ${c.writes ? `<span class="kind writes" title="a scenario: runs only when asked for, never with Run all">writes</span>` : ""}
+      <div class="h" title="${escHtml(c.title || "")}">${escHtml(capitalized(c.title ? c.title.split(":")[0] : c.name))}
+        ${c.writes ? `<span class="badge writes" title="a check that writes: runs only when asked for, never with Run all">writes</span>` : ""}
         <small>${r?.live ? "running…" : !r ? "never run" : k ? `<b>${k} failing</b>` : `${r.tests.length} ✓`}</small></div>
       ${c.problem ? `<div class="chk-problem">${escHtml(c.problem)}</div>` : ""}
       ${(r?.tests || []).filter((t) => !onlyFailed || bad(t)).map((t) => `
         <div class="chk-t st-${t.status}" data-test="${escHtml(t.name)}" aria-selected="${checks.selCheck === c.name && checks.sel[c.name] === t.name}">
           <span class="chk-dot"></span><span class="what"><div>${escHtml(titleOf(t))}</div><small>${escHtml(testLine(t))}</small></span>
-          ${t.kind ? `<span class="kind" title="${escHtml(t.kind)}">${escHtml(KIND_LABEL[t.kind] || t.kind)}</span>` : ""}</div>`).join("")}</div>`;
+          ${t.oracle ? `<span class="badge" title="its oracle: ${escHtml(t.oracle)}">${escHtml(ORACLE_LABEL[t.oracle] || t.oracle)}</span>` : ""}</div>`).join("")}</div>`;
   }).join("");
 
   // the detail: the selected test, else the first failing one
@@ -1176,7 +1176,7 @@ function renderChecks() {
   const r = shownCheckRun(c);
   const t = r && (r.tests.find((x) => x.name === checks.sel[c.name]) || r.tests.find(bad) || r.tests[0]);
   if (!r || !t) {
-    detail.innerHTML = r?.error ? `<h3>The run couldn't judge</h3><div class="chk-error">${escHtml(r.error)}</div>` : "";
+    detail.innerHTML = r?.error ? `<h3>Not judged: the run failed</h3><div class="chk-error">${escHtml(r.error)}</div>` : "";
     return;
   }
   checks.selCheck = c.name; checks.sel[c.name] = t.name;
@@ -1192,7 +1192,7 @@ function renderChecks() {
   const groups = t.groups || t.failures.map((f) => ({ count: 1, examples: [f] }));
   detail.innerHTML = `
     <div class="chk-verdict st-${t.status}"><span class="chk-dot"></span><div><h2>${verdictOf(t)}</h2>
-      <p>${escHtml(titleOf(t))}${c.description ? ` · ${escHtml(c.description)}` : ""} · <code>${escHtml(t.name)}</code></p></div></div>
+      <p>${escHtml(titleOf(t))}${c.title ? ` · ${escHtml(c.title)}` : ""} · <code>${escHtml(t.name)}</code></p></div></div>
     ${first ? `<dl class="chk-why ${checks.whyOpen ? "" : "closed"}"><dt>Checks</dt><dd>${escHtml(first)}</dd>
       ${rest.length ? `<dt class="more">Details</dt><dd class="more">${escHtml(rest.join("\n"))}</dd>
         <button type="button" id="checks-why">${checks.whyOpen ? "Hide" : "How and why"}</button>` : ""}</dl>` : ""}

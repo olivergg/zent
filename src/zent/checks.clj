@@ -4,33 +4,33 @@
   ns attr-map carries what zent needs:
 
     (ns shop.order-totals
-      {:zent/observes [:orders-api :postgres] :zent/description \"...\"}
+      {:zent/observes [:orders-api :postgres] :zent/title \"...\"}
       (:require [clojure.test :refer [deftest is]]))
 
-  Read-only by default; :zent/writes true marks one that writes (a scenario):
-  it runs only when named, never with the preset's other checks. A deftest's
-  :zent/kind (:invariant, :pseudo-oracle, :metamorphic, :heuristic...) says
-  what kind of oracle it is.
+  Read-only by default; :zent/writes true marks a check that writes: it runs
+  only when named, never with the preset's other checks. A deftest's
+  :zent/oracle (:invariant, :pseudo-oracle, :metamorphic, :heuristic...) says
+  what it judges against.
 
   A test may say what it judged, passing or not - shown under it:
   (clojure.test/do-report {:type :zent/note :note \"63 plug-ins, largest gap 1 min\"}).
 
   All optional, all plain clojure.test - for a reader who isn't a developer:
-    ^{:zent/title \"Orders keep their total\"}   on the deftest: shown for its name
+    ^{:zent/title \"Orders keep their total\"}   on the deftest (or the check's ns): shown for its name
     {:type :zent/verdict :verdict \"3 orders of 120 lost their total\"}   its outcome, one sentence
     {:type :zent/fact :label \"orders compared\" :value 120 :bad false}   a figure it judged
     {:type :zent/accepted :reason \"known, ticket 42\"}   a gap decided acceptable: a test
                                                          with no failure is :accepted
     {:type :fail :expected 12.5 :actual 12 :message \"...\"
      :zent/group \"Total\" :zent/explain \"rounded down\" :zent/context {:order 7}}
-      a failure on values, not forms: grouped by :zent/group (explained once), its
-      context named; any (is (= a b)) failing is diffed too (zent.diff).
+      a gap - a failure on values, not forms: grouped by :zent/group (explained once),
+      its context named; any (is (= a b)) failing is diffed too (zent.diff).
 
   A check runs in a JVM `clojure -M` from <catalog>/checks (its deps.edn, with
   :paths [\".\" \"lib\"]): it is the catalog's code, not the engine's - Jolt never
   loads it. clojure.test's own `report` hook prints one EDN event per line, read back
-  into a result whose :status is :pass, :fail or :unknown (could not judge:
-  an error, nothing run), merged the way Jepsen merges :valid?."
+  into a result whose :status is :pass, :fail or :unknown (\"not judged\": an
+  error, nothing run), merged the way Jepsen merges :valid?."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -75,9 +75,9 @@
                                               expected (symbol (str (.getName pdir) "." (demunge base)))
                                               check {:name (keyword (demunge base)) :root (.getPath root) :ns expected}]]
                                     (try
-                                      (let [[ns-sym {:zent/keys [observes description writes]}] (read-ns-form (slurp f))]
+                                      (let [[ns-sym {:zent/keys [observes title writes]}] (read-ns-form (slurp f))]
                                         (cond-> (assoc check :observes (vec (filter keyword? observes)))
-                                          description (assoc :description (str description))
+                                          title (assoc :title (str title))
                                           (true? writes) (assoc :writes true)
                                           (not (every? keyword? observes))
                                           (assoc :problem ":zent/observes is a vector of component keywords")
@@ -136,8 +136,8 @@
             (fn [{t :type :as m}]
               (case t
                 :begin-test-var
-                (let [{test :name :keys [doc] kind :zent/kind title :zent/title} (-> m :var meta)]
-                  (emit (cond-> {:event :begin :test (str test)} doc (assoc :doc doc) kind (assoc :kind kind)
+                (let [{test :name :keys [doc] oracle :zent/oracle title :zent/title} (-> m :var meta)]
+                  (emit (cond-> {:event :begin :test (str test)} doc (assoc :doc doc) oracle (assoc :oracle oracle)
                           title (assoc :title title))))
                 :end-test-var
                 (emit {:event :end :test (-> m :var meta :name str)})
@@ -220,7 +220,7 @@
                               diff (some-> (:sides e) diff/of)
                               detail (cond-> (dissoc e :event :test :sides) diff (assoc :diff diff))]
                           (case event
-                            :begin (update acc i merge (select-keys e [:doc :kind :title]))
+                            :begin (update acc i merge (select-keys e [:doc :oracle :title]))
                             :end (assoc-in acc [i :done?] true)
                             :note (update-in acc [i :notes] (fnil conj []) (:note e))
                             :verdict (assoc-in acc [i :verdict] (:verdict e))
@@ -278,14 +278,14 @@
   [{:keys [preset check status tests counts duration-ms only error]}]
   (concat
    [(format "%s %s/%s  %s - %d test(s)%s, %d assertion(s), %.1f s" (glyph status) (name preset) (name check)
-            (name status) (:tests counts)
+            (if (= :unknown status) "not judged" (name status)) (:tests counts)
             (let [bad (+ (:failed counts) (:errors counts))] (if (pos? bad) (format ", %d not passing" bad) ""))
             (:assertions counts) (/ (or duration-ms 0) 1000.0))]
    (when only [(str "  only: " (str/join ", " only))])
    (when error (map #(str "  | " %) (str/split-lines error)))
-   (for [{:keys [name title status assertions failures groups doc kind notes verdict facts accepted]} tests
+   (for [{:keys [name title status assertions failures groups doc oracle notes verdict facts accepted]} tests
          line (concat [(format "  %s %s%s%s  %d" (glyph status) name (if title (str " - " title) "")
-                               (if kind (str " [" (clojure.core/name kind) "]") "") assertions)]
+                               (if oracle (str " [" (clojure.core/name oracle) "]") "") assertions)]
                       (when verdict [(str "      => " verdict)])
                       ;; what the test judged, passing or not: its figures, then its notes
                       (when (seq facts) [(str "      " (str/join " · " (for [[l v] facts] (str l ": " v))))])

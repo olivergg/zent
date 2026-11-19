@@ -92,7 +92,7 @@ preset's running stack. The engine discovers, runs and records them; it knows no
 they assert.
 
 - **Contract.** The ns attr-map carries `:zent/observes` (the components it judges) and
-  `:zent/description`; a test's `:doc` is shown under it. Deps in `checks/deps.edn`, run by
+  `:zent/title`; a test's `:doc` is shown under it. Deps in `checks/deps.edn`, run by
   `clojure -M` from `checks/` (JVM Clojure, not Jolt: checks talk to JVM services). The code
   shared between checks lives in `checks/lib/`, which discovery skips and `:paths` puts on the classpath.
 - **Output.** The runner rebinds `clojure.test/report` to write `#zent/check` EDN lines to a log
@@ -103,7 +103,7 @@ they assert.
   tab go through the same `run!` and the same files.
 - **Read-only, by convention** (not enforced): a check judges, it doesn't act. One that writes
   says `:zent/writes true`: `verify` without check names skips it, naming it runs it, the
-  dashboard confirms first and its "run all" leaves it out. A deftest's `:zent/kind` reaches
+  dashboard confirms first and its "run all" leaves it out. A deftest's `:zent/oracle` reaches
   the result (`:begin` event) and the display; zent gives it no meaning. A
   `(do-report {:type :zent/note :note s})` from a test is a `:note` event, kept in the test's `:notes` and
   shown under it, passing or not.
